@@ -9,6 +9,7 @@ members = [
     "corpus",
     "test-support",
 ]
+exclude = ["ffi-ref"]
 
 [workspace.package]
 version = "0.0.0"

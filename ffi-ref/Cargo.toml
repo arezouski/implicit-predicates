@@ -1,0 +1,22 @@
+[package]
+name = "indirect-predicates-ffi-ref"
+description = "Bindings to third-party reference predicate libraries, for local tests and benchmarks only"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+indirect-predicates-corpus = { path = "../corpus" }
+
+[build-dependencies]
+cc = "1.2"
+
+[dev-dependencies]
+indirect-predicates-oracle = { path = "../crates/oracle" }
+indirect-predicates-test-support = { path = "../test-support" }
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"

@@ -2,3 +2,4 @@
 **/*.rs.bk
 /corpus/data/
 __pycache__/
+/ffi-ref/target/
