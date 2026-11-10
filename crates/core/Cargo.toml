@@ -8,6 +8,9 @@ rust-version.workspace = true
 license.workspace = true
 keywords.workspace = true
 categories = ["mathematics", "algorithms", "no-std"]
+# The tests depend on workspace-only test infrastructure, so they are not
+# part of the published package.
+exclude = ["tests/"]
 
 [features]
 # An owned, growable arena: `Scratch::growable`.
