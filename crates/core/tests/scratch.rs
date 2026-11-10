@@ -197,6 +197,22 @@ fn exhaustion_returns_error_and_keeps_state() {
 }
 
 #[test]
+fn scratch_debug_shows_accounting_only() {
+    let mut buf = [0.0; 8];
+    let mut s = Scratch::borrowed(&mut buf);
+    let a = s.push(&[1e-20, 1.0]).unwrap();
+    let _ = s.scale(a, 3.0).unwrap();
+    let mark = s.mark();
+    let _ = s.push(&[1.0]).unwrap();
+    s.reset(mark);
+    let used = s.used();
+    assert_eq!(
+        format!("{s:?}"),
+        format!("Scratch {{ used: {used}, capacity: 8, high_water: 6 }}")
+    );
+}
+
+#[test]
 fn zero_capacity_arena_only_fails() {
     let mut buf: [f64; 0] = [];
     let mut s = Scratch::borrowed(&mut buf);

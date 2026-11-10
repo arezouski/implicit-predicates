@@ -11,7 +11,8 @@
 //! - [`expansion`], exact values represented as sums of `f64` components,
 //!   with exact addition, subtraction, scaling and sign;
 //! - [`scratch`], [`Scratch`], a bump arena over a borrowed buffer that holds
-//!   the expansions of a computation and runs those operations on them.
+//!   the expansions of a computation and runs those operations on them, as
+//!   well as the exact product of two expansions.
 //!
 //! **Status: early development.** The API is incomplete and may change.
 

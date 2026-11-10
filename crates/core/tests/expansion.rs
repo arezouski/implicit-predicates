@@ -5,7 +5,7 @@ mod common;
 
 use common::{
     any_finite, assert_valid_expansion, cancellation_that_rounds, correlated_pair, expansion,
-    expansion_with, in_product_domain, leaf, value,
+    expansion_with, in_product_domain, leaf, near_equal, value,
 };
 use indirect_predicates_core::{Sign, expansion};
 use indirect_predicates_oracle::Dyadic;
@@ -119,6 +119,14 @@ proptest! {
     }
 
     #[test]
+    fn diff_is_exact_after_deep_cancellation((e, f) in near_equal(8, 200)) {
+        let d = run(e.len() + f.len(), |out| expansion::diff(&e, &f, out));
+        prop_assert_eq!(value(&d), &value(&e) - &value(&f));
+        let back = run(e.len() + f.len(), |out| expansion::diff(&f, &e, out));
+        prop_assert_eq!(value(&back), &value(&f) - &value(&e));
+    }
+
+    #[test]
     fn diff_of_equal_expansions_is_empty(e in expansion(16)) {
         let d = run(2 * e.len(), |out| expansion::diff(&e, &e, out));
         prop_assert!(d.is_empty(), "e - e gave {:?}", d);
@@ -187,6 +195,15 @@ proptest! {
     #[test]
     fn sign_matches_oracle(e in expansion(16)) {
         prop_assert_eq!(expansion::sign(&e) as i8, value(&e).sign());
+    }
+
+    #[test]
+    fn sign_is_exact_after_deep_cancellation((e, f) in near_equal(8, 200)) {
+        let expected = (&value(&e) - &value(&f)).sign();
+        let d = run(e.len() + f.len(), |out| expansion::diff(&e, &f, out));
+        prop_assert_eq!(expansion::sign(&d) as i8, expected);
+        let back = run(e.len() + f.len(), |out| expansion::diff(&f, &e, out));
+        prop_assert_eq!(expansion::sign(&back) as i8, -expected);
     }
 
     #[test]

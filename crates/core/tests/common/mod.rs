@@ -10,11 +10,12 @@ mod strategies;
 pub use checks::assert_valid_expansion;
 pub use strategies::{
     any_finite, cancellation_that_rounds, correlated_pair, expansion, expansion_with,
-    in_product_domain, leaf, near_cancelling,
+    expansion_within, in_product_domain, leaf, near_cancelling, near_equal,
 };
 
 use indirect_predicates_oracle::Dyadic;
-use proptest::test_runner::Config as ProptestConfig;
+use proptest::strategy::{Strategy, ValueTree};
+use proptest::test_runner::{Config as ProptestConfig, TestRunner};
 
 /// Number of cases per property when `PROPTEST_CASES` is not set.
 const DEFAULT_CASES: u32 = 2000;
@@ -36,4 +37,18 @@ pub fn config() -> ProptestConfig {
 /// The exact value of the sum of `xs`.
 pub fn value(xs: &[f64]) -> Dyadic {
     Dyadic::sum_of(xs)
+}
+
+/// `count` values drawn from `strategy` with a fixed seed, to measure what a
+/// generator produces.
+pub fn sample<S: Strategy>(strategy: S, count: usize) -> Vec<S::Value> {
+    let mut runner = TestRunner::deterministic();
+    (0..count)
+        .map(|_| {
+            strategy
+                .new_tree(&mut runner)
+                .expect("the strategy has no filters that could reject every value")
+                .current()
+        })
+        .collect()
 }

@@ -16,10 +16,12 @@
 //! - **Marks and reset.** [`Scratch::mark`] records the current top and
 //!   [`Scratch::reset`] lowers the top back to a mark, releasing at once
 //!   every result built since. Spans created before the mark stay valid.
-//! - **Exhaustion.** Before it writes, an operation reserves the longest
-//!   result it can produce (its worst case, the capacity documented by the
-//!   slice primitive in [`expansion`]). If that does not fit, the operation
-//!   returns [`ScratchExhausted`] and leaves the arena unchanged. [`Scratch::high_water`] tells how much of the buffer a
+//! - **Exhaustion.** Before it writes, an operation reserves all the space
+//!   it may need above the top: the longest result it can produce (the
+//!   capacity documented by the slice primitive in [`expansion`]), plus, for
+//!   [`Scratch::product`], room for its intermediate expansions. If that does
+//!   not fit, the operation returns [`ScratchExhausted`] and leaves the arena
+//!   unchanged. [`Scratch::high_water`] tells how much of the buffer a
 //!   computation needed, which is how to size the buffer.
 //!
 //! An arena uses at most `u32::MAX` components of its buffer.
@@ -55,11 +57,15 @@
 //! ```
 
 mod error;
+mod product;
+mod reservation;
 mod span;
 mod storage;
 
 pub use error::ScratchExhausted;
 pub use span::{Mark, Span};
+
+use core::fmt;
 
 use crate::{Sign, expansion};
 use span::to_index;
@@ -207,8 +213,8 @@ impl<'a> Scratch<'a> {
     }
 
     /// Returns the highest [`used`](Self::used) ever reached, counting the
-    /// worst-case space each successful operation reserves while it works
-    /// even when its result turns out shorter. A buffer this long is enough
+    /// space each successful operation reserves while it works, even when
+    /// its result turns out shorter. A buffer this long is enough
     /// to repeat the same computation. Failed operations reserve nothing.
     ///
     /// # Examples
@@ -361,51 +367,15 @@ impl<'a> Scratch<'a> {
     pub fn sign(&self, a: Span) -> Sign {
         expansion::sign(self.get(a))
     }
+}
 
-    /// The single path of every operation that writes a result: reserves
-    /// `worst_case` components above the top, calls `write` with the
-    /// operands and that reserved region, and raises the top by the length
-    /// `write` returns, at most `worst_case`.
-    ///
-    /// On [`ScratchExhausted`] nothing changes. The operands lie below the
-    /// top and the region above it, so they never alias.
-    fn write_result<const N: usize>(
-        &mut self,
-        operands: [Span; N],
-        worst_case: u64,
-        write: impl FnOnce([&[f64]; N], &mut [f64]) -> usize,
-    ) -> Result<Span, ScratchExhausted> {
-        for operand in operands {
-            self.debug_check(operand);
-        }
-        let start = self.used;
-        let end = self.reserve(worst_case)?;
-        let (below, reserved) =
-            self.storage.as_mut_slice()[..to_index(end)].split_at_mut(to_index(start));
-        let len = write(operands.map(|operand| &below[operand.range()]), reserved);
-        debug_assert!(len <= reserved.len(), "a result exceeded its worst case");
-        let len = u32::try_from(len).expect("a result fits in its reservation, below u32::MAX");
-        self.used = start + len;
-        Ok(Span { start, len })
-    }
-
-    /// Makes `worst_case` components above the top available and returns
-    /// the end of that region, recording it in the high-water mark.
-    fn reserve(&mut self, worst_case: u64) -> Result<u32, ScratchExhausted> {
-        let end = u64::from(self.used) + worst_case;
-        let end = u32::try_from(end).map_err(|_| ScratchExhausted)?;
-        self.storage.make_available(end)?;
-        self.high_water = self.high_water.max(end);
-        Ok(end)
-    }
-
-    /// Panics in debug builds if `s` reaches past the top.
-    fn debug_check(&self, s: Span) {
-        debug_assert!(
-            u64::from(s.start) + u64::from(s.len) <= u64::from(self.used),
-            "{s:?} reaches past the top at {}: it was released by a reset or \
-             belongs to another arena",
-            self.used
-        );
+/// Shows the accounting of the arena, not its contents.
+impl fmt::Debug for Scratch<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Scratch")
+            .field("used", &self.used)
+            .field("capacity", &self.storage.capacity())
+            .field("high_water", &self.high_water)
+            .finish()
     }
 }
