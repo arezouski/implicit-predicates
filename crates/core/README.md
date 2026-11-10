@@ -6,7 +6,11 @@ arithmetic building blocks shared by the predicates and by generated code.
 
 > **Status: early development.** The API is incomplete and may change.
 
-Currently it provides `Sign`, the result type of every predicate.
+Currently it provides:
+
+- `Sign`, the result type of every predicate;
+- `eft`, error-free transformations: floating-point sums and products
+  together with their exact rounding errors.
 
 Most users should depend on `indirect-predicates` instead.
 

@@ -11,3 +11,7 @@ categories = ["mathematics", "algorithms", "no-std"]
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+indirect-predicates-oracle = { path = "../oracle" }
+proptest = "1"

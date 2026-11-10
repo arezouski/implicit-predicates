@@ -90,6 +90,10 @@ dependencies = [
 [[package]]
 name = "indirect-predicates-core"
 version = "0.0.0"
+dependencies = [
+ "indirect-predicates-oracle",
+ "proptest",
+]
 
 [[package]]
 name = "indirect-predicates-gen"
