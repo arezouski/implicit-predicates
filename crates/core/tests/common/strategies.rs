@@ -1,7 +1,7 @@
 //! Input generators: floating-point values, pairs of values with a given
 //! relationship, and valid expansions.
 
-use indirect_predicates_core::expansion;
+use indirect_predicates_core::{eft, expansion};
 use proptest::prelude::*;
 
 use super::assert_valid_expansion;
@@ -11,10 +11,26 @@ pub fn any_finite() -> impl Strategy<Value = f64> {
     mixed(-1074, f64::MAX_EXP)
 }
 
-/// Zero of either sign, or a value with magnitude in `2^-480 ..= 2^480`: the
-/// documented domain of `two_product` and `two_square`.
-pub fn in_product_domain() -> impl Strategy<Value = f64> {
-    mixed(-480, 480)
+/// Any value in the product domain of `eft::in_product_domain`: zero of
+/// either sign, or a magnitude in `eft::PRODUCT_OPERAND_MIN ..=
+/// eft::PRODUCT_OPERAND_MAX`.
+pub fn product_operand() -> impl Strategy<Value = f64> {
+    mixed(
+        exponent_of(eft::PRODUCT_OPERAND_MIN),
+        exponent_of(eft::PRODUCT_OPERAND_MAX),
+    )
+}
+
+/// The binary exponent of the power of two `x`.
+fn exponent_of(x: f64) -> i32 {
+    let biased =
+        i32::try_from(x.to_bits() >> 52).expect("a positive f64 has an 11-bit biased exponent");
+    assert_eq!(
+        x.to_bits() & ((1 << 52) - 1),
+        0,
+        "{x} is not a power of two"
+    );
+    biased - 1023
 }
 
 /// Pairs `(a, b)` where `b` is `-a` moved by up to 4 ulps in either

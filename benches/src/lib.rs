@@ -110,8 +110,8 @@ pub fn product_pairs(seed: u64) -> Vec<(f64, f64)> {
 /// increasing magnitude, nonoverlapping and without zeros.
 ///
 /// The components occupy consecutive, disjoint bit ranges (slots) spread over
-/// the exponents `-480..416`, the range where `scale` and `product` are
-/// supported. Each component has a random odd significand and a random sign,
+/// the exponents `-480..416`, inside the product domain of
+/// `eft::in_product_domain` where `scale` and `product` are supported. Each component has a random odd significand and a random sign,
 /// as wide as its slot allows (53 bits at most) but of random width, so two
 /// expansions built from different seeds interleave when merged.
 ///

@@ -5,9 +5,9 @@ mod common;
 
 use common::{
     any_finite, assert_valid_expansion, cancellation_that_rounds, correlated_pair, expansion,
-    expansion_with, in_product_domain, leaf, near_equal, value,
+    expansion_with, leaf, near_equal, product_operand, value,
 };
-use indirect_predicates_core::{Sign, expansion};
+use indirect_predicates_core::{Sign, eft, expansion};
 use indirect_predicates_oracle::Dyadic;
 use proptest::prelude::*;
 
@@ -92,7 +92,7 @@ proptest! {
     }
 
     #[test]
-    fn product_constructor_is_exact(a in in_product_domain(), b in in_product_domain()) {
+    fn product_constructor_is_exact(a in product_operand(), b in product_operand()) {
         let p = run(2, |out| expansion::from_two_product(a, b, out));
         prop_assert_eq!(value(&p), &Dyadic::from_f64(a) * &Dyadic::from_f64(b));
     }
@@ -133,7 +133,7 @@ proptest! {
     }
 
     #[test]
-    fn scale_is_exact(e in expansion(16), b in in_product_domain()) {
+    fn scale_is_exact(e in expansion(16), b in product_operand()) {
         let s = run(2 * e.len(), |out| expansion::scale(&e, b, out));
         prop_assert_eq!(value(&s), &value(&e) * &Dyadic::from_f64(b));
     }
@@ -142,8 +142,8 @@ proptest! {
     fn outputs_are_valid_inputs_to_every_operation(
         e in expansion(8),
         f in expansion(8),
-        b in in_product_domain(),
-        c in in_product_domain(),
+        b in product_operand(),
+        c in product_operand(),
     ) {
         // Feeds the output of each operation to the others, checking validity
         // at every step: each one's guarantee must meet the others' requirement.
@@ -178,8 +178,11 @@ proptest! {
                     expected = &expected - &value(f);
                 }
                 Step::Scale(b) => {
-                    let in_domain = |x: f64| (2f64.powi(-480)..=2f64.powi(480)).contains(&x.abs());
-                    prop_assert!(e.iter().all(|&x| in_domain(x)), "{:?} left the domain", e);
+                    prop_assert!(
+                        e.iter().all(|&x| eft::in_product_domain(x)),
+                        "{:?} left the domain",
+                        e
+                    );
                     e = run(2 * e.len(), |out| expansion::scale(&e, *b, out));
                     expected = &expected * &Dyadic::from_f64(*b);
                 }
@@ -226,8 +229,8 @@ proptest! {
     fn output_never_exceeds_capacity(
         e in expansion(16),
         f in expansion(16),
-        a in in_product_domain(),
-        b in in_product_domain(),
+        a in product_operand(),
+        b in product_operand(),
     ) {
         // A longer buffer filled with NaN shows both the returned length and
         // that nothing is written past it.
@@ -308,6 +311,46 @@ fn grow_and_scale_by_zero_keep_the_value() {
     let n = expansion::grow(&e, -0.0, &mut out);
     assert_eq!(&out[..n], &e);
     assert_eq!(expansion::scale(&e, -0.0, &mut out), 0);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "outside the product domain")]
+fn product_constructor_checks_the_domain_in_debug_builds() {
+    let mut out = [0.0; 2];
+    let _ = expansion::from_two_product(eft::PRODUCT_OPERAND_MAX * 2.0, 1.0, &mut out);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "outside the product domain")]
+fn scale_checks_its_components_in_debug_builds() {
+    let mut out = [0.0; 4];
+    let _ = expansion::scale(&[eft::PRODUCT_OPERAND_MIN / 2.0, 1.0], 3.0, &mut out);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "outside the product domain")]
+fn scale_checks_its_factor_in_debug_builds() {
+    let mut out = [0.0; 4];
+    let _ = expansion::scale(&[0.25, 1.0], eft::PRODUCT_OPERAND_MAX * 2.0, &mut out);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "not finite")]
+fn from_f64_checks_finiteness_in_debug_builds() {
+    let mut out = [0.0; 1];
+    let _ = expansion::from_f64(f64::NAN, &mut out);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "not finite")]
+fn grow_checks_finiteness_in_debug_builds() {
+    let mut out = [0.0; 2];
+    let _ = expansion::grow(&[1.0], f64::INFINITY, &mut out);
 }
 
 /// The result needs two components and the buffer holds one.

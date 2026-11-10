@@ -12,11 +12,13 @@ impl Scratch<'_> {
     /// valid expansion of at most `2 * a.len() * b.len()` components.
     ///
     /// Requirement, as for [`scale`](Self::scale): every component of `a`
-    /// and of `b` has magnitude in `2^-480 ..= 2^480`, so that
-    /// every product of a component of `a` by one of `b` lies in the domain
-    /// of [`eft::two_product`](crate::eft::two_product). The components of
-    /// the result can lie outside that range, so a product of products needs
-    /// the caller to bound the magnitudes involved.
+    /// and of `b` lies in the product domain (see
+    /// [`eft::in_product_domain`](crate::eft::in_product_domain)), since
+    /// every product of a component of `a` by one of `b` is computed exactly
+    /// with [`eft::two_product`](crate::eft::two_product); debug builds
+    /// panic if one does not. The components of the result can lie outside
+    /// that domain, so a product of products needs the caller to bound the
+    /// magnitudes involved.
     ///
     /// Needs `4 * a.len() * b.len() + 2 * max(a.len(), b.len())` free
     /// components while it works, or none if either operand is empty. The

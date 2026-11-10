@@ -12,6 +12,15 @@
 //! Geometric Predicates" (1997). When the target has a hardware fused
 //! multiply-add (see [`HAS_FMA`]), the exact product uses it instead.
 
+// On 32-bit x86 without SSE2, `f64` arithmetic runs on the x87 unit, whose
+// excess precision and double rounding break every error-free
+// transformation here.
+#[cfg(all(target_arch = "x86", not(target_feature = "sse2")))]
+compile_error!(
+    "indirect-predicates-core needs SSE2 on 32-bit x86: x87 floating-point arithmetic \
+     uses excess precision, which breaks the error-free transformations"
+);
+
 /// Selects code by whether the target has a hardware fused multiply-add that
 /// the crate can use: x86_64 compiled with the `fma` target feature, or
 /// aarch64 with the `neon` target feature. This is the single definition of
@@ -61,6 +70,59 @@ macro_rules! fma_target {
 /// }
 /// ```
 pub const HAS_FMA: bool = fma_target!(has);
+
+/// `2^-480`, the smallest nonzero magnitude in the product domain. See
+/// [`in_product_domain`].
+///
+/// # Examples
+///
+/// ```
+/// use indirect_predicates_core::eft::PRODUCT_OPERAND_MIN;
+///
+/// assert_eq!(PRODUCT_OPERAND_MIN, 2f64.powi(-480));
+/// ```
+pub const PRODUCT_OPERAND_MIN: f64 = f64::from_bits((1023 - 480) << 52);
+
+/// `2^480`, the largest magnitude in the product domain. See
+/// [`in_product_domain`].
+///
+/// # Examples
+///
+/// ```
+/// use indirect_predicates_core::eft::PRODUCT_OPERAND_MAX;
+///
+/// assert_eq!(PRODUCT_OPERAND_MAX, 2f64.powi(480));
+/// ```
+pub const PRODUCT_OPERAND_MAX: f64 = f64::from_bits((1023 + 480) << 52);
+
+/// Returns `true` if `x` lies in the *product domain*: it is zero of either
+/// sign, or its magnitude is in
+/// [`PRODUCT_OPERAND_MIN`]` ..= `[`PRODUCT_OPERAND_MAX`], that is
+/// `2^-480 ..= 2^480`.
+///
+/// Every operand of the exact products ([`two_product`],
+/// [`two_product_dekker`], `two_product_fma` and [`two_square`]) must lie in
+/// this domain, where neither the product nor its rounding error can
+/// overflow or underflow. Outside it the error they return can be inexact,
+/// without any other symptom. Debug builds check the domain on every exact
+/// product and panic outside it; release builds do not check.
+///
+/// # Examples
+///
+/// ```
+/// use indirect_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN, in_product_domain};
+///
+/// assert!(in_product_domain(-0.0));
+/// assert!(in_product_domain(PRODUCT_OPERAND_MIN) && in_product_domain(-PRODUCT_OPERAND_MAX));
+/// assert!(!in_product_domain(PRODUCT_OPERAND_MIN / 2.0));
+/// assert!(!in_product_domain(f64::MAX));
+/// assert!(!in_product_domain(f64::NAN));
+/// ```
+#[inline]
+#[must_use]
+pub fn in_product_domain(x: f64) -> bool {
+    x == 0.0 || (PRODUCT_OPERAND_MIN..=PRODUCT_OPERAND_MAX).contains(&x.abs())
+}
 
 /// `2^27 + 1`: multiplying by it splits an `f64` into two halves of at most
 /// 26 significant bits each (Veltkamp's splitting).
@@ -135,8 +197,8 @@ pub fn two_diff(a: f64, b: f64) -> (f64, f64) {
 /// Computes `a * b` and its rounding error with Dekker's algorithm, using
 /// only additions and multiplications.
 ///
-/// Requirement: each of `a` and `b` is zero or has magnitude in
-/// `2^-480 ..= 2^480`.
+/// Requirement: `a` and `b` lie in the product domain (see
+/// [`in_product_domain`]); debug builds panic if they do not.
 ///
 /// # Examples
 ///
@@ -151,6 +213,7 @@ pub fn two_diff(a: f64, b: f64) -> (f64, f64) {
 #[inline]
 #[must_use]
 pub fn two_product_dekker(a: f64, b: f64) -> (f64, f64) {
+    debug_check_product_domain(a, b);
     let x = a * b;
     let (a_hi, a_lo) = split(a);
     let (b_hi, b_lo) = split(b);
@@ -164,11 +227,13 @@ fma_target! {
     /// Computes `a * b` and its rounding error with one multiplication and one
     /// fused multiply-add.
     ///
-    /// Only available when [`HAS_FMA`] is true. It returns exactly the same
-    /// pair as [`two_product_dekker`].
+    /// Only available when [`HAS_FMA`] is true. It returns a pair equal in
+    /// value to that of [`two_product_dekker`]; the two may differ in the
+    /// sign of a zero error (Dekker's algorithm can give `-0.0` where this
+    /// one gives `+0.0`).
     ///
-    /// Requirement: each of `a` and `b` is zero or has magnitude in
-    /// `2^-480 ..= 2^480`.
+    /// Requirement: `a` and `b` lie in the product domain (see
+    /// [`in_product_domain`]); debug builds panic if they do not.
     ///
     /// # Examples
     ///
@@ -189,12 +254,14 @@ fma_target! {
     // from a function without that attribute needs `unsafe`.
     #[allow(unsafe_code)]
     pub fn two_product_fma(a: f64, b: f64) -> (f64, f64) {
+        debug_check_product_domain(a, b);
         let x = a * b;
         // `a * b - x` is representable in the domain, so the fused operation
         // computes it without rounding.
         // SAFETY: this function only exists when the target has the features
-        // the intrinsics need: `fma` (and the baseline `sse2`) on x86_64,
-        // and `neon` on aarch64, all enabled at compile time.
+        // the intrinsics need, enabled at compile time: `fma` on x86_64,
+        // which implies the `sse2` the other intrinsics need (through
+        // `avx`), and `neon` on aarch64.
         let y = unsafe {
             #[cfg(target_arch = "x86_64")]
             let y = {
@@ -215,10 +282,10 @@ fma_target! {
 
 /// Computes `a * b` and its rounding error with the crate's selected
 /// implementation: `two_product_fma` when [`HAS_FMA`] is true, and
-/// [`two_product_dekker`] otherwise. Both give the same result.
+/// [`two_product_dekker`] otherwise. Both give equal values.
 ///
-/// Requirement: each of `a` and `b` is zero or has magnitude in
-/// `2^-480 ..= 2^480`.
+/// Requirement: `a` and `b` lie in the product domain (see
+/// [`in_product_domain`]); debug builds panic if they do not.
 ///
 /// # Examples
 ///
@@ -240,7 +307,8 @@ pub fn two_product(a: f64, b: f64) -> (f64, f64) {
 /// [`HAS_FMA`] is true, and otherwise with fewer operations than
 /// [`two_product_dekker`].
 ///
-/// Requirement: `a` is zero or has magnitude in `2^-480 ..= 2^480`.
+/// Requirement: `a` lies in the product domain (see [`in_product_domain`]);
+/// debug builds panic if it does not.
 ///
 /// # Examples
 ///
@@ -255,6 +323,7 @@ pub fn two_product(a: f64, b: f64) -> (f64, f64) {
 #[inline]
 #[must_use]
 pub fn two_square(a: f64) -> (f64, f64) {
+    debug_check_product_domain(a, a);
     fma_target!(if { two_product_fma(a, a) } else {
         {
             let x = a * a;
@@ -265,6 +334,18 @@ pub fn two_square(a: f64) -> (f64, f64) {
             (x, lo * lo - err3)
         }
     })
+}
+
+/// Panics in debug builds unless both operands of an exact product lie in
+/// the product domain.
+#[inline]
+#[track_caller]
+fn debug_check_product_domain(a: f64, b: f64) {
+    debug_assert!(
+        in_product_domain(a) && in_product_domain(b),
+        "an operand of the exact product {a:e} * {b:e} is outside the product domain \
+         (see `eft::in_product_domain`)"
+    );
 }
 
 /// Veltkamp's splitting: returns `(hi, lo)` with `hi + lo == a` exactly and

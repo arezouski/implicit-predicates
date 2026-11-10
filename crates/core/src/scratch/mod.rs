@@ -246,7 +246,8 @@ impl<'a> Scratch<'a> {
     ///
     /// Needs `e.len()` free components; an empty `e` always succeeds, giving
     /// an empty span. Requirement: `e` is a valid expansion (see
-    /// [`expansion`]); it is copied as is.
+    /// [`expansion`]); it is copied as is, and debug builds panic if it is
+    /// not valid.
     ///
     /// # Errors
     ///
@@ -264,6 +265,10 @@ impl<'a> Scratch<'a> {
     /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
     /// ```
     pub fn push(&mut self, e: &[f64]) -> Result<Span, ScratchExhausted> {
+        debug_assert!(
+            expansion::is_valid(e),
+            "Scratch::push of {e:?}, which is not a valid expansion"
+        );
         let worst_case = u64::try_from(e.len()).unwrap_or(u64::MAX);
         self.write_result([], worst_case, |[], out| {
             out.copy_from_slice(e);

@@ -10,7 +10,7 @@ use indirect_predicates_benches::{
     product_capacity, product_operands, product_pairs, random_matrices, scale_factor,
     singular_matrices, valid_expansion,
 };
-use indirect_predicates_core::{Scratch, Sign, expansion};
+use indirect_predicates_core::{Scratch, Sign, eft, expansion};
 use indirect_predicates_oracle::Dyadic;
 
 /// Lowest and highest set bit exponents of a nonzero finite `f64`.
@@ -48,15 +48,18 @@ fn inputs_are_valid_expansions_of_the_stated_length() {
 
 #[test]
 fn inputs_stay_in_the_product_domain() {
-    for &n in &LENGTHS {
-        for &x in &valid_expansion(FIRST_OPERAND_SEED, n) {
-            assert!((-480..=480).contains(&bit_range(x).0));
-            assert!((-480..=480).contains(&bit_range(x).1));
+    for &n in LENGTHS.iter().chain(&PRODUCT_LENGTHS) {
+        for seed in [FIRST_OPERAND_SEED, SECOND_OPERAND_SEED] {
+            for x in valid_expansion(seed, n) {
+                assert!(eft::in_product_domain(x), "{x:e} of length {n}");
+            }
         }
     }
+    assert!(eft::in_product_domain(scale_factor(SCALE_SEED)));
     let pairs = product_pairs(PAIRS_SEED);
     assert_eq!(pairs.len(), PAIR_COUNT);
     for (a, b) in pairs {
+        assert!(eft::in_product_domain(a) && eft::in_product_domain(b));
         assert!(a.abs() > 2f64.powi(-25) && a.abs() < 2f64.powi(25));
         assert!(b.abs() > 2f64.powi(-25) && b.abs() < 2f64.powi(25));
     }

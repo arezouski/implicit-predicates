@@ -10,7 +10,7 @@ mod strategies;
 pub use checks::assert_valid_expansion;
 pub use strategies::{
     any_finite, cancellation_that_rounds, correlated_pair, expansion, expansion_with,
-    expansion_within, in_product_domain, leaf, near_cancelling, near_equal,
+    expansion_within, leaf, near_cancelling, near_equal, product_operand,
 };
 
 use indirect_predicates_oracle::Dyadic;

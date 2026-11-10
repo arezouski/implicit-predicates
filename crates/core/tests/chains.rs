@@ -44,7 +44,7 @@
 mod common;
 
 use common::{assert_valid_expansion, near_equal, sample, value};
-use indirect_predicates_core::{Scratch, Span, expansion};
+use indirect_predicates_core::{Scratch, Span, eft, expansion};
 use indirect_predicates_oracle::Dyadic;
 use proptest::prelude::*;
 
@@ -205,9 +205,8 @@ fn eval_oracle(expr: &Expr, leaves: &[Dyadic]) -> Dyadic {
 
 /// Panics unless every component of `e` lies in the domain of `two_product`.
 fn assert_in_product_domain(e: &[f64]) {
-    let domain = 2f64.powi(-480)..=2f64.powi(480);
     assert!(
-        e.iter().all(|x| domain.contains(&x.abs())),
+        e.iter().all(|&x| eft::in_product_domain(x)),
         "{e:?} left the domain of two_product"
     );
 }
