@@ -12,7 +12,9 @@ Currently it provides:
 - `eft`, error-free transformations: floating-point sums and products
   together with their exact rounding errors;
 - `expansion`, exact values represented as sums of `f64` components, with
-  exact addition, subtraction, scaling and sign, all without allocation.
+  exact addition, subtraction, scaling and sign, all without allocation;
+- `Scratch`, a bump arena over a borrowed buffer that holds the expansions
+  of a computation and runs those operations on them.
 
 Most users should depend on `indirect-predicates` instead.
 
