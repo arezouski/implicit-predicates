@@ -14,7 +14,6 @@
 //!   the expansions of a computation and runs those operations on them, as
 //!   well as the exact product of two expansions.
 //!
-//!
 //! The optional `alloc` feature adds an owned arena that grows on the heap,
 //! `Scratch::growable`, so the exact arithmetic can always complete. Without
 //! it nothing allocates.

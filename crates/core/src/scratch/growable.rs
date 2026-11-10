@@ -1,13 +1,14 @@
 //! The arena that owns its memory and grows on the heap.
 
-use alloc::vec::Vec;
+use alloc::vec;
 
 use super::Scratch;
-use super::storage::Storage;
+use super::span::to_index;
+use super::storage::{Storage, clamp_capacity};
 
 impl Scratch<'static> {
     /// Creates an empty arena that owns its memory, with room for `initial`
-    /// components (at most `u32::MAX` of them are used).
+    /// components (at most `u32::MAX`, the most an arena uses).
     ///
     /// When an operation needs more room the arena grows on the heap to at
     /// least double its capacity, or to what the operation needs if that is
@@ -15,6 +16,10 @@ impl Scratch<'static> {
     /// after the buffer moves. The arena fails with
     /// [`ScratchExhausted`](super::ScratchExhausted) only when an operation
     /// needs more than `u32::MAX` components, and then it is unchanged.
+    ///
+    /// Running out of memory aborts, as for any `alloc` collection;
+    /// `ScratchExhausted` is returned only when the arena would exceed
+    /// `u32::MAX` components.
     ///
     /// Available only with the `alloc` cargo feature.
     ///
@@ -31,10 +36,10 @@ impl Scratch<'static> {
     /// ```
     #[must_use]
     pub fn growable(initial: usize) -> Scratch<'static> {
-        let mut buffer = Vec::new();
-        buffer.resize(initial, 0.0);
+        // Components past `u32::MAX` could never be used, so never allocate them.
+        let initial = to_index(clamp_capacity(initial));
         Scratch {
-            storage: Storage::Owned(buffer),
+            storage: Storage::Owned(vec![0.0; initial]),
             used: 0,
             high_water: 0,
         }

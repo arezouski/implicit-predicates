@@ -35,8 +35,9 @@ impl Storage<'_> {
             Storage::Borrowed(_) => Err(ScratchExhausted),
             #[cfg(feature = "alloc")]
             Storage::Owned(buffer) => {
-                let target = grown_capacity(buffer.len(), len);
-                buffer.resize(to_index(target), 0.0);
+                let target = to_index(grown_capacity(buffer.len(), len));
+                buffer.reserve_exact(target - buffer.len());
+                buffer.resize(target, 0.0);
                 Ok(())
             }
         }
@@ -75,7 +76,7 @@ fn grown_capacity(current: usize, needed: u32) -> u32 {
 }
 
 /// The number of components an arena uses from a buffer of `len`.
-fn clamp_capacity(len: usize) -> u32 {
+pub(super) fn clamp_capacity(len: usize) -> u32 {
     u32::try_from(len).unwrap_or(u32::MAX)
 }
 

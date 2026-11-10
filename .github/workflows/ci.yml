@@ -27,6 +27,7 @@ jobs:
         with:
           components: clippy
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   test:
     strategy:
@@ -36,6 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace
       - run: cargo test --workspace --all-features
 
   msrv:
@@ -65,3 +67,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo doc --workspace --no-deps
+      - run: cargo doc --workspace --no-deps --all-features
