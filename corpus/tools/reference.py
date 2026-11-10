@@ -111,6 +111,7 @@ def build_cdt(source=CDT_DIR, build=CDT_BUILD_DIR):
     """Build the original mesher out of tree and return the `cdt` executable."""
     if not source.exists():
         raise ReferenceError(f"{source} is missing; run fetch-reference first")
+    _check_existing(Repo(CDT_URL, CDT_COMMIT, source))
     if shutil.which("cmake") is None:
         raise ReferenceError("cmake was not found in PATH")
     generator = ["-G", "Ninja"] if shutil.which("ninja") else []

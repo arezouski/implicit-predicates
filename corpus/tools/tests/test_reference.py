@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -80,6 +81,33 @@ class FetchTests(unittest.TestCase):
         with self.assertRaises(reference.ReferenceError):
             reference.fetch([self.repo("0" * 40)])
         self.assertFalse(self.dest.exists())
+
+
+class BuildTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.source = Path(self._tmp.name) / "src"
+        self.source.mkdir()
+        git(self.source, "init", "-q")
+        (self.source / "CMakeLists.txt").write_text("# original\n")
+        git(self.source, "add", "CMakeLists.txt")
+        git(self.source, "commit", "-q", "-m", "other")
+
+    def test_build_refuses_a_checkout_at_another_commit(self):
+        with mock.patch.object(reference, "_run") as run:
+            with self.assertRaises(reference.ReferenceError):
+                reference.build_cdt(self.source, Path(self._tmp.name) / "b")
+        run.assert_not_called()
+
+    def test_build_refuses_a_dirty_checkout(self):
+        head = git(self.source, "rev-parse", "HEAD")
+        (self.source / "CMakeLists.txt").write_text("# edited\n")
+        with mock.patch.object(reference, "CDT_COMMIT", head):
+            with mock.patch.object(reference, "_run") as run:
+                with self.assertRaises(reference.ReferenceError):
+                    reference.build_cdt(self.source, Path(self._tmp.name) / "b")
+        run.assert_not_called()
 
 
 class ConstantsTests(unittest.TestCase):
