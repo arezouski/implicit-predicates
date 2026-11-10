@@ -27,29 +27,41 @@ Predicates: 0 = orient3d (4 points), 1 = insphere (5 points).
 Stages: 0 = unknown, 1 = filtered, 2 = interval, 3 = bigfloat, 4 = exact.
 
 A call has room for five point indices in memory. An orient3d call stores
-four; the fifth reads back as 0.
+four indices on disk; a reader sets the fifth to 0, and an in-memory call whose
+unused fifth index is not 0 is invalid. An insphere call stores five.
 
-A counter counts calls with one outcome: predicate, number of implicit
-points among the call's points, returned sign, and deciding stage. A stratum
-groups calls by predicate, implicit-point count and whether the sign is zero;
-`total` is how many calls of the stratum were seen and `kept` how many are
-stored in the file.
+The implicit count of a call is the number of its points (4 or 5) that are not
+explicit points. A counter counts calls with one outcome: predicate, implicit
+count, returned sign, and deciding stage. A stratum groups calls by predicate,
+implicit count and whether the sign is zero; `total` is how many calls of the
+stratum were seen and `kept` how many are stored in the file.
 
 ## Validity rules
 
 A reader rejects a file unless all of the following hold:
 
-- the magic and version are correct, and every code is known;
+- the magic and version are correct, and every predicate, stage and point-kind
+  code is known;
 - the model name is valid UTF-8;
 - the parents of a point have a smaller index than the point;
 - the parents of an LNC point are explicit points;
 - every coordinate and every LNC parameter is finite;
-- every sign is -1, 0 or 1;
+- every sign, in calls and in counters, is -1, 0 or 1;
 - every call index refers to an existing point;
-- for each stratum, `kept` equals the number of stored calls of that stratum
-  and does not exceed `total`;
-- for each stratum, the counters of that stratum add up to its `total`;
-- no counter or stratum is repeated;
+- the implicit count of every counter and every stratum is at most the
+  arity of its predicate (4 for orient3d, 5 for insphere);
+- the zero flag of a stratum is 0 or 1;
+- no counter (same predicate, implicit count, sign and stage) and no stratum
+  (same predicate, implicit count and zero flag) appears twice;
+- every stratum that has stored calls has a sampling entry, and `kept` equals
+  the number of stored calls of that stratum, computed with the implicit
+  count defined above;
+- `kept` does not exceed `total`;
+- the counters of a stratum (same predicate and implicit count, with a zero
+  sign for a zero stratum and a non-zero sign otherwise) add up to its
+  `total`, and their sum does not overflow `u64`;
+- every counter belongs to a stratum that has a sampling entry, so a writer
+  emits a stratum for every counter group, even when `kept` is 0;
 - there are no bytes after the last call.
 
 Readers never size allocations from the header counts: data is read first and
