@@ -10,8 +10,11 @@ publish = false
 [lints]
 workspace = true
 
+[dependencies]
+indirect-predicates-core = { path = "../crates/core" }
+
 [dev-dependencies]
-indirect-predicates-core = { path = "../crates/core", features = ["alloc"] }
+indirect-predicates-oracle = { path = "../crates/oracle" }
 criterion = { version = "0.8", default-features = false }
 geometry-predicates = "0.3.0"
 

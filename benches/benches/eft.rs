@@ -3,34 +3,39 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use indirect_predicates_benches::product_pairs;
+use indirect_predicates_benches::{PAIRS_SEED, product_pairs};
 use indirect_predicates_core::eft;
 
-const SEED: u64 = 0x7770_7072_6f64;
-
-/// Measures `product` over every pair, accumulating `x + y` so the work
-/// cannot be optimised away.
-fn sweep(pairs: &[(f64, f64)], product: impl Fn(f64, f64) -> (f64, f64)) -> f64 {
-    let mut total = 0.0;
-    for &(a, b) in pairs {
-        let (x, y) = product(black_box(a), black_box(b));
-        total += x + y;
+/// Applies `product` to every pair and stores each result in `out`.
+///
+/// The results are independent of one another (there is no accumulator
+/// carrying a dependency between iterations), so the measurement is the
+/// throughput of the product, not the latency of an addition chain.
+fn sweep(pairs: &[(f64, f64)], out: &mut [(f64, f64)], product: impl Fn(f64, f64) -> (f64, f64)) {
+    for (slot, &(a, b)) in out.iter_mut().zip(pairs) {
+        *slot = product(a, b);
     }
-    total
 }
 
 fn two_product(c: &mut Criterion) {
-    let pairs = product_pairs(SEED);
+    let pairs = product_pairs(PAIRS_SEED);
+    let mut out = vec![(0.0, 0.0); pairs.len()];
     let mut group = c.benchmark_group("two_product");
     group.bench_function("dekker", |b| {
-        b.iter(|| black_box(sweep(&pairs, eft::two_product_dekker)))
+        b.iter(|| {
+            sweep(black_box(&pairs), &mut out, eft::two_product_dekker);
+            black_box(&mut out);
+        })
     });
     #[cfg(any(
         all(target_arch = "x86_64", target_feature = "fma"),
         all(target_arch = "aarch64", target_feature = "neon")
     ))]
     group.bench_function("fma", |b| {
-        b.iter(|| black_box(sweep(&pairs, eft::two_product_fma)))
+        b.iter(|| {
+            sweep(black_box(&pairs), &mut out, eft::two_product_fma);
+            black_box(&mut out);
+        })
     });
     group.finish();
 }

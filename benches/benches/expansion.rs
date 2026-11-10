@@ -5,17 +5,17 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use geometry_predicates::predicates::{fast_expansion_sum_zeroelim, scale_expansion_zeroelim};
-use indirect_predicates_benches::{scale_factor, valid_expansion};
+use indirect_predicates_benches::{
+    FIRST_OPERAND_SEED, LENGTHS, PRODUCT_LENGTHS, SCALE_SEED, SECOND_OPERAND_SEED,
+    product_capacity, product_operands, scale_factor, valid_expansion,
+};
 use indirect_predicates_core::{Scratch, expansion};
-
-const LENGTHS: [usize; 6] = [2, 4, 8, 16, 32, 64];
-const PRODUCT_LENGTHS: [usize; 4] = [4, 8, 16, 32];
 
 fn sum(c: &mut Criterion) {
     let mut group = c.benchmark_group("sum");
     for n in LENGTHS {
-        let e = valid_expansion(1, n);
-        let f = valid_expansion(2, n);
+        let e = valid_expansion(FIRST_OPERAND_SEED, n);
+        let f = valid_expansion(SECOND_OPERAND_SEED, n);
         let mut out = vec![0.0; 2 * n];
         group.bench_function(BenchmarkId::new("ours", n), |b| {
             b.iter(|| expansion::sum(black_box(&e), black_box(&f), black_box(&mut out)))
@@ -31,9 +31,9 @@ fn sum(c: &mut Criterion) {
 
 fn scale(c: &mut Criterion) {
     let mut group = c.benchmark_group("scale");
-    let factor = scale_factor(3);
+    let factor = scale_factor(SCALE_SEED);
     for n in LENGTHS {
-        let e = valid_expansion(1, n);
+        let e = valid_expansion(FIRST_OPERAND_SEED, n);
         let mut out = vec![0.0; 2 * n];
         group.bench_function(BenchmarkId::new("ours", n), |b| {
             b.iter(|| expansion::scale(black_box(&e), black_box(factor), black_box(&mut out)))
@@ -50,10 +50,8 @@ fn scale(c: &mut Criterion) {
 fn product(c: &mut Criterion) {
     let mut group = c.benchmark_group("product");
     for n in PRODUCT_LENGTHS {
-        let e = valid_expansion(1, n);
-        let f = valid_expansion(2, n);
-        // Operands, the working space of one product and its result.
-        let mut buf = vec![0.0; 2 * n + 4 * n * n + 4 * n];
+        let (e, f) = product_operands(n);
+        let mut buf = vec![0.0; product_capacity(n)];
         let mut scratch = Scratch::borrowed(&mut buf);
         let a = scratch.push(&e).expect("capacity");
         let b = scratch.push(&f).expect("capacity");

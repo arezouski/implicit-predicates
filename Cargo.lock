@@ -260,6 +260,7 @@ dependencies = [
  "criterion",
  "geometry-predicates",
  "indirect-predicates-core",
+ "indirect-predicates-oracle",
 ]
 
 [[package]]
