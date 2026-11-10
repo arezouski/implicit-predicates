@@ -6,6 +6,7 @@ members = [
     "crates/oracle",
     "crates/indirect-predicates",
     "benches",
+    "corpus",
     "test-support",
 ]
 

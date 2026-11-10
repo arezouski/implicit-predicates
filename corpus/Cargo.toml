@@ -1,0 +1,11 @@
+[package]
+name = "indirect-predicates-corpus"
+description = "Binary file format for recorded geometric predicate calls, used by tests and benchmarks of the indirect-predicates workspace"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
