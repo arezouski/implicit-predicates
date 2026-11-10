@@ -6,10 +6,11 @@ built under `corpus/data/`, which is git-ignored.
 
 ## License warning
 
-The downloaded reference code (CDT and Indirect_Predicates, with their
-submodules) is licensed under the LGPL or GPL. It is not part of this
-repository and must never be copied into it, in whole or in part. It is only
-built and run locally, and used for comparison in tests and benchmarks.
+The downloaded reference code (CDT, Indirect_Predicates and the NFG
+arithmetic library it depends on) is licensed under the LGPL or GPL. It is
+not part of this repository and must never be copied into it, in whole or in
+part. It is only built and run locally, and used for comparison in tests and
+benchmarks.
 
 ## Requirements
 
@@ -35,9 +36,13 @@ python3 corpus/tools/corpus.py all               # fetch-models, select and run,
 three quarters of the hardware threads) and `--timeout S` (seconds per mesher
 run, default 600).
 
-`fetch-reference` leaves `corpus/data/reference/cdt-legacy/` and
-`corpus/data/reference/indirect-predicates/` (with submodules) at the commits
-pinned in `corpus/tools/reference.py`. If a checkout is already at the pinned
+`fetch-reference` leaves `corpus/data/reference/cdt-legacy/`,
+`corpus/data/reference/indirect-predicates/` and `corpus/data/reference/nfg/`
+at the commits pinned in `corpus/tools/reference.py`. Indirect_Predicates
+includes `numerics.h` from NFG, which its own CMake build would fetch from
+NFG's moving `main` branch; NFG is pinned instead to its last commit before
+the pinned Indirect_Predicates commit. NFG is LGPL licensed and, like the
+other references, is not part of this repository. If a checkout is already at the pinned
 commit it does nothing. If a checkout is at another commit or has modified
 tracked files, it fails without changing anything. Untracked files, such as
 outputs written by running the mesher's examples, are ignored by that check.

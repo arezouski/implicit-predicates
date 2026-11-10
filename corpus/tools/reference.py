@@ -20,9 +20,15 @@ CDT_URL = "https://github.com/MarcoAttene/CDT"
 CDT_COMMIT = "2a71f943b5ff6130f7f37b20c0d6397b0454ea87"
 IP_URL = "https://github.com/MarcoAttene/Indirect_Predicates"
 IP_COMMIT = "f8f243d18a6851fe3128b7e09af5b3574259d700"
+# Arithmetic library (numerics.h) that Indirect_Predicates includes; its own
+# build fetches the moving `main` branch, so it is pinned here to the last
+# commit before IP_COMMIT.
+NFG_URL = "https://github.com/MarcoAttene/nfg"
+NFG_COMMIT = "aeec97547a67dc6904ab84b39b15d20c6d62f65a"
 
 CDT_DIR = REFERENCE_DIR / "cdt-legacy"
 IP_DIR = REFERENCE_DIR / "indirect-predicates"
+NFG_DIR = REFERENCE_DIR / "nfg"
 CDT_BUILD_DIR = BUILD_DIR / "cdt-original"
 RECORDING_BUILD_DIR = BUILD_DIR / "cdt-recording"
 
@@ -40,7 +46,11 @@ class Repo:
     dest: Path
 
 
-REPOS = [Repo(CDT_URL, CDT_COMMIT, CDT_DIR), Repo(IP_URL, IP_COMMIT, IP_DIR)]
+REPOS = [
+    Repo(CDT_URL, CDT_COMMIT, CDT_DIR),
+    Repo(IP_URL, IP_COMMIT, IP_DIR),
+    Repo(NFG_URL, NFG_COMMIT, NFG_DIR),
+]
 
 
 def _git(cwd, *args):

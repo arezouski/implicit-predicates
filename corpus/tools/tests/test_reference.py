@@ -124,6 +124,19 @@ class ConstantsTests(unittest.TestCase):
         self.assertEqual(len(reference.IP_COMMIT), 40)
         self.assertTrue(reference.CDT_COMMIT.startswith("2a71f943b5ff"))
         self.assertTrue(reference.IP_COMMIT.startswith("f8f243d18a68"))
+        self.assertEqual(len(reference.NFG_COMMIT), 40)
+        self.assertTrue(reference.NFG_COMMIT.startswith("aeec97547a67"))
+
+    def test_fetch_covers_the_three_references(self):
+        self.assertEqual(
+            [(repo.url, repo.commit, repo.dest) for repo in reference.REPOS],
+            [
+                (reference.CDT_URL, reference.CDT_COMMIT, reference.CDT_DIR),
+                (reference.IP_URL, reference.IP_COMMIT, reference.IP_DIR),
+                (reference.NFG_URL, reference.NFG_COMMIT, reference.NFG_DIR),
+            ],
+        )
+        self.assertEqual(reference.NFG_DIR, reference.REFERENCE_DIR / "nfg")
 
     def test_data_dir_is_inside_the_corpus_directory(self):
         self.assertEqual(reference.DATA_DIR.name, "data")
