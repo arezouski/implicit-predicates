@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly long property run.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -39,7 +43,40 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
       - run: cargo test --workspace --all-features
+      - run: cargo test --workspace --all-features --release
       - run: cargo bench -p indirect-predicates-benches --no-run
+
+  test-fma:
+    # The x86_64 fused multiply-add path is compiled only with the `fma`
+    # target feature, which GitHub's x86_64 runners support.
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings -C target-feature=+fma
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace --all-features
+      - run: cargo test --workspace --all-features --release
+
+  long-properties:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rustflags: -D warnings
+          - os: ubuntu-latest
+            rustflags: -D warnings -C target-feature=+fma
+          - os: ubuntu-24.04-arm
+            rustflags: -D warnings
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      PROPTEST_CASES: 200000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace --all-features --release
 
   msrv:
     runs-on: ubuntu-latest
@@ -47,6 +84,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.86
       - run: cargo check --workspace
+      - run: cargo check --workspace --all-features --all-targets
 
   no-std:
     runs-on: ubuntu-latest
