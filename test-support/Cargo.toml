@@ -1,0 +1,16 @@
+[package]
+name = "indirect-predicates-test-support"
+description = "Shared test infrastructure for the indirect-predicates workspace: input generators, exact checks and proptest configuration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+indirect-predicates-core = { path = "../crates/core" }
+indirect-predicates-oracle = { path = "../crates/oracle" }
+proptest = "1"

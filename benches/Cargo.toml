@@ -15,6 +15,7 @@ indirect-predicates-core = { path = "../crates/core" }
 
 [dev-dependencies]
 indirect-predicates-oracle = { path = "../crates/oracle" }
+indirect-predicates-test-support = { path = "../test-support" }
 criterion = { version = "0.8", default-features = false }
 geometry-predicates = "0.3.0"
 

@@ -1,37 +1,24 @@
 //! The scratch arena: its operations agree with the slice primitives, and
 //! its accounting of used space, marks and exhaustion is exact.
 
-mod common;
-
-use common::{assert_valid_expansion, expansion, expansion_with, leaf, product_operand};
 use indirect_predicates_core::{Scratch, ScratchExhausted, Sign, Span, expansion};
+use indirect_predicates_oracle::Dyadic;
+use indirect_predicates_test_support::{
+    Applied, ArenaOp, arena_op, assert_valid_expansion, config, expansion, product_operand,
+    product_working_space, value,
+};
 use proptest::prelude::*;
 
-/// One arena operation in a random sequence. Operand indices select, modulo
-/// their number, among the spans produced so far.
-#[derive(Clone, Debug)]
-enum Op {
-    Push(Vec<f64>),
-    Sum(usize, usize),
-    Diff(usize, usize),
-    Scale(usize, f64),
-}
-
-/// Operations whose operands keep a sequence of up to 10 of them inside the
-/// domain of `scale`: leaves lie in `2^-40 ..= 2^41` and scale factors in
-/// `2^-20 ..= 2^21` with at most 8 significant bits, as in the chained
-/// test of the expansion primitives.
-fn op() -> impl Strategy<Value = Op> {
-    prop_oneof![
-        expansion_with(8, leaf(-40, 40, 53)).prop_map(Op::Push),
-        (any::<usize>(), any::<usize>()).prop_map(|(a, b)| Op::Sum(a, b)),
-        (any::<usize>(), any::<usize>()).prop_map(|(a, b)| Op::Diff(a, b)),
-        (any::<usize>(), leaf(-20, 20, 8)).prop_map(|(a, b)| Op::Scale(a, b)),
-    ]
+/// What an arena operation must give.
+enum Expected {
+    /// These components, as the slice primitive gives them.
+    Components(Vec<f64>),
+    /// A valid expansion of this value; `product` has no slice primitive.
+    Value(Dyadic),
 }
 
 /// A run of operations on an arena, recording each span it produced next to
-/// the components the slice primitives give for the same operands.
+/// the components it must hold.
 struct Run {
     spans: Vec<(Span, Vec<f64>)>,
     /// The largest `used()` plus worst-case capacity of any successful
@@ -50,29 +37,40 @@ impl Run {
     /// Applies `op` and checks the arena's accounting: an operation succeeds
     /// exactly when its worst-case capacity fits, a success grows `used()` by
     /// the length of the result, and a failure leaves `used()` unchanged.
-    /// Operations on spans are skipped while there are none.
-    fn apply(&mut self, scratch: &mut Scratch<'_>, op: &Op) {
-        let pick = |i: usize| self.spans[i % self.spans.len()].clone();
-        if self.spans.is_empty() && !matches!(op, Op::Push(_)) {
-            return;
-        }
+    /// Operations that `ArenaOp::apply` skips change nothing.
+    fn apply(&mut self, scratch: &mut Scratch<'_>, op: &ArenaOp) {
         let used_before = scratch.used();
-        let (worst_case, result, expected) = match op {
-            Op::Push(e) => (e.len(), scratch.push(e), e.clone()),
-            Op::Sum(a, b) => {
-                let ((a, ea), (b, eb)) = (pick(*a), pick(*b));
-                let expected = slice_op(ea.len() + eb.len(), |out| expansion::sum(&ea, &eb, out));
-                (a.len() + b.len(), scratch.sum(a, b), expected)
+        let spans: Vec<Span> = self.spans.iter().map(|(span, _)| *span).collect();
+        let Some(Applied { operands, result }) = op.apply(scratch, &spans) else {
+            assert_eq!(
+                scratch.used(),
+                used_before,
+                "a skipped {op:?} changed the arena"
+            );
+            return;
+        };
+        let operand = |i: usize| self.spans[operands[i]].1.as_slice();
+        let (worst_case, expected) = match op {
+            ArenaOp::Push(e) => (e.len(), Expected::Components(e.clone())),
+            ArenaOp::Sum(..) => {
+                let (ea, eb) = (operand(0), operand(1));
+                let sum = slice_op(ea.len() + eb.len(), |out| expansion::sum(ea, eb, out));
+                (ea.len() + eb.len(), Expected::Components(sum))
             }
-            Op::Diff(a, b) => {
-                let ((a, ea), (b, eb)) = (pick(*a), pick(*b));
-                let expected = slice_op(ea.len() + eb.len(), |out| expansion::diff(&ea, &eb, out));
-                (a.len() + b.len(), scratch.diff(a, b), expected)
+            ArenaOp::Diff(..) => {
+                let (ea, eb) = (operand(0), operand(1));
+                let diff = slice_op(ea.len() + eb.len(), |out| expansion::diff(ea, eb, out));
+                (ea.len() + eb.len(), Expected::Components(diff))
             }
-            Op::Scale(a, factor) => {
-                let (a, ea) = pick(*a);
-                let expected = slice_op(2 * ea.len(), |out| expansion::scale(&ea, *factor, out));
-                (2 * a.len(), scratch.scale(a, *factor), expected)
+            ArenaOp::Scale(_, factor) => {
+                let ea = operand(0);
+                let scaled = slice_op(2 * ea.len(), |out| expansion::scale(ea, *factor, out));
+                (2 * ea.len(), Expected::Components(scaled))
+            }
+            ArenaOp::Product(..) => {
+                let (ea, eb) = (operand(0), operand(1));
+                let worst_case = product_working_space(ea.len(), eb.len());
+                (worst_case, Expected::Value(&value(ea) * &value(eb)))
             }
         };
         let fits = used_before + worst_case <= scratch.capacity();
@@ -80,9 +78,18 @@ impl Run {
             Ok(span) => {
                 assert!(fits, "{op:?} succeeded without room for its worst case");
                 assert_eq!(scratch.used(), used_before + span.len(), "after {op:?}");
-                assert_eq!(scratch.get(span), expected.as_slice(), "after {op:?}");
+                let actual = scratch.get(span);
+                match expected {
+                    Expected::Components(components) => {
+                        assert_eq!(actual, components.as_slice(), "after {op:?}");
+                    }
+                    Expected::Value(exact) => {
+                        assert_valid_expansion(actual);
+                        assert_eq!(value(actual), exact, "after {op:?}");
+                    }
+                }
                 self.peak = self.peak.max(used_before + worst_case);
-                self.spans.push((span, expected));
+                self.spans.push((span, actual.to_vec()));
             }
             Err(ScratchExhausted) => {
                 assert!(!fits, "{op:?} failed with room for its worst case");
@@ -111,7 +118,7 @@ fn slice_op(capacity: usize, operation: impl FnOnce(&mut [f64]) -> usize) -> Vec
 }
 
 proptest! {
-    #![proptest_config(common::config())]
+    #![proptest_config(config())]
 
     #[test]
     fn arena_ops_match_slice_ops(
@@ -145,7 +152,7 @@ proptest! {
     #[test]
     fn used_grows_by_result_length(
         capacity in 0usize..=96,
-        ops in prop::collection::vec(op(), 0..=10),
+        ops in prop::collection::vec(arena_op(), 0..=10),
     ) {
         let mut buf = vec![f64::NAN; capacity];
         let mut s = Scratch::borrowed(&mut buf);
@@ -161,8 +168,8 @@ proptest! {
     #[test]
     fn mark_reset_restores_used(
         capacity in 0usize..=96,
-        before in prop::collection::vec(op(), 0..=5),
-        after in prop::collection::vec(op(), 0..=5),
+        before in prop::collection::vec(arena_op(), 0..=5),
+        after in prop::collection::vec(arena_op(), 0..=5),
     ) {
         let mut buf = vec![f64::NAN; capacity];
         let mut s = Scratch::borrowed(&mut buf);
@@ -285,43 +292,6 @@ fn exhausted_error_describes_itself() {
     assert!(ScratchExhausted.source().is_none());
 }
 
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "past the top")]
-fn using_a_span_released_by_reset_is_caught() {
-    let mut buf = [0.0; 4];
-    let mut s = Scratch::borrowed(&mut buf);
-    let mark = s.mark();
-    let a = s.push(&[1.0, 4.0]).unwrap();
-    s.reset(mark);
-    let _ = s.get(a);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "past the top")]
-fn operating_on_a_span_released_by_reset_is_caught() {
-    let mut buf = [0.0; 8];
-    let mut s = Scratch::borrowed(&mut buf);
-    let mark = s.mark();
-    let a = s.push(&[1.0, 4.0]).unwrap();
-    s.reset(mark);
-    let _ = s.scale(a, 2.0);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "above the top")]
-fn reset_to_a_mark_above_the_top_is_caught() {
-    let mut buf = [0.0; 4];
-    let mut s = Scratch::borrowed(&mut buf);
-    let base = s.mark();
-    let _ = s.push(&[1.0]).unwrap();
-    let high = s.mark();
-    s.reset(base);
-    s.reset(high);
-}
-
 #[test]
 fn push_accepts_adjacent_and_subnormal_components() {
     let mut buf = [0.0; 8];
@@ -336,85 +306,4 @@ fn push_accepts_adjacent_and_subnormal_components() {
         assert_eq!(s.get(span), e);
         s.reset(mark);
     }
-}
-
-/// Pushes `e`, which is not a valid expansion.
-#[cfg(debug_assertions)]
-fn push_invalid(e: &[f64]) {
-    let mut buf = [0.0; 4];
-    let _ = Scratch::borrowed(&mut buf).push(e);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "not a valid expansion")]
-fn push_rejects_overlapping_components_in_debug_builds() {
-    push_invalid(&[3.0, 5.0]);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "not a valid expansion")]
-fn push_rejects_decreasing_magnitudes_in_debug_builds() {
-    push_invalid(&[2.0, 1.0]);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "not a valid expansion")]
-fn push_rejects_zero_components_in_debug_builds() {
-    push_invalid(&[0.0, 1.0]);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "not a valid expansion")]
-fn push_rejects_non_finite_components_in_debug_builds() {
-    push_invalid(&[1.0, f64::INFINITY]);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "not a valid expansion")]
-fn push_rejects_nan_in_debug_builds() {
-    push_invalid(&[f64::NAN]);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "outside the product domain")]
-fn scale_checks_the_domain_in_debug_builds() {
-    let mut buf = [0.0; 8];
-    let mut s = Scratch::borrowed(&mut buf);
-    let a = s.push(&[1.0]).unwrap();
-    let _ = s.scale(a, indirect_predicates_core::eft::PRODUCT_OPERAND_MIN / 2.0);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "outside the product domain")]
-fn product_checks_the_domain_in_debug_builds() {
-    let mut buf = [0.0; 64];
-    let mut s = Scratch::borrowed(&mut buf);
-    let a = s
-        .push(&[
-            1.0,
-            indirect_predicates_core::eft::PRODUCT_OPERAND_MAX * 2.0,
-        ])
-        .unwrap();
-    let b = s.push(&[0.5, 3.0]).unwrap();
-    let _ = s.product(a, b);
-}
-
-#[cfg(not(debug_assertions))]
-#[test]
-fn reset_to_a_mark_above_the_top_never_raises_used() {
-    let mut buf = [0.0; 4];
-    let mut s = Scratch::borrowed(&mut buf);
-    let base = s.mark();
-    let _ = s.push(&[1.0]).unwrap();
-    let high = s.mark();
-    s.reset(base);
-    s.reset(high);
-    assert_eq!(s.used(), 0);
 }

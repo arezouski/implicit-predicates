@@ -12,28 +12,7 @@ use indirect_predicates_benches::{
 };
 use indirect_predicates_core::{Scratch, Sign, eft, expansion};
 use indirect_predicates_oracle::Dyadic;
-
-/// Lowest and highest set bit exponents of a nonzero finite `f64`.
-fn bit_range(x: f64) -> (i32, i32) {
-    let bits = x.abs().to_bits();
-    let exponent = ((bits >> 52) & 0x7FF) as i32 - 1075;
-    let mantissa = (bits & ((1 << 52) - 1)) | (1 << 52);
-    let low = exponent + mantissa.trailing_zeros() as i32;
-    let high = exponent + 63 - mantissa.leading_zeros() as i32;
-    (low, high)
-}
-
-fn assert_valid(e: &[f64]) {
-    for &x in e {
-        assert!(x != 0.0 && x.is_finite());
-    }
-    for pair in e.windows(2) {
-        assert!(
-            bit_range(pair[0]).1 < bit_range(pair[1]).0,
-            "overlap in {pair:?}"
-        );
-    }
-}
+use indirect_predicates_test_support::assert_valid_expansion;
 
 #[test]
 fn inputs_are_valid_expansions_of_the_stated_length() {
@@ -41,7 +20,7 @@ fn inputs_are_valid_expansions_of_the_stated_length() {
         for seed in [FIRST_OPERAND_SEED, SECOND_OPERAND_SEED, 99] {
             let e = valid_expansion(seed, n);
             assert_eq!(e.len(), n);
-            assert_valid(&e);
+            assert_valid_expansion(&e);
         }
     }
 }
@@ -80,7 +59,7 @@ fn both_libraries_agree_on_sum_and_scale() {
         let expected = &Dyadic::sum_of(&e) + &Dyadic::sum_of(&f);
         let l1 = expansion::sum(&e, &f, &mut ours);
         let l2 = geometry_predicates::predicates::fast_expansion_sum_zeroelim(&e, &f, &mut theirs);
-        assert_valid(&ours[..l1]);
+        assert_valid_expansion(&ours[..l1]);
         assert_eq!(Dyadic::sum_of(&ours[..l1]), expected);
         assert_same_value(&ours[..l1], &theirs[..l2]);
 
@@ -88,7 +67,7 @@ fn both_libraries_agree_on_sum_and_scale() {
         let expected = &Dyadic::sum_of(&e) * &Dyadic::from_f64(b);
         let l1 = expansion::scale(&e, b, &mut ours);
         let l2 = geometry_predicates::predicates::scale_expansion_zeroelim(&e, b, &mut theirs);
-        assert_valid(&ours[..l1]);
+        assert_valid_expansion(&ours[..l1]);
         assert_eq!(Dyadic::sum_of(&ours[..l1]), expected);
         assert_same_value(&ours[..l1], &theirs[..l2]);
     }
@@ -103,7 +82,7 @@ fn product_is_exact_on_the_benchmark_operands() {
         let a = scratch.push(&e).expect("capacity");
         let b = scratch.push(&f).expect("capacity");
         let p = scratch.product(a, b).expect("capacity");
-        assert_valid(scratch.get(p));
+        assert_valid_expansion(scratch.get(p));
         let expected = &Dyadic::sum_of(&e) * &Dyadic::sum_of(&f);
         assert_eq!(Dyadic::sum_of(scratch.get(p)), expected, "length {n}");
     }

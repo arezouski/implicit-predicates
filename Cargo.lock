@@ -261,6 +261,7 @@ dependencies = [
  "geometry-predicates",
  "indirect-predicates-core",
  "indirect-predicates-oracle",
+ "indirect-predicates-test-support",
 ]
 
 [[package]]
@@ -268,6 +269,7 @@ name = "indirect-predicates-core"
 version = "0.0.0"
 dependencies = [
  "indirect-predicates-oracle",
+ "indirect-predicates-test-support",
  "proptest",
 ]
 
@@ -280,6 +282,15 @@ name = "indirect-predicates-oracle"
 version = "0.0.0"
 dependencies = [
  "num-bigint",
+ "proptest",
+]
+
+[[package]]
+name = "indirect-predicates-test-support"
+version = "0.0.0"
+dependencies = [
+ "indirect-predicates-core",
+ "indirect-predicates-oracle",
  "proptest",
 ]
 

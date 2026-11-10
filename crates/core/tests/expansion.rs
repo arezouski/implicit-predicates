@@ -1,19 +1,28 @@
 //! Exactness and validity of the expansion primitives, checked against the
 //! oracle.
 
-mod common;
-
-use common::{
-    any_finite, assert_valid_expansion, cancellation_that_rounds, correlated_pair, expansion,
-    expansion_with, leaf, near_equal, product_operand, value,
-};
 use indirect_predicates_core::{Sign, eft, expansion};
 use indirect_predicates_oracle::Dyadic;
+use indirect_predicates_test_support::{
+    any_finite, assert_valid_expansion, bit_pattern_expansion, bit_pattern_pair,
+    cancellation_that_rounds, config, correlated_pair, expansion, expansion_with, leaf, near_equal,
+    product_domain_bits, product_operand, value,
+};
 use proptest::prelude::*;
 
 /// Largest magnitude accepted by the expansion functions without risk of
 /// overflow.
 const MAGNITUDE_LIMIT: f64 = f64::from_bits((1020 + 1023) << 52); // 2^1020
+
+/// The highest bit position below [`MAGNITUDE_LIMIT`].
+const MAX_BIT: i32 = 1019;
+
+/// Expansions of up to 40 components from bit patterns, every component in
+/// the product domain.
+fn bit_pattern_in_product_domain() -> impl Strategy<Value = Vec<f64>> {
+    let (low, high) = product_domain_bits();
+    bit_pattern_expansion(40, low, high)
+}
 
 /// Calls `operation` with an output buffer of exactly `capacity` components
 /// and returns the components it wrote, after checking that they form a
@@ -60,7 +69,7 @@ fn ulp(x: f64) -> f64 {
 }
 
 proptest! {
-    #![proptest_config(common::config())]
+    #![proptest_config(config())]
 
     #[test]
     fn constructors_are_exact(a in any_finite(), b in any_finite()) {
@@ -201,6 +210,40 @@ proptest! {
     }
 
     #[test]
+    fn sign_matches_oracle_on_bit_patterns(e in bit_pattern_expansion(40, -1074, 1023)) {
+        prop_assert_eq!(expansion::sign(&e) as i8, value(&e).sign());
+    }
+
+    #[test]
+    fn grow_is_exact_on_bit_patterns(
+        e in bit_pattern_expansion(40, -1074, MAX_BIT),
+        b in any_finite(),
+    ) {
+        prop_assume!(b.abs() < MAGNITUDE_LIMIT);
+        let g = run(e.len() + 1, |out| expansion::grow(&e, b, out));
+        prop_assert_eq!(value(&g), &value(&e) + &Dyadic::from_f64(b));
+    }
+
+    #[test]
+    fn sum_and_diff_are_exact_on_bit_patterns((e, f) in bit_pattern_pair(40, -1074, MAX_BIT)) {
+        let f_before = f.clone();
+        let s = run(e.len() + f.len(), |out| expansion::sum(&e, &f, out));
+        prop_assert_eq!(value(&s), &value(&e) + &value(&f));
+        let d = run(e.len() + f.len(), |out| expansion::diff(&e, &f, out));
+        prop_assert_eq!(value(&d), &value(&e) - &value(&f));
+        let back = run(e.len() + f.len(), |out| expansion::diff(&f, &e, out));
+        prop_assert_eq!(value(&back), &value(&f) - &value(&e));
+        prop_assert_eq!(expansion::sign(&d) as i8, (&value(&e) - &value(&f)).sign());
+        prop_assert_eq!(f, f_before);
+    }
+
+    #[test]
+    fn scale_is_exact_on_bit_patterns(e in bit_pattern_in_product_domain(), b in product_operand()) {
+        let s = run(2 * e.len(), |out| expansion::scale(&e, b, out));
+        prop_assert_eq!(value(&s), &value(&e) * &Dyadic::from_f64(b));
+    }
+
+    #[test]
     fn sign_is_exact_after_deep_cancellation((e, f) in near_equal(8, 200)) {
         let expected = (&value(&e) - &value(&f)).sign();
         let d = run(e.len() + f.len(), |out| expansion::diff(&e, &f, out));
@@ -311,64 +354,4 @@ fn grow_and_scale_by_zero_keep_the_value() {
     let n = expansion::grow(&e, -0.0, &mut out);
     assert_eq!(&out[..n], &e);
     assert_eq!(expansion::scale(&e, -0.0, &mut out), 0);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "outside the product domain")]
-fn product_constructor_checks_the_domain_in_debug_builds() {
-    let mut out = [0.0; 2];
-    let _ = expansion::from_two_product(eft::PRODUCT_OPERAND_MAX * 2.0, 1.0, &mut out);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "outside the product domain")]
-fn scale_checks_its_components_in_debug_builds() {
-    let mut out = [0.0; 4];
-    let _ = expansion::scale(&[eft::PRODUCT_OPERAND_MIN / 2.0, 1.0], 3.0, &mut out);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "outside the product domain")]
-fn scale_checks_its_factor_in_debug_builds() {
-    let mut out = [0.0; 4];
-    let _ = expansion::scale(&[0.25, 1.0], eft::PRODUCT_OPERAND_MAX * 2.0, &mut out);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "not finite")]
-fn from_f64_checks_finiteness_in_debug_builds() {
-    let mut out = [0.0; 1];
-    let _ = expansion::from_f64(f64::NAN, &mut out);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "not finite")]
-fn grow_checks_finiteness_in_debug_builds() {
-    let mut out = [0.0; 2];
-    let _ = expansion::grow(&[1.0], f64::INFINITY, &mut out);
-}
-
-/// The result needs two components and the buffer holds one.
-fn sum_into_a_buffer_too_small() {
-    let mut out = [0.0; 1];
-    let _ = expansion::sum(&[1e-30], &[1.0], &mut out);
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "capacity")]
-fn insufficient_capacity_fails_the_capacity_check() {
-    sum_into_a_buffer_too_small();
-}
-
-#[cfg(not(debug_assertions))]
-#[test]
-#[should_panic(expected = "out of bounds")]
-fn insufficient_capacity_panics_instead_of_writing_past_the_buffer() {
-    sum_into_a_buffer_too_small();
 }

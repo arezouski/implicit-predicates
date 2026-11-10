@@ -1,0 +1,77 @@
+//! Shared test infrastructure for the `indirect-predicates` workspace: the
+//! proptest configuration, input generators, structural checks of
+//! expansions, and exact values from the oracle.
+//!
+//! This crate is not published. The crates of the workspace use it as a
+//! dev-dependency only.
+//!
+//! The structural check ([`assert_valid_expansion`]) and the bit-pattern
+//! generators ([`bit_pattern_expansion`], [`bit_pattern_pair`]) read and
+//! write bit patterns directly and never call the arithmetic of
+//! `indirect-predicates-core`, since they are what that arithmetic is judged
+//! against. The other expansion generators are built with
+//! `indirect-predicates-core` and check every intermediate result.
+
+mod arena;
+mod bit_patterns;
+mod checks;
+mod expansions;
+mod values;
+
+pub use arena::{Applied, ArenaOp, PRODUCT_OPERAND_LIMIT, arena_op, product_working_space};
+pub use bit_patterns::{bit_pattern_expansion, bit_pattern_pair};
+pub use checks::{assert_valid_expansion, has_adjacent_components};
+pub use expansions::{expansion, expansion_with, expansion_within, near_equal};
+pub use values::{
+    any_finite, cancellation_that_rounds, correlated_pair, leaf, near_cancelling,
+    product_domain_bits, product_operand,
+};
+
+use indirect_predicates_oracle::Dyadic;
+use proptest::strategy::{Strategy, ValueTree};
+use proptest::test_runner::{Config as ProptestConfig, TestRunner};
+
+/// Number of cases per property when `PROPTEST_CASES` is not set.
+const DEFAULT_CASES: u32 = 2000;
+
+/// Proptest configuration shared by every property test.
+///
+/// The number of cases comes from the `PROPTEST_CASES` environment variable,
+/// defaulting to 2000.
+///
+/// # Panics
+///
+/// Panics if `PROPTEST_CASES` is set to something other than a
+/// non-negative integer.
+pub fn config() -> ProptestConfig {
+    let cases = match std::env::var("PROPTEST_CASES") {
+        Ok(text) => text
+            .parse()
+            .expect("PROPTEST_CASES must be a non-negative integer"),
+        Err(_) => DEFAULT_CASES,
+    };
+    ProptestConfig::with_cases(cases)
+}
+
+/// The exact value of the sum of `xs`.
+pub fn value(xs: &[f64]) -> Dyadic {
+    Dyadic::sum_of(xs)
+}
+
+/// `count` values drawn from `strategy` with a fixed seed, to measure what a
+/// generator produces.
+///
+/// # Panics
+///
+/// Panics if `strategy` rejects every value it tries.
+pub fn sample<S: Strategy>(strategy: S, count: usize) -> Vec<S::Value> {
+    let mut runner = TestRunner::deterministic();
+    (0..count)
+        .map(|_| {
+            strategy
+                .new_tree(&mut runner)
+                .expect("the strategy has no filters that could reject every value")
+                .current()
+        })
+        .collect()
+}

@@ -2,84 +2,30 @@
 //! room, keeps its spans valid, and agrees with a borrowed arena.
 #![cfg(feature = "alloc")]
 
-mod common;
-
-use common::{expansion_with, leaf, value};
 use indirect_predicates_core::{Scratch, Span};
+use indirect_predicates_test_support::{ArenaOp, arena_op, config, value};
 use proptest::prelude::*;
 
-/// One arena operation in a random sequence. Operand indices select, modulo
-/// their number, among the spans produced so far.
-#[derive(Clone, Debug)]
-enum Op {
-    Push(Vec<f64>),
-    Sum(usize, usize),
-    Diff(usize, usize),
-    Scale(usize, f64),
-    Product(usize, usize),
-}
-
-/// Operations on leaves in `2^-40 ..= 2^41`, with scale factors of at most 8
-/// significant bits in `2^-20 ..= 2^21`.
-fn op() -> impl Strategy<Value = Op> {
-    prop_oneof![
-        expansion_with(8, leaf(-40, 40, 53)).prop_map(Op::Push),
-        (any::<usize>(), any::<usize>()).prop_map(|(a, b)| Op::Sum(a, b)),
-        (any::<usize>(), any::<usize>()).prop_map(|(a, b)| Op::Diff(a, b)),
-        (any::<usize>(), leaf(-20, 20, 8)).prop_map(|(a, b)| Op::Scale(a, b)),
-        (any::<usize>(), any::<usize>()).prop_map(|(a, b)| Op::Product(a, b)),
-    ]
-}
-
-/// Whether `product` may take `span`: short, with components well inside the
-/// domain of `two_product`, so that a sequence of operations stays in domain
-/// and its working space stays modest.
-fn fits_product(scratch: &Scratch<'_>, span: Span) -> bool {
-    span.len() <= 4
-        && scratch
-            .get(span)
-            .iter()
-            .all(|c| (2f64.powi(-200)..=2f64.powi(200)).contains(&c.abs()))
-}
-
 /// Applies `op` to `scratch`, picking operands among `spans`, and records
-/// the span it produced. Operations on spans are skipped while there are
-/// none.
-fn apply_plain(scratch: &mut Scratch<'_>, spans: &mut Vec<Span>, op: &Op) -> Option<Span> {
-    let pick = |i: usize| spans[i % spans.len()];
-    if spans.is_empty() && !matches!(op, Op::Push(_)) {
-        return None;
-    }
-    let result = match op {
-        Op::Push(e) => scratch.push(e),
-        Op::Sum(a, b) => scratch.sum(pick(*a), pick(*b)),
-        Op::Diff(a, b) => scratch.diff(pick(*a), pick(*b)),
-        Op::Scale(a, f) => scratch.scale(pick(*a), *f),
-        Op::Product(a, b) => {
-            let (a, b) = (pick(*a), pick(*b));
-            if !(fits_product(scratch, a) && fits_product(scratch, b)) {
-                return None;
-            }
-            scratch.product(a, b)
-        }
-    };
-    let span = result.ok();
+/// the span it produced.
+fn apply(scratch: &mut Scratch<'_>, spans: &mut Vec<Span>, op: &ArenaOp) -> Option<Span> {
+    let span = op.apply(scratch, spans)?.result.ok();
     spans.extend(span);
     span
 }
 
 proptest! {
-    #![proptest_config(common::config())]
+    #![proptest_config(config())]
 
     #[test]
-    fn growable_matches_borrowed(ops in prop::collection::vec(op(), 0..=10)) {
+    fn growable_matches_borrowed(ops in prop::collection::vec(arena_op(), 0..=10)) {
         let mut buf = vec![f64::NAN; 1 << 16];
         let mut borrowed = Scratch::borrowed(&mut buf);
         let mut owned = Scratch::growable(1);
         let (mut borrowed_spans, mut owned_spans) = (Vec::new(), Vec::new());
         for op in &ops {
-            let expected = apply_plain(&mut borrowed, &mut borrowed_spans, op);
-            let actual = apply_plain(&mut owned, &mut owned_spans, op);
+            let expected = apply(&mut borrowed, &mut borrowed_spans, op);
+            let actual = apply(&mut owned, &mut owned_spans, op);
             prop_assert_eq!(actual, expected, "{:?}", op);
             prop_assert_eq!(owned.used(), borrowed.used());
             prop_assert_eq!(owned.high_water(), borrowed.high_water());

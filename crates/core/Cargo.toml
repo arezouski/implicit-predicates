@@ -18,4 +18,5 @@ workspace = true
 
 [dev-dependencies]
 indirect-predicates-oracle = { path = "../oracle" }
+indirect-predicates-test-support = { path = "../../test-support" }
 proptest = "1"

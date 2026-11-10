@@ -1,16 +1,15 @@
 //! Exactness of the error-free transformations, checked against the oracle.
 
-mod common;
-
-use common::{
-    any_finite, cancellation_that_rounds, correlated_pair, near_cancelling, product_operand, value,
-};
 use indirect_predicates_core::eft;
 use indirect_predicates_oracle::Dyadic;
+use indirect_predicates_test_support::{
+    any_finite, cancellation_that_rounds, config, correlated_pair, near_cancelling,
+    product_operand, value,
+};
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(common::config())]
+    #![proptest_config(config())]
 
     #[test]
     fn two_sum_is_exact(a in any_finite(), b in any_finite()) {

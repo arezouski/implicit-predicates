@@ -1,4 +1,5 @@
-//! Structural checks on the outputs of the functions under test.
+//! Structural checks on expansions, read from the bit patterns of their
+//! components without the arithmetic under test.
 
 /// Panics unless `e` is a valid expansion in the sense of
 /// `indirect_predicates_core::expansion`: every component is finite and
@@ -24,8 +25,16 @@ pub fn assert_valid_expansion(e: &[f64]) {
     }
 }
 
+/// Returns `true` if two neighbouring components of `e` are *adjacent*: the
+/// lowest set bit of one lies just above the highest set bit of the other,
+/// as in `[3.0, 4.0]`. The expansion invariant allows this.
+pub fn has_adjacent_components(e: &[f64]) -> bool {
+    e.windows(2)
+        .any(|pair| lowest_bit(pair[1]) == highest_bit(pair[0]) + 1)
+}
+
 /// The exponent of the highest set bit of a finite nonzero `x`.
-fn highest_bit(x: f64) -> i32 {
+pub(crate) fn highest_bit(x: f64) -> i32 {
     let (significand, scale) = integer_significand(x);
     let leading_zeros = i32::try_from(significand.leading_zeros())
         .expect("a u64 has at most 64 leading zeros, which fits in i32");
@@ -33,15 +42,17 @@ fn highest_bit(x: f64) -> i32 {
 }
 
 /// The exponent of the lowest set bit of a finite nonzero `x`.
-fn lowest_bit(x: f64) -> i32 {
+pub(crate) fn lowest_bit(x: f64) -> i32 {
     let (significand, scale) = integer_significand(x);
     let trailing_zeros = i32::try_from(significand.trailing_zeros())
         .expect("a u64 has at most 64 trailing zeros, which fits in i32");
     scale + trailing_zeros
 }
 
-/// `(s, q)` with `|x| = s * 2^q` and `s` an integer below `2^53`.
-fn integer_significand(x: f64) -> (u64, i32) {
+/// `(s, q)` with `|x| = s * 2^q` and `s` an integer below `2^53`: the
+/// significand field of `x`, with its implicit bit when `x` is normal, and
+/// the weight of its lowest bit.
+pub(crate) fn integer_significand(x: f64) -> (u64, i32) {
     let bits = x.to_bits();
     let biased =
         i32::try_from((bits >> 52) & 0x7FF).expect("an 11-bit biased exponent fits in i32");

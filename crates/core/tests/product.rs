@@ -2,20 +2,39 @@
 //! left at the previous top and the working space accounted for in the
 //! high-water mark.
 
-mod common;
-
-use common::{assert_valid_expansion, expansion_within, value};
 use indirect_predicates_core::{Mark, Scratch, ScratchExhausted, Span};
+use indirect_predicates_test_support::{
+    assert_valid_expansion, bit_pattern_expansion, config, expansion_within, product_domain_bits,
+    product_working_space, value,
+};
 use proptest::prelude::*;
 
-/// The space `product` needs above the top while it works, for operands of
-/// `la` and `lb` components.
-fn working_space(la: usize, lb: usize) -> usize {
-    if la == 0 || lb == 0 {
-        0
-    } else {
-        4 * la * lb + 2 * la.max(lb)
-    }
+/// Expansions of up to 16 components from bit patterns, every component in
+/// the product domain.
+fn bit_pattern_operand() -> impl Strategy<Value = Vec<f64>> {
+    let (low, high) = product_domain_bits();
+    bit_pattern_expansion(16, low, high)
+}
+
+/// Checks that the product of `e` and `f` on an arena is exact and valid,
+/// that it ends just above the operands and that its working space is the
+/// documented one, and that the operands are untouched.
+fn assert_exact_product(e: &[f64], f: &[f64]) {
+    let mut buf = vec![f64::NAN; e.len() + f.len() + product_working_space(e.len(), f.len())];
+    let mut s = Scratch::borrowed(&mut buf);
+    let (se, sf) = (s.push(e).unwrap(), s.push(f).unwrap());
+    let (used_before, mark) = (s.used(), s.mark());
+    let p = s.product(se, sf).unwrap();
+    assert_valid_expansion(s.get(p));
+    assert_eq!(value(s.get(p)), &value(e) * &value(f));
+    assert_eq!(s.used(), used_before + p.len());
+    assert_eq!(
+        s.high_water(),
+        used_before + product_working_space(e.len(), f.len())
+    );
+    assert_starts_at(&mut s, mark, p);
+    assert_eq!(s.get(se), e);
+    assert_eq!(s.get(sf), f);
 }
 
 /// Checks that `p`, the last result, starts at `mark`, the top before the
@@ -32,22 +51,16 @@ fn assert_starts_at(s: &mut Scratch<'_>, mark: Mark, p: Span) {
 }
 
 proptest! {
-    #![proptest_config(common::config())]
+    #![proptest_config(config())]
 
     #[test]
     fn product_is_exact(e in expansion_within(8, 100), f in expansion_within(8, 100)) {
-        let mut buf = vec![f64::NAN; 512];
-        let mut s = Scratch::borrowed(&mut buf);
-        let (se, sf) = (s.push(&e).unwrap(), s.push(&f).unwrap());
-        let (used_before, mark) = (s.used(), s.mark());
-        let p = s.product(se, sf).unwrap();
-        assert_valid_expansion(s.get(p));
-        prop_assert_eq!(value(s.get(p)), &value(&e) * &value(&f));
-        prop_assert_eq!(s.used(), used_before + p.len());
-        prop_assert_eq!(s.high_water(), used_before + working_space(e.len(), f.len()));
-        assert_starts_at(&mut s, mark, p);
-        prop_assert_eq!(s.get(se), e.as_slice());
-        prop_assert_eq!(s.get(sf), f.as_slice());
+        assert_exact_product(&e, &f);
+    }
+
+    #[test]
+    fn product_is_exact_on_bit_patterns(e in bit_pattern_operand(), f in bit_pattern_operand()) {
+        assert_exact_product(&e, &f);
     }
 
     #[test]

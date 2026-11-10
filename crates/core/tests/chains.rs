@@ -41,11 +41,11 @@
 //! arena evaluator still asserts the domain before every product, so that a
 //! flaw in this argument would fail loudly.
 
-mod common;
-
-use common::{assert_valid_expansion, near_equal, sample, value};
 use indirect_predicates_core::{Scratch, Span, eft, expansion};
 use indirect_predicates_oracle::Dyadic;
+use indirect_predicates_test_support::{
+    assert_valid_expansion, config, leaf, near_equal, sample, value,
+};
 use proptest::prelude::*;
 
 /// The number of leaf slots an expression can refer to.
@@ -166,9 +166,9 @@ fn leaves() -> impl Strategy<Value = Vec<f64>> {
         )
     };
     prop_oneof![
-        slots(common::leaf(-100, 99, 53).boxed()),
+        slots(leaf(-100, 99, 53).boxed()),
         (-69i32..=69)
-            .prop_flat_map(move |centre| slots(common::leaf(centre - 30, centre + 30, 53).boxed())),
+            .prop_flat_map(move |centre| slots(leaf(centre - 30, centre + 30, 53).boxed())),
     ]
 }
 
@@ -262,7 +262,7 @@ fn difference_of_near_equal_products() -> impl Strategy<Value = Expr> {
 }
 
 proptest! {
-    #![proptest_config(common::config())]
+    #![proptest_config(config())]
 
     #[test]
     fn random_expressions_match_oracle(e in expr(MAX_DEGREE, 4), xs in leaves()) {
