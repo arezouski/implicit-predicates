@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core",
+    "crates/gen",
+    "crates/oracle",
+    "crates/indirect-predicates",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+keywords = ["geometry", "predicates", "robust", "exact", "mesh"]
+categories = ["mathematics", "algorithms"]
+
+[workspace.dependencies]
+indirect-predicates-core = { version = "0.0.0", path = "crates/core" }
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"

@@ -1,0 +1,13 @@
+[package]
+name = "indirect-predicates-oracle"
+description = "Slow exact reference implementation used to test indirect-predicates"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
