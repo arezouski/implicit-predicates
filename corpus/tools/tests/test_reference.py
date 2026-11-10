@@ -1,0 +1,98 @@
+"""Tests for the reference download logic. They never use the network."""
+
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import reference  # noqa: E402
+
+
+def git(cwd, *args):
+    return subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        cwd=cwd, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+class FetchTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        self.origin = self.tmp / "origin"
+        self.origin.mkdir()
+        git(self.origin, "init", "-q")
+        (self.origin / "a.txt").write_text("one\n")
+        git(self.origin, "add", "a.txt")
+        git(self.origin, "commit", "-q", "-m", "first")
+        self.first = git(self.origin, "rev-parse", "HEAD")
+        (self.origin / "a.txt").write_text("two\n")
+        git(self.origin, "commit", "-q", "-am", "second")
+        self.second = git(self.origin, "rev-parse", "HEAD")
+        self.dest = self.tmp / "data" / "checkout"
+
+    def repo(self, commit, dest=None):
+        return reference.Repo(str(self.origin), commit, dest or self.dest)
+
+    def test_fetch_creates_checkout_at_pinned_commit(self):
+        reference.fetch([self.repo(self.first)])
+        self.assertEqual(git(self.dest, "rev-parse", "HEAD"), self.first)
+        self.assertEqual((self.dest / "a.txt").read_text(), "one\n")
+
+    def test_fetch_is_idempotent(self):
+        reference.fetch([self.repo(self.first)])
+        marker = self.dest / "a.txt"
+        before = marker.stat().st_mtime_ns
+        reference.fetch([self.repo(self.first)])
+        self.assertEqual(marker.stat().st_mtime_ns, before)
+        self.assertEqual(git(self.dest, "rev-parse", "HEAD"), self.first)
+
+    def test_refuses_a_checkout_at_another_commit(self):
+        reference.fetch([self.repo(self.first)])
+        with self.assertRaises(reference.ReferenceError):
+            reference.fetch([self.repo(self.second)])
+        self.assertEqual(git(self.dest, "rev-parse", "HEAD"), self.first)
+
+    def test_refuses_a_dirty_checkout(self):
+        reference.fetch([self.repo(self.first)])
+        (self.dest / "a.txt").write_text("edited\n")
+        with self.assertRaises(reference.ReferenceError):
+            reference.fetch([self.repo(self.first)])
+        self.assertEqual((self.dest / "a.txt").read_text(), "edited\n")
+
+    def test_untracked_files_do_not_make_a_checkout_dirty(self):
+        reference.fetch([self.repo(self.first)])
+        (self.dest / "output.tet").write_text("generated\n")
+        reference.fetch([self.repo(self.first)])
+
+    def test_a_bad_repository_fails_before_anything_is_touched(self):
+        other = self.tmp / "data" / "other"
+        reference.fetch([self.repo(self.first)])
+        with self.assertRaises(reference.ReferenceError):
+            reference.fetch([self.repo(self.second), self.repo(self.first, other)])
+        self.assertFalse(other.exists())
+
+    def test_unknown_commit_leaves_no_partial_checkout(self):
+        with self.assertRaises(reference.ReferenceError):
+            reference.fetch([self.repo("0" * 40)])
+        self.assertFalse(self.dest.exists())
+
+
+class ConstantsTests(unittest.TestCase):
+    def test_pinned_hashes_are_full_and_match_the_short_ones(self):
+        self.assertEqual(len(reference.CDT_COMMIT), 40)
+        self.assertEqual(len(reference.IP_COMMIT), 40)
+        self.assertTrue(reference.CDT_COMMIT.startswith("2a71f943b5ff"))
+        self.assertTrue(reference.IP_COMMIT.startswith("f8f243d18a68"))
+
+    def test_data_dir_is_inside_the_corpus_directory(self):
+        self.assertEqual(reference.DATA_DIR.name, "data")
+        self.assertEqual(reference.DATA_DIR.parent.name, "corpus")
+
+
+if __name__ == "__main__":
+    unittest.main()
