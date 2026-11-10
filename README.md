@@ -4,9 +4,13 @@ Exact geometric predicates in Rust for explicit points and for *implicit*
 points: points defined by an unevaluated construction, such as a point on an
 edge or inside a triangle.
 
-> **Status: early development.** Nothing here is usable yet. The crates are
-> placeholders while the first release is being built, and every API is
-> subject to change.
+> **Status: early development.** There are no predicates yet. The exact
+> arithmetic they will be built on is in place: `indirect-predicates-core`
+> provides error-free transformations, floating-point expansions and a
+> scratch arena for exact computations, and `indirect-predicates-oracle`
+> provides the exact reference used to test them. `indirect-predicates` and
+> `indirect-predicates-gen` are still placeholders, and every API is subject
+> to change.
 
 ## Why
 
@@ -46,6 +50,9 @@ perturbed `insphere`, over explicit points and points on a segment.
 | [`indirect-predicates-core`](crates/core) | Shared arithmetic building blocks. `no_std` |
 | [`indirect-predicates-gen`](crates/gen) | Code generator for predicates and point types |
 | [`indirect-predicates-oracle`](crates/oracle) | Slow exact reference implementation, used for testing |
+
+Two more crates are not published: `benches`, the benchmarks, and
+`test-support`, the test infrastructure shared by the crates above.
 
 ## Minimum supported Rust version
 

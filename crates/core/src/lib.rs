@@ -28,7 +28,7 @@ extern crate alloc;
 pub mod eft;
 pub mod expansion;
 pub mod scratch;
-pub mod sign;
+mod sign;
 
 pub use scratch::{Mark, Scratch, ScratchExhausted, Span};
 pub use sign::Sign;

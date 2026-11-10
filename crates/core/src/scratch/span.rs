@@ -4,8 +4,8 @@ use core::ops::Range;
 
 /// The position of an expansion in a [`Scratch`](super::Scratch) arena.
 ///
-/// Spans compare equal when they have the same position and length, whatever
-/// their contents. A span is meaningful only for the arena that created it;
+/// Spans compare equal, and hash alike, when they have the same position and
+/// length, whatever their contents. A span is meaningful only for the arena that created it;
 /// see the [module documentation](crate::scratch).
 ///
 /// # Examples
@@ -20,14 +20,15 @@ use core::ops::Range;
 /// assert_eq!(scratch.get(span), &[1e-20, 1.0]);
 /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     pub(super) start: u32,
     pub(super) len: u32,
 }
 
 /// A saved top of a [`Scratch`](super::Scratch) arena, to return to with
-/// [`Scratch::reset`](super::Scratch::reset).
+/// [`Scratch::reset`](super::Scratch::reset). Marks compare equal when they
+/// save the same top.
 ///
 /// # Examples
 ///
@@ -38,11 +39,13 @@ pub struct Span {
 /// let mut scratch = Scratch::borrowed(&mut buf);
 /// let mark = scratch.mark();
 /// scratch.push(&[1.0])?;
+/// assert_ne!(scratch.mark(), mark);
 /// scratch.reset(mark);
+/// assert_eq!(scratch.mark(), mark);
 /// assert_eq!(scratch.used(), 0);
 /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
 /// ```
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mark(pub(super) u32);
 
 impl Span {

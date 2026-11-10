@@ -14,7 +14,11 @@ Currently it provides:
 - `expansion`, exact values represented as sums of `f64` components, with
   exact addition, subtraction, scaling and sign, all without allocation;
 - `Scratch`, a bump arena over a borrowed buffer that holds the expansions
-  of a computation and runs those operations on them.
+  of a computation and runs those operations on them, as well as the exact
+  product of two expansions.
+
+The exact products require operands in a documented range, the product
+domain (`eft::in_product_domain`); debug builds check it.
 
 The optional `alloc` feature adds `Scratch::growable`, an arena that grows on
 the heap so the exact arithmetic can always complete. Without it the crate

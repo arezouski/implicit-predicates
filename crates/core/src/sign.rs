@@ -1,11 +1,13 @@
 //! The sign of a quantity: the result type of every predicate.
 
+use core::cmp::Ordering;
 use core::ops::{Mul, Neg};
 
 /// The sign of a real quantity.
 ///
-/// The discriminants are `-1`, `0` and `1`, so `sign as i8` gives the usual
-/// integer sign.
+/// The discriminants are `-1`, `0` and `1`, so `sign as i8` (or
+/// `i8::from(sign)`) gives the usual integer sign, and signs are ordered as
+/// those integers: `Negative < Zero < Positive`.
 ///
 /// # Examples
 ///
@@ -15,8 +17,9 @@ use core::ops::{Mul, Neg};
 /// assert_eq!(Sign::Negative as i8, -1);
 /// assert_eq!(Sign::Zero as i8, 0);
 /// assert_eq!(Sign::Positive as i8, 1);
+/// assert!(Sign::Negative < Sign::Zero && Sign::Zero < Sign::Positive);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(i8)]
 pub enum Sign {
     /// Strictly less than zero.
@@ -142,6 +145,43 @@ impl Mul for Sign {
             (Sign::Zero, _) | (_, Sign::Zero) => Sign::Zero,
             (a, b) if a == b => Sign::Positive,
             _ => Sign::Negative,
+        }
+    }
+}
+
+impl From<Sign> for i8 {
+    /// The integer sign: `-1`, `0` or `1`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indirect_predicates_core::Sign;
+    ///
+    /// assert_eq!(i8::from(Sign::Negative), -1);
+    /// assert_eq!(i8::from(Sign::Positive), 1);
+    /// ```
+    fn from(sign: Sign) -> i8 {
+        sign as i8
+    }
+}
+
+impl From<Ordering> for Sign {
+    /// The sign of `a - b` when `a.cmp(&b)` is `ordering`: `Less` is
+    /// negative, `Equal` zero and `Greater` positive.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indirect_predicates_core::Sign;
+    ///
+    /// assert_eq!(Sign::from(3.cmp(&5)), Sign::Negative);
+    /// assert_eq!(Sign::from(5.cmp(&5)), Sign::Zero);
+    /// ```
+    fn from(ordering: Ordering) -> Sign {
+        match ordering {
+            Ordering::Less => Sign::Negative,
+            Ordering::Equal => Sign::Zero,
+            Ordering::Greater => Sign::Positive,
         }
     }
 }

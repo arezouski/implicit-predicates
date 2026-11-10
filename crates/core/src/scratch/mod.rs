@@ -101,6 +101,7 @@ impl<'a> Scratch<'a> {
     /// assert_eq!(scratch.capacity(), 64);
     /// assert_eq!(scratch.used(), 0);
     /// ```
+    #[must_use]
     pub fn borrowed(buf: &'a mut [f64]) -> Scratch<'a> {
         Scratch {
             storage: Storage::Borrowed(buf),

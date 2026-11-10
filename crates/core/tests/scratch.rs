@@ -272,6 +272,23 @@ fn high_water_counts_the_worst_case_reservation() {
 }
 
 #[test]
+fn marks_compare_by_position_and_spans_hash_by_value() {
+    use std::collections::HashSet;
+    let mut buf = [0.0; 4];
+    let mut s = Scratch::borrowed(&mut buf);
+    let base = s.mark();
+    assert_eq!(base, s.mark());
+    let first = s.push(&[1.0]).unwrap();
+    assert_ne!(base, s.mark());
+    s.reset(base);
+    let again = s.push(&[2.0]).unwrap();
+    let spans: HashSet<Span> = [first, again, s.push(&[3.0]).unwrap()]
+        .into_iter()
+        .collect();
+    assert_eq!(spans.len(), 2);
+}
+
+#[test]
 fn spans_compare_by_position_and_length() {
     let mut buf = [0.0; 4];
     let mut s = Scratch::borrowed(&mut buf);

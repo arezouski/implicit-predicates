@@ -336,8 +336,9 @@ fn sum_and_diff_are_exact_with_subnormals() {
 fn sum_of_a_rounding_tie_followed_by_cancellation_is_exact() {
     // FAST-EXPANSION-SUM gives `[0.5, -3.0]` here: `2^52 + 0.5` is a tie that
     // rounds to even, then `2^52 - (2^52 + 3)` is exact. That output is
-    // nonoverlapping but not strongly nonoverlapping, which disproves the
-    // invariant FAST-EXPANSION-SUM needs from its inputs.
+    // nonoverlapping but not strongly nonoverlapping, so FAST-EXPANSION-SUM's
+    // output does not always meet the precondition it needs from its inputs,
+    // and that precondition is not preserved when sums are chained.
     let two_52 = 4_503_599_627_370_496.0;
     let e = [0.5, two_52];
     let f = [-(two_52 + 3.0)];

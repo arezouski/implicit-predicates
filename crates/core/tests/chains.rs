@@ -5,10 +5,10 @@
 //!
 //! # Why every product stays in the domain of `two_product`
 //!
-//! Leaf slots hold zero, an `f64` with magnitude in `2^-100 ..= 2^100`, or
-//! (for the near-equal pairs) an exact sum of up to 8 such values, whose
-//! components add up in magnitude to less than `2^103`. Generated
-//! expressions nest at most 4 levels, so they have at most 16 leaf
+//! Leaf slots hold zero, an `f64` with magnitude in `2^-100 .. 2^100`, or
+//! (for the near-equal pairs) the exact sum, built with `grow` and `sum`, of
+//! up to 16 such values (`f` is `e` plus `small`, with up to 8 leaves each).
+//! Generated expressions nest at most 4 levels, so they have at most 16 leaf
 //! occurrences, and have total degree at most 4, so each operand of a
 //! product has degree at most 3.
 //!
@@ -26,20 +26,25 @@
 //!   two values by two others, and zero elimination only drops zeros. Hence
 //!   `M(sum or diff) <= (M(a) + M(b)) c`, `M(scale(e, b)) <= M(e) |b| c` and
 //!   `M(product) <= M(a) M(b) c`, where `c = (1 + 2^-52)^K` for the number
-//!   `K` of steps of the whole evaluation. `K` is far below `2^51`, so
-//!   `c < 2`, and every component of an expansion is at most its mass,
-//!   which is at most `c B(x)`. Here `B(x)` is the expression `x` evaluated
-//!   with every difference turned into a sum and every leaf replaced by
-//!   `2^103`. By induction on `x`, with `n` leaf occurrences and degree `d`,
-//!   `B(x) <= 2^(n - 1) 2^(103 d)`; for a product operand, `n <= 16` and
-//!   `d <= 3`, so `B(x) <= 2^324` and its components are below `2^325`.
+//!   `K` of steps of the whole evaluation, counting for each use of a leaf
+//!   slot the steps that built it. `K` is far below `2^51`, so `c < 2`. A
+//!   leaf slot has mass at most `16 * 2^100 c = 2^104 c`, so every component
+//!   of an expansion is at most its mass, which is at most `c B(x)`. Here
+//!   `B(x)` is the expression `x` evaluated with every difference turned
+//!   into a sum and every leaf replaced by `2^104`. By induction on `x`, with
+//!   `n` leaf occurrences and degree `d`, `B(x) <= 2^(n - 1) 2^(104 d)`; for
+//!   a product operand, `n <= 16` and `d <= 3`, so `B(x) <= 2^327` and its
+//!   components are below `2^328`, under the `2^480` the domain allows.
 //!
 //! The rewritten expressions of the cancelling and near-equal properties
 //! apply commutativity, associativity and distributivity, identities that
-//! `B` satisfies too, and every product operand in a rewrite is the rewrite
-//! of a subexpression of the original, so the same bounds hold for them. The
-//! arena evaluator still asserts the domain before every product, so that a
-//! flaw in this argument would fail loudly.
+//! `B` satisfies too, so a rewrite has the same `B` as what it rewrites.
+//! Every product operand in a rewrite is the rewrite of an original product
+//! operand or of a summand of one, so its `B` and its degree are at most
+//! those of that operand, and the same bounds hold for it, although
+//! distributivity can raise its number of leaf occurrences. The arena
+//! evaluator still asserts the domain before every product, so that a flaw
+//! in this argument would fail loudly.
 
 use indirect_predicates_core::{Scratch, Span, eft, expansion};
 use indirect_predicates_oracle::Dyadic;
