@@ -1,5 +1,6 @@
 """Tests for the reference download logic. They never use the network."""
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -7,7 +8,8 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+TOOLS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(TOOLS))
 
 import reference  # noqa: E402
 
@@ -138,9 +140,14 @@ class ConstantsTests(unittest.TestCase):
         )
         self.assertEqual(reference.NFG_DIR, reference.REFERENCE_DIR / "nfg")
 
-    def test_data_dir_is_inside_the_corpus_directory(self):
-        self.assertEqual(reference.DATA_DIR.name, "data")
-        self.assertEqual(reference.DATA_DIR.parent.name, "corpus")
+    def test_data_dir_defaults_to_the_corpus_directory(self):
+        # Import the module afresh without CORPUS_DATA_DIR, which may be set
+        # in the environment of the tests.
+        env = {k: v for k, v in os.environ.items() if k != "CORPUS_DATA_DIR"}
+        out = subprocess.run([sys.executable, "-c", "import reference; print(reference.DATA_DIR)"],
+                             cwd=TOOLS, env=env, capture_output=True, text=True,
+                             check=True).stdout.strip()
+        self.assertEqual(Path(out), (TOOLS.parent / "data").resolve())
 
 
 if __name__ == "__main__":

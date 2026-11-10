@@ -16,10 +16,16 @@
 //
 // Before main starts, any IPCORPUS_OUT and IPCORPUS_OUT.partial left by an
 // earlier run are removed. The file is written to IPCORPUS_OUT plus
-// ".partial" when the process exits (return from main or exit()), then
-// renamed to IPCORPUS_OUT. A run that calls `abandon` (the instrumented
-// mesher does so when it reports an error), aborts or is killed leaves no
-// file at all.
+// ".partial" when the process exits (return from main or exit(), with any
+// status), then renamed to IPCORPUS_OUT. A run that calls `abandon` (the
+// instrumented mesher does so at the start of its error routine), aborts or
+// is killed leaves no file at all.
+//
+// So a missing file means a failed run, but a file does not by itself mean
+// a successful one: a process that called exit() with a non-zero status
+// without going through `abandon` would still write one. The pinned mesher
+// has no such path (it leaves only through its error routine, a return of 0
+// from main or a crash), and the tools also require exit status 0.
 //
 // The recorder keeps global state and is not thread-safe: the recorded
 // program must evaluate predicates from a single thread.

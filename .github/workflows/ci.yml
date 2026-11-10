@@ -104,10 +104,14 @@ jobs:
     # downloaded and no corpus is generated. The libraries are built with
     # AVX2 and FMA, which GitHub's x86_64 runners support.
     runs-on: ubuntu-latest
+    # Non-blocking until it has run green once: it compiles third-party code
+    # whose behaviour depends on the compiler of the runner.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: c++ --version
+      - run: python3 -m unittest discover corpus/tools/tests
       - run: python3 corpus/tools/corpus.py fetch-reference
       - run: cargo test --manifest-path ffi-ref/Cargo.toml
       - run: cargo bench --manifest-path ffi-ref/Cargo.toml --no-run
