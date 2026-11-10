@@ -2,7 +2,9 @@
 //!
 //! A [`Scratch`] arena hands out the memory for the expansions that a
 //! computation builds step by step. Its memory is a buffer the caller lends
-//! it: nothing allocates.
+//! it ([`Scratch::borrowed`]), so nothing allocates. With the `alloc` feature
+//! an arena can instead own its memory and grow on the heap
+//! (`Scratch::growable`).
 //!
 //! # Model
 //!
@@ -24,7 +26,9 @@
 //!   unchanged. [`Scratch::high_water`] tells how much of the buffer a
 //!   computation needed, which is how to size the buffer.
 //!
-//! An arena uses at most `u32::MAX` components of its buffer.
+//! An arena uses at most `u32::MAX` components of its buffer. An arena that
+//! grows fails with [`ScratchExhausted`] only when an operation needs more
+//! than that.
 //!
 //! A span means something only to the arena that created it, and only while
 //! the top stays above it. Using a span after a [`reset`](Scratch::reset)
@@ -57,6 +61,8 @@
 //! ```
 
 mod error;
+#[cfg(feature = "alloc")]
+mod growable;
 mod product;
 mod reservation;
 mod span;

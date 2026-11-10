@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --workspace
+      - run: cargo test --workspace --all-features
 
   msrv:
     runs-on: ubuntu-latest
@@ -55,6 +55,7 @@ jobs:
       - run: cargo build -p indirect-predicates-core --target thumbv7em-none-eabihf
       - run: cargo build -p indirect-predicates --no-default-features --target thumbv7em-none-eabihf
       - run: cargo build -p indirect-predicates --target wasm32-unknown-unknown
+      - run: cargo build -p indirect-predicates-core --features alloc --target wasm32-unknown-unknown
 
   docs:
     runs-on: ubuntu-latest

@@ -14,9 +14,17 @@
 //!   the expansions of a computation and runs those operations on them, as
 //!   well as the exact product of two expansions.
 //!
+//!
+//! The optional `alloc` feature adds an owned arena that grows on the heap,
+//! `Scratch::growable`, so the exact arithmetic can always complete. Without
+//! it nothing allocates.
+//!
 //! **Status: early development.** The API is incomplete and may change.
 
 #![no_std]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 pub mod eft;
 pub mod expansion;

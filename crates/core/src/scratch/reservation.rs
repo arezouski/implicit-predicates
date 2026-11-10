@@ -75,4 +75,14 @@ mod tests {
         assert_eq!((s.used(), s.high_water()), (1, 1));
         assert_eq!(s.reserve(3), Ok(4));
     }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn growable_reservations_past_u32_max_fail_before_allocating() {
+        let mut s = Scratch::growable(2);
+        let _ = s.push(&[1.0]).unwrap();
+        assert_eq!(s.reserve(u64::from(u32::MAX)), Err(ScratchExhausted));
+        assert_eq!(s.reserve(u64::MAX), Err(ScratchExhausted));
+        assert_eq!((s.used(), s.capacity(), s.high_water()), (1, 2, 1));
+    }
 }

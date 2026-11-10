@@ -16,6 +16,10 @@ Currently it provides:
 - `Scratch`, a bump arena over a borrowed buffer that holds the expansions
   of a computation and runs those operations on them.
 
+The optional `alloc` feature adds `Scratch::growable`, an arena that grows on
+the heap so the exact arithmetic can always complete. Without it the crate
+never allocates.
+
 Most users should depend on `indirect-predicates` instead.
 
 ## License
