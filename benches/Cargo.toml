@@ -12,12 +12,14 @@ workspace = true
 
 [dependencies]
 indirect-predicates-core = { path = "../crates/core" }
+indirect-predicates-corpus = { path = "../corpus" }
+geometry-predicates = "0.3.0"
+robust = "1.2.0"
 
 [dev-dependencies]
 indirect-predicates-oracle = { path = "../crates/oracle" }
 indirect-predicates-test-support = { path = "../test-support" }
 criterion = { version = "0.8", default-features = false }
-geometry-predicates = "0.3.0"
 
 [[bench]]
 name = "eft"
@@ -29,4 +31,8 @@ harness = false
 
 [[bench]]
 name = "det3"
+harness = false
+
+[[bench]]
+name = "predicates"
 harness = false

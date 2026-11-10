@@ -8,7 +8,12 @@
 //!   compared with `geometry-predicates` where it has an equivalent;
 //! - `det3`: an exact 3x3 determinant built on the arena, over random,
 //!   nearly singular and exactly singular matrices, which shows what the
-//!   fused multiply-add changes in a realistic workload.
+//!   fused multiply-add changes in a realistic workload;
+//! - `predicates`: `orient3d` and `insphere` on explicit points, for the
+//!   `robust` and `geometry-predicates` crates and an unprotected `f64`
+//!   determinant, over random, nearly degenerate, exactly degenerate and
+//!   recorded inputs. Adding a contender is adding a row to the table in that
+//!   file.
 //!
 //! This library holds the deterministic input builders and the seeds they
 //! use, and the determinant routine, shared by the benchmarks and by the
@@ -19,6 +24,8 @@
 //! Run everything with `cargo bench -p indirect-predicates-benches`, and
 //! with `RUSTFLAGS="-C target-cpu=native"` to enable the fused
 //! multiply-add on a CPU that has it.
+
+pub mod predicates;
 
 use indirect_predicates_core::{Scratch, Sign, Span, expansion};
 
