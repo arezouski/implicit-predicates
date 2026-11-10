@@ -216,11 +216,28 @@ impl Corpus {
         Ok(())
     }
 
-    fn implicit_count(&self, call: &Call) -> usize {
+    pub(crate) fn implicit_count(&self, call: &Call) -> usize {
         call.points()
             .iter()
             .filter(|&&p| !self.is_explicit(p))
             .count()
+    }
+
+    pub(crate) fn stratum_of(&self, call: &Call) -> Stratum {
+        Stratum {
+            predicate: call.predicate,
+            implicit: self.implicit_count(call) as u8,
+            zero: call.sign == 0,
+        }
+    }
+
+    pub(crate) fn counter_key_of(&self, call: &Call) -> CounterKey {
+        CounterKey {
+            predicate: call.predicate,
+            implicit: self.implicit_count(call) as u8,
+            sign: call.sign,
+            stage: call.stage,
+        }
     }
 
     fn validate_calls(&self) -> Result<(), CorpusError> {
@@ -251,12 +268,7 @@ impl Corpus {
     fn validate_statistics(&self) -> Result<(), CorpusError> {
         let mut kept: BTreeMap<Stratum, u64> = BTreeMap::new();
         for call in &self.calls {
-            let stratum = Stratum {
-                predicate: call.predicate,
-                implicit: self.implicit_count(call) as u8,
-                zero: call.sign == 0,
-            };
-            *kept.entry(stratum).or_insert(0) += 1;
+            *kept.entry(self.stratum_of(call)).or_insert(0) += 1;
         }
         for (stratum, n) in &kept {
             if self.sampling.get(stratum).map(|s| s.kept) != Some(*n) {

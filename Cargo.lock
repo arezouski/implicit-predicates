@@ -276,6 +276,9 @@ dependencies = [
 [[package]]
 name = "indirect-predicates-corpus"
 version = "0.0.0"
+dependencies = [
+ "indirect-predicates-oracle",
+]
 
 [[package]]
 name = "indirect-predicates-gen"

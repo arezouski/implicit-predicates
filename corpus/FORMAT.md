@@ -69,10 +69,23 @@ a truncated file is an error.
 
 ## LNC parameter
 
-An LNC point lies on the line through its two parents `p` and `q`. The
-parameter `t = 0` is the first parent `p` and `t = 1` is the second parent
-`q`.
+An LNC point lies on the line through its two parents `p` and `q`. Its
+coordinates are `p + t * (q - p)`, evaluated exactly. The parameter `t = 0` is
+the first parent `p` and `t = 1` is the second parent `q`; values outside
+`[0, 1]` are allowed and give points on the line beyond the segment.
 
 ## Sign conventions
 
-Signs are stored exactly as returned by the program that recorded the calls.
+Calls store the sign exactly as returned by the program that recorded them.
+The verifier compares it with an exact sign defined as follows, the same
+convention as Shewchuk's predicates and the `robust` crate:
+
+- `orient3d(a, b, c, d)` is the sign of the determinant of the 3x3 matrix
+  with rows `a - d`, `b - d` and `c - d`.
+- `insphere(a, b, c, d, e)` is the sign of the 4x4 determinant whose rows are
+  `(p - e, |p - e|^2)` for `p` in `a, b, c, d`.
+
+A recorded sign matches when it equals the exact sign multiplied by a
+per-predicate factor (+1 or -1), which accounts for a recording program that
+uses the opposite convention. Calls that involve an LPI or TPI point are not
+verified.
