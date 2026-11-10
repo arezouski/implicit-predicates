@@ -13,8 +13,9 @@
 //! multiply-add (see [`HAS_FMA`]), the exact product uses it instead.
 
 /// Selects code by whether the target has a hardware fused multiply-add that
-/// the crate can use: x86_64 compiled with the `fma` target feature, or any
-/// aarch64 target. This is the single definition of that condition.
+/// the crate can use: x86_64 compiled with the `fma` target feature, or
+/// aarch64 with the `neon` target feature. This is the single definition of
+/// that condition.
 ///
 /// - `fma_target!(has)` is `true` or `false` according to the condition;
 /// - `fma_target!(item)` keeps `item` only when the condition holds;
@@ -37,7 +38,7 @@ macro_rules! fma_target {
     };
     ($($input:tt)*) => {
         fma_target! {
-            @with [any(all(target_arch = "x86_64", target_feature = "fma"), target_arch = "aarch64")]
+            @with [any(all(target_arch = "x86_64", target_feature = "fma"), all(target_arch = "aarch64", target_feature = "neon"))]
             $($input)*
         }
     };
@@ -47,7 +48,8 @@ macro_rules! fma_target {
 ///
 /// That is the case on x86_64 when compiled with the `fma` target feature
 /// (for example with `-C target-feature=+fma` or `-C target-cpu=native` on a
-/// CPU that has it), and on every aarch64 target.
+/// CPU that has it), and on aarch64 with the `neon` target feature, which
+/// every aarch64 target enables by default except the soft-float ones.
 ///
 /// # Examples
 ///
@@ -171,7 +173,7 @@ fma_target! {
     /// # Examples
     ///
     /// ```
-    /// # #[cfg(any(all(target_arch = "x86_64", target_feature = "fma"), target_arch = "aarch64"))]
+    /// # #[cfg(any(all(target_arch = "x86_64", target_feature = "fma"), all(target_arch = "aarch64", target_feature = "neon")))]
     /// # {
     /// use indirect_predicates_core::eft::two_product_fma;
     ///
@@ -192,7 +194,7 @@ fma_target! {
         // computes it without rounding.
         // SAFETY: this function only exists when the target has the features
         // the intrinsics need: `fma` (and the baseline `sse2`) on x86_64,
-        // enabled at compile time, and the baseline `neon` on aarch64.
+        // and `neon` on aarch64, all enabled at compile time.
         let y = unsafe {
             #[cfg(target_arch = "x86_64")]
             let y = {

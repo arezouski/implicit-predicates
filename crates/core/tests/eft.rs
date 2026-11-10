@@ -54,7 +54,7 @@ proptest! {
         prop_assert_eq!(eft::two_product(a, b), eft::two_product_dekker(a, b));
     }
 
-    #[cfg(any(all(target_arch = "x86_64", target_feature = "fma"), target_arch = "aarch64"))]
+    #[cfg(any(all(target_arch = "x86_64", target_feature = "fma"), all(target_arch = "aarch64", target_feature = "neon")))]
     #[test]
     fn two_product_fma_matches_dekker(a in in_product_domain(), b in in_product_domain()) {
         prop_assert_eq!(eft::two_product_fma(a, b), eft::two_product_dekker(a, b));
@@ -86,7 +86,7 @@ fn two_product_is_exact_at_domain_edges() {
 
 #[cfg(any(
     all(target_arch = "x86_64", target_feature = "fma"),
-    target_arch = "aarch64"
+    all(target_arch = "aarch64", target_feature = "neon")
 ))]
 #[test]
 fn two_product_fma_is_exact_at_domain_edges() {
@@ -99,7 +99,7 @@ fn has_fma_matches_target() {
         eft::HAS_FMA,
         cfg!(any(
             all(target_arch = "x86_64", target_feature = "fma"),
-            target_arch = "aarch64"
+            all(target_arch = "aarch64", target_feature = "neon")
         ))
     );
 }
