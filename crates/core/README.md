@@ -10,7 +10,9 @@ Currently it provides:
 
 - `Sign`, the result type of every predicate;
 - `eft`, error-free transformations: floating-point sums and products
-  together with their exact rounding errors.
+  together with their exact rounding errors;
+- `expansion`, exact values represented as sums of `f64` components, with
+  exact addition, subtraction, scaling and sign, all without allocation.
 
 Most users should depend on `indirect-predicates` instead.
 

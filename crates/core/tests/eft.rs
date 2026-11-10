@@ -2,7 +2,10 @@
 
 mod common;
 
-use common::{any_finite, in_product_domain, near_cancelling, value};
+use common::{
+    any_finite, cancellation_that_rounds, correlated_pair, in_product_domain, near_cancelling,
+    value,
+};
 use indirect_predicates_core::eft;
 use indirect_predicates_oracle::Dyadic;
 use proptest::prelude::*;
@@ -26,6 +29,21 @@ proptest! {
     }
 
     #[test]
+    fn two_sum_is_exact_for_correlated_pairs((a, b) in correlated_pair()) {
+        let (x, y) = eft::two_sum(a, b);
+        prop_assert_eq!(x, a + b);
+        prop_assert_eq!(value(&[x, y]), &Dyadic::from_f64(a) + &Dyadic::from_f64(b));
+    }
+
+    #[test]
+    fn two_sum_is_exact_when_cancellation_rounds((a, b) in cancellation_that_rounds()) {
+        let (x, y) = eft::two_sum(a, b);
+        prop_assert_eq!(x, a + b);
+        prop_assert_ne!(y, 0.0, "the strategy promises a rounded sum");
+        prop_assert_eq!(value(&[x, y]), &Dyadic::from_f64(a) + &Dyadic::from_f64(b));
+    }
+
+    #[test]
     fn fast_two_sum_is_exact(a in any_finite(), b in any_finite()) {
         prop_assume!((a + b).is_finite());
         let (a, b) = if a.abs() >= b.abs() { (a, b) } else { (b, a) };
@@ -40,6 +58,22 @@ proptest! {
         let (x, y) = eft::two_diff(a, b);
         prop_assert_eq!(x, a - b);
         prop_assert_eq!(value(&[x, y]), &Dyadic::from_f64(a) - &Dyadic::from_f64(b));
+    }
+
+    #[test]
+    fn two_diff_is_exact_for_correlated_pairs((a, b) in correlated_pair()) {
+        let (x, y) = eft::two_diff(a, b);
+        prop_assert_eq!(x, a - b);
+        prop_assert_eq!(value(&[x, y]), &Dyadic::from_f64(a) - &Dyadic::from_f64(b));
+    }
+
+    #[test]
+    fn two_diff_is_exact_when_cancellation_rounds((a, b) in cancellation_that_rounds()) {
+        // `a - (-b)` performs the same cancellation as `a + b`.
+        let (x, y) = eft::two_diff(a, -b);
+        prop_assert_eq!(x, a + b);
+        prop_assert_ne!(y, 0.0, "the strategy promises a rounded difference");
+        prop_assert_eq!(value(&[x, y]), &Dyadic::from_f64(a) + &Dyadic::from_f64(b));
     }
 
     #[test]
