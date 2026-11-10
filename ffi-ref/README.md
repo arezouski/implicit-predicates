@@ -109,10 +109,11 @@ So each version, with its shim, is built into its own shared library,
 that exports `ipref_<version>_*` and makes every other symbol local. Inside
 a library every C++ symbol is bound locally at link time, and the dynamic
 linker can bind across libraries only through the exported symbols, which
-are the C functions of each interface: six for the bindings and three test
-hooks. The build script checks this with `nm -D --defined-only` on both
-libraries: it fails unless each library exports exactly the nine functions
-of its own interface, and if a symbol is exported by both. The C++ runtime
+are the C functions of each interface: six for the bindings, one benchmark
+hook and three test hooks. The build script checks this with `nm -D
+--defined-only` on both libraries: it fails unless each library exports
+exactly the ten functions of its own interface, and if a symbol is exported
+by both. The C++ runtime
 (`libstdc++`) is a shared dependency of both and is not duplicated.
 
 The test `both_versions_answer_in_one_process` loads both libraries in one
@@ -160,9 +161,40 @@ Every function of the interface runs its work through one guard
   the built bindings, without the test hook below, contain neither its
   messages nor a reference to `exit`.
 
+The `bench_overhead` function of the interface is a benchmark hook,
+exposed in Rust only as the hidden method `Points::overhead`: it does
+everything an orient3d call does (the call through the interface, the
+guard, the index checks and the lookup of four points) except evaluating
+the predicate, and returns 0.
+
 The three `test_*` functions of the interface are test hooks, exposed in
 Rust only through the hidden module `test_hooks`: one calls the error
 routine from inside a call, one returns from a call with the rounding mode
 set upward, and one creates a handle with the rounding mode set upward. The
 tests in `tests/failures.rs` run each in a child process and check that it
 ends the process as described above.
+
+## Benchmarks
+
+```sh
+cargo bench --manifest-path ffi-ref/Cargo.toml
+IPREF_CORPUS_DIR=corpus/data/corpus cargo bench --manifest-path ffi-ref/Cargo.toml
+```
+
+`benches/reference.rs` measures both versions on recorded predicate calls:
+the versioned sample corpora in `corpus/samples/` by default, or every
+`.ipcorpus` file of the directory named by `IPREF_CORPUS_DIR`. For each
+version it has these groups:
+
+| Group | What one element is |
+| --- | --- |
+| `<version>/orient3d`, `<version>/insphere` | one recorded call, on points built beforehand, by number of implicit points: `0`, `1`, `2` and `3+` (a bucket with no calls is skipped and named on standard error) |
+| `<version>/overhead` | one call of the benchmark hook, on the points of every orient3d call |
+| `<version>/construct` | one explicit or LNC point built, per corpus file, without freeing them |
+| `<version>/replay` | one recorded call, per corpus file, including building all of its points |
+
+The throughput in elements per second is the inverse of the time per
+element. Every reference figure includes the cost of these bindings, which
+`overhead` measures; subtracting it gives an estimate of the time spent in
+the library itself. Calls on LPI or TPI points, which these bindings cannot
+build, are left out and counted on standard error.

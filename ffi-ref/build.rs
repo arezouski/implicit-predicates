@@ -183,14 +183,16 @@ fn exported_symbols(library: &Path) -> BTreeSet<String> {
 }
 
 /// The functions of the C interface of each version, after its prefix
-/// `ipref_<version>_`: six for the bindings and three test hooks.
-const INTERFACE: [&str; 9] = [
+/// `ipref_<version>_`: six for the bindings, one benchmark hook and three
+/// test hooks.
+const INTERFACE: [&str; 10] = [
     "points_new",
     "points_free",
     "explicit",
     "lnc",
     "orient3d",
     "insphere",
+    "bench_overhead",
     "test_error_routine",
     "test_return_rounding_upward",
     "test_enter_rounding_upward",

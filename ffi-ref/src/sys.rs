@@ -30,6 +30,13 @@ unsafe extern "C" {
         d: u32,
         e: u32,
     ) -> c_int;
+    fn ipref_legacy_bench_overhead(
+        points: *const RawPoints,
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+    ) -> c_int;
 
     fn ipref_current_points_new() -> *mut RawPoints;
     fn ipref_current_test_error_routine();
@@ -47,6 +54,13 @@ unsafe extern "C" {
         d: u32,
         e: u32,
     ) -> c_int;
+    fn ipref_current_bench_overhead(
+        points: *const RawPoints,
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+    ) -> c_int;
 }
 
 /// The functions of one version of the C interface. Their preconditions are
@@ -58,6 +72,8 @@ pub(crate) struct Api {
     lnc: unsafe extern "C" fn(*mut RawPoints, u32, u32, f64) -> u32,
     orient3d: unsafe extern "C" fn(*const RawPoints, u32, u32, u32, u32) -> c_int,
     insphere: unsafe extern "C" fn(*const RawPoints, u32, u32, u32, u32, u32) -> c_int,
+    /// The benchmark hook: an orient3d call without the predicate.
+    overhead: unsafe extern "C" fn(*const RawPoints, u32, u32, u32, u32) -> c_int,
     /// The test hooks, in the order of [`TestHook`].
     hooks: [unsafe extern "C" fn(); 3],
 }
@@ -82,6 +98,7 @@ impl Version for Legacy {
         lnc: ipref_legacy_lnc,
         orient3d: ipref_legacy_orient3d,
         insphere: ipref_legacy_insphere,
+        overhead: ipref_legacy_bench_overhead,
         hooks: [
             ipref_legacy_test_error_routine,
             ipref_legacy_test_return_rounding_upward,
@@ -98,6 +115,7 @@ impl Version for Current {
         lnc: ipref_current_lnc,
         orient3d: ipref_current_orient3d,
         insphere: ipref_current_insphere,
+        overhead: ipref_current_bench_overhead,
         hooks: [
             ipref_current_test_error_routine,
             ipref_current_test_return_rounding_upward,
@@ -214,6 +232,19 @@ impl<V: Version> Handle<V> {
         // SAFETY: `raw` is a live handle owned by `self`, and every index
         // names one of its points, as checked above.
         sign(unsafe { (V::API.insphere)(self.raw.as_ptr(), a, b, c, d, e) })
+    }
+
+    /// The benchmark hook: everything [`Handle::orient3d`] does except
+    /// evaluating the predicate; returns 0.
+    ///
+    /// # Panics
+    ///
+    /// As [`Handle::orient3d`].
+    pub(crate) fn overhead(&self, [a, b, c, d]: [u32; 4]) -> i8 {
+        self.check_points(&[a, b, c, d]);
+        // SAFETY: `raw` is a live handle owned by `self`, and every index
+        // names one of its points, as checked above.
+        sign(unsafe { (V::API.overhead)(self.raw.as_ptr(), a, b, c, d) })
     }
 }
 

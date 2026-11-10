@@ -4,6 +4,7 @@ The downloaded sources are LGPL or GPL licensed. They live only under
 ``corpus/data/`` (git-ignored) and are never part of this repository.
 """
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -12,7 +13,10 @@ from pathlib import Path
 import instrument
 
 CORPUS_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = CORPUS_DIR / "data"
+# Everything the tools download, build and record lives here; the
+# environment variable moves it, for example to regenerate the corpus from
+# scratch without touching an existing one.
+DATA_DIR = Path(os.environ.get("CORPUS_DATA_DIR") or CORPUS_DIR / "data").resolve()
 REFERENCE_DIR = DATA_DIR / "reference"
 BUILD_DIR = DATA_DIR / "build"
 

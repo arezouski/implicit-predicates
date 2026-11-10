@@ -29,12 +29,34 @@ python3 corpus/tools/corpus.py build             # build the original and the re
 python3 corpus/tools/corpus.py fetch-models      # download Thingi10K and export the manifest models
 python3 corpus/tools/corpus.py select            # choose the sample and write the manifest
 python3 corpus/tools/corpus.py run               # record the predicate calls of the sample
-python3 corpus/tools/corpus.py all               # fetch-models, select and run, in sequence
+python3 corpus/tools/corpus.py all               # all of the above, in sequence
 ```
 
+`all` regenerates the corpus with one command: it runs `fetch-reference`,
+`build`, `fetch-models` and `run` (which selects) in sequence, and every step
+skips the work already done.
+
 `select`, `run` and `all` take `--jobs N` (parallel mesher runs, default
-three quarters of the hardware threads) and `--timeout S` (seconds per mesher
-run, default 600).
+three quarters of the hardware threads), `--timeout S` (seconds per mesher
+run, default 600) and `--count N` (number of sample models, default 200).
+They and `fetch-models` take `--manifest FILE` (default: the committed
+`corpus/manifest/sample.csv`).
+
+Everything is downloaded, built and recorded under `corpus/data/`, or under
+the directory named by the environment variable `CORPUS_DATA_DIR`. A second
+data directory can regenerate a small corpus from scratch without touching
+an existing one; linking the dataset download of an existing data
+directory into it avoids downloading the dataset again (the metadata file is
+written afresh):
+
+```sh
+mkdir -p /tmp/fresh/thingi10k
+for d in hf thingi10k_npz_extracted; do
+    ln -s "$PWD/corpus/data/thingi10k/$d" /tmp/fresh/thingi10k/$d
+done
+CORPUS_DATA_DIR=/tmp/fresh python3 corpus/tools/corpus.py all \
+    --count 8 --timeout 150 --manifest /tmp/fresh/sample.csv
+```
 
 `fetch-reference` leaves `corpus/data/reference/cdt-legacy/`,
 `corpus/data/reference/indirect-predicates/` and `corpus/data/reference/nfg/`
@@ -42,8 +64,8 @@ at the commits pinned in `corpus/tools/reference.py`. Indirect_Predicates
 includes `numerics.h` from NFG, which its own CMake build would fetch from
 NFG's moving `main` branch; NFG is pinned instead to its last commit before
 the pinned Indirect_Predicates commit. NFG is LGPL licensed and, like the
-other references, is not part of this repository. If a checkout is already at the pinned
-commit it does nothing. If a checkout is at another commit or has modified
+other references, is not part of this repository. If a checkout is already
+at the pinned commit it does nothing. If a checkout is at another commit or has modified
 tracked files, it fails without changing anything. Untracked files, such as
 outputs written by running the mesher's examples, are ignored by that check.
 
@@ -201,12 +223,18 @@ exits with status 0, without writing the `.tet` file.
 The committed manifest was produced with `--timeout 150`: many
 self-intersecting models make the mesher run for a long time without
 finishing, and the selection has to try most candidates of some strata. Pass
-the same limit to reproduce it.
+the same limit to reproduce it. Validity decided by a time limit depends on
+the machine and on `--jobs` (parallel runs slow each other down): a model
+close to the limit may be valid on one machine and not on another.
 
-`select` writes `corpus/manifest/sample.csv` (`file_id,stratum,license,
-vertices,facets`: identifiers and metadata, no geometry). The outcome of
-every original run is kept in `corpus/data/runs/original.csv`, so later
-selections do not run the mesher again on the same model.
+`select` writes the manifest (`file_id,stratum,license,vertices,facets`:
+identifiers and metadata, no geometry). The outcome of every original run is
+kept in `corpus/data/runs/original.csv`, so later selections do not run the
+mesher again on the same model. Validity also depends on the recording runs,
+so the committed manifest is the output of `run` (or `all`), not of `select`
+alone: on a fresh data directory, `select` can choose models that `run` then
+replaces. Given the run logs of the committed sample, `select --timeout 150`
+writes the committed manifest again without running the mesher.
 
 ### Recording
 

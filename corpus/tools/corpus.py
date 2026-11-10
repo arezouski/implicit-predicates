@@ -51,17 +51,17 @@ def _select(args):
         }
 
     selection = sample.select(sample.read_metadata(models.METADATA),
-                              sample.TARGET, sample.SEED, valid, lookahead=args.jobs)
-    sample.write_manifest(MANIFEST, selection.models)
-    print(f"selected {len(selection.models)} models into {MANIFEST} "
+                              args.count, sample.SEED, valid, lookahead=args.jobs)
+    sample.write_manifest(args.manifest, selection.models)
+    print(f"selected {len(selection.models)} models into {args.manifest} "
           f"({len(selection.invalid)} candidates were not valid)")
     return selection
 
 
-def fetch_models(_args):
+def fetch_models(args):
     models.fetch_metadata()
-    if MANIFEST.exists():
-        models.export(row["file_id"] for row in sample.read_manifest(MANIFEST))
+    if args.manifest.exists():
+        models.export(row["file_id"] for row in sample.read_manifest(args.manifest))
 
 
 def select(args):
@@ -96,6 +96,8 @@ def run_sample(args):
 
 
 def all_commands(args):
+    fetch_reference(args)
+    build(args)
     fetch_models(args)
     run_sample(args)
 
@@ -115,15 +117,20 @@ COMMANDS = {
     ),
     "select": (select, "select the sample models and write the manifest"),
     "run": (run_sample, "record the predicate calls of every manifest model"),
-    "all": (all_commands, "fetch-models, select and run, in sequence"),
+    "all": (all_commands, "fetch-reference, build, fetch-models, select and run, in sequence"),
 }
 
-# Commands that run the mesher and take --jobs and --timeout.
+# Commands that run the mesher and take --jobs, --timeout and --count.
 RUNNING = {"select", "run", "all"}
+# Commands that read or write the manifest and take --manifest.
+MANIFEST_USERS = RUNNING | {"fetch-models"}
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def parse(argv=None):
+    """The parsed command line."""
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog="The data directory is corpus/data/, or the one named by CORPUS_DATA_DIR.")
     commands = parser.add_subparsers(dest="command", required=True)
     for name, (_, help_text) in COMMANDS.items():
         command = commands.add_parser(name, help=help_text)
@@ -132,7 +139,16 @@ def main(argv=None):
                                  help=f"parallel mesher runs (default {run.DEFAULT_JOBS})")
             command.add_argument("--timeout", type=float, default=run.DEFAULT_TIMEOUT,
                                  help=f"seconds per run (default {run.DEFAULT_TIMEOUT})")
-    args = parser.parse_args(argv)
+            command.add_argument("--count", type=int, default=sample.TARGET,
+                                 help=f"number of sample models (default {sample.TARGET})")
+        if name in MANIFEST_USERS:
+            command.add_argument("--manifest", type=Path, default=MANIFEST,
+                                 help="manifest file (default: the committed one)")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse(argv)
     try:
         COMMANDS[args.command][0](args)
     except reference.ReferenceError as error:

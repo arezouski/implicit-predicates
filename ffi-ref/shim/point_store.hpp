@@ -61,7 +61,8 @@ private:
 // `STORE` the PointStore type, `INIT` a statement run when a handle is
 // created, `ORIENT3D`, `INSPHERE` the library's predicates on generic
 // points and `ERROR_ROUTINE` the library's error routine (used only by a
-// test hook).
+// test hook). Besides the six functions of the bindings it defines the
+// benchmark hook and the three test hooks of `ipref.h`.
 #define IPREF_DEFINE_INTERFACE(VERSION, STORE, INIT, ORIENT3D, INSPHERE, ERROR_ROUTINE)            \
     struct ipref_##VERSION##_points {                                                              \
         STORE store;                                                                               \
@@ -101,6 +102,21 @@ private:
         return guard([&] {                                                                         \
             const STORE &s = points->store;                                                        \
             return INSPHERE(s.at(a), s.at(b), s.at(c), s.at(d), s.at(e));                          \
+        });                                                                                        \
+    }                                                                                              \
+    extern "C" int ipref_##VERSION##_bench_overhead(const ipref_##VERSION##_points *points,        \
+                                                    uint32_t a, uint32_t b, uint32_t c,            \
+                                                    uint32_t d)                                    \
+    {                                                                                              \
+        return guard([&] {                                                                         \
+            const STORE &s = points->store;                                                        \
+            /* Keep the four lookups and the guard's stores, which the */                          \
+            /* compiler could otherwise drop. */                                                   \
+            asm volatile(""                                                                        \
+                         :                                                                         \
+                         : "r"(&s.at(a)), "r"(&s.at(b)), "r"(&s.at(c)), "r"(&s.at(d))              \
+                         : "memory");                                                              \
+            return 0;                                                                              \
         });                                                                                        \
     }                                                                                              \
     extern "C" void ipref_##VERSION##_test_error_routine(void)                                     \

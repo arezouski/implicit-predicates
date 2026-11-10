@@ -65,6 +65,18 @@ IPREF_API void ipref_current_test_error_routine(void);
 IPREF_API void ipref_current_test_return_rounding_upward(void);
 IPREF_API void ipref_current_test_enter_rounding_upward(void);
 
+/*
+ * Benchmark hook, used only by the benchmarks of the Rust wrapper to
+ * measure the cost of this interface itself. `bench_overhead` does what
+ * `orient3d` does except evaluating the predicate: it runs through the same
+ * guard and looks up the same four points, then returns 0. The indices
+ * must name existing points.
+ */
+IPREF_API int ipref_legacy_bench_overhead(const ipref_legacy_points *points, uint32_t a,
+                                          uint32_t b, uint32_t c, uint32_t d);
+IPREF_API int ipref_current_bench_overhead(const ipref_current_points *points, uint32_t a,
+                                           uint32_t b, uint32_t c, uint32_t d);
+
 #ifdef __cplusplus
 }
 #endif

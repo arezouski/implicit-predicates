@@ -51,8 +51,15 @@ perturbed `insphere`, over explicit points and points on a segment.
 | [`indirect-predicates-gen`](crates/gen) | Code generator for predicates and point types |
 | [`indirect-predicates-oracle`](crates/oracle) | Slow exact reference implementation, used for testing |
 
-Two more crates are not published: `benches`, the benchmarks, and
-`test-support`, the test infrastructure shared by the crates above.
+Four more crates are not published: `benches`, the benchmarks;
+`test-support`, the test infrastructure shared by the crates above; and
+`corpus` and `ffi-ref`. `corpus` reads, checks and summarizes recorded predicate calls of a
+reference mesher, and its tools record them from a sample of the Thingi10K
+models. `ffi-ref`, outside the workspace, binds two third-party C++
+reference predicate libraries for comparison. Those libraries are licensed
+under the LGPL and are linked only for local tests and benchmarks: they are
+downloaded at pinned commits into a git-ignored directory, and no part of
+them is included in this repository or in the published crates.
 
 ## Minimum supported Rust version
 

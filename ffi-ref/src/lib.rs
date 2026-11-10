@@ -91,6 +91,19 @@ macro_rules! reference_points {
             ) -> i8 {
                 INSPHERE_FACTOR * self.handle.insphere([a.0, b.0, c.0, d.0, e.0])
             }
+
+            /// For the benchmarks of this package only: everything
+            /// [`Points::orient3d`] does, through the same C interface,
+            /// except evaluating the predicate. Returns 0. Its time is the
+            /// cost of the bindings themselves.
+            ///
+            /// # Panics
+            ///
+            /// Panics if a point does not belong to `self`.
+            #[doc(hidden)]
+            pub fn overhead(&self, a: PointId, b: PointId, c: PointId, d: PointId) -> i8 {
+                ORIENT3D_FACTOR * self.handle.overhead([a.0, b.0, c.0, d.0])
+            }
         }
 
         impl Default for Points {

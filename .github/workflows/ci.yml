@@ -98,6 +98,20 @@ jobs:
       - run: cargo build -p indirect-predicates --target wasm32-unknown-unknown
       - run: cargo build -p indirect-predicates-core --features alloc --target wasm32-unknown-unknown
 
+  reference:
+    # The bindings to the third-party reference libraries, outside the
+    # workspace. The sources are downloaded at pinned commits; no model is
+    # downloaded and no corpus is generated. The libraries are built with
+    # AVX2 and FMA, which GitHub's x86_64 runners support.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: c++ --version
+      - run: python3 corpus/tools/corpus.py fetch-reference
+      - run: cargo test --manifest-path ffi-ref/Cargo.toml
+      - run: cargo bench --manifest-path ffi-ref/Cargo.toml --no-run
+
   docs:
     runs-on: ubuntu-latest
     env:
