@@ -7,12 +7,14 @@ use crate::PointDef;
 use indirect_predicates_oracle::Dyadic;
 
 /// The recorded orient3d sign equals this factor times the exact sign
-/// computed by [`orient3d`].
-pub const REFERENCE_ORIENT3D_FACTOR: i8 = 1;
+/// computed by [`orient3d`]: the reference mesher uses the opposite
+/// convention, so the factor is -1.
+pub const REFERENCE_ORIENT3D_FACTOR: i8 = -1;
 
 /// The recorded insphere sign equals this factor times the exact sign
-/// computed by [`insphere`].
-pub const REFERENCE_INSPHERE_FACTOR: i8 = 1;
+/// computed by [`insphere`]: the reference mesher uses the opposite
+/// convention, so the factor is -1.
+pub const REFERENCE_INSPHERE_FACTOR: i8 = -1;
 
 type Vec3 = [Dyadic; 3];
 

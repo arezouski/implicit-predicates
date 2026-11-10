@@ -89,3 +89,9 @@ A recorded sign matches when it equals the exact sign multiplied by a
 per-predicate factor (+1 or -1), which accounts for a recording program that
 uses the opposite convention. Calls that involve an LPI or TPI point are not
 verified.
+
+The corpus files recorded from the reference mesher use the opposite
+convention for both predicates: the factor is -1 for orient3d and -1 for
+insphere (`REFERENCE_ORIENT3D_FACTOR` and `REFERENCE_INSPHERE_FACTOR` in
+`src/exact.rs`). That holds for every recorded call of every model of the
+sample corpus.

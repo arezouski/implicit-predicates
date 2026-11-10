@@ -19,7 +19,7 @@ namespace {
 constexpr int kPredicates = 2;
 constexpr int kMaxArity = 5;
 constexpr int kStages = 5;
-constexpr std::uint64_t kDefaultCap = 100000;
+constexpr std::uint64_t kDefaultCap = 25000;
 constexpr std::uint32_t kNone = UINT32_MAX;
 
 int arity_of(Predicate p) { return p == Predicate::Orient3d ? 4 : 5; }

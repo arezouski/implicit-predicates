@@ -8,7 +8,7 @@
 //   IPCORPUS_OUT          output path; nothing is recorded without it
 //   IPCORPUS_MODEL        model name stored in the file and used as the
 //                         sampling seed (default: empty)
-//   IPCORPUS_STRATUM_CAP  calls stored per stratum (default: 100000)
+//   IPCORPUS_STRATUM_CAP  calls stored per stratum (default: 25000)
 //
 // Counters cover every call. Stored calls are a reservoir sample of each
 // stratum (predicate, number of implicit points, zero or non-zero sign),

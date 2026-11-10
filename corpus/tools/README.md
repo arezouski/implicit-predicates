@@ -25,7 +25,15 @@ Run them from anywhere; paths are derived from the script location.
 ```sh
 python3 corpus/tools/corpus.py fetch-reference   # clone the references at their pinned commits
 python3 corpus/tools/corpus.py build             # build the original and the recording mesher
+python3 corpus/tools/corpus.py fetch-models      # download Thingi10K and export the manifest models
+python3 corpus/tools/corpus.py select            # choose the sample and write the manifest
+python3 corpus/tools/corpus.py run               # record the predicate calls of the sample
+python3 corpus/tools/corpus.py all               # fetch-models, select and run, in sequence
 ```
+
+`select`, `run` and `all` take `--jobs N` (parallel mesher runs, default
+three quarters of the hardware threads) and `--timeout S` (seconds per mesher
+run, default 600).
 
 `fetch-reference` leaves `corpus/data/reference/cdt-legacy/` and
 `corpus/data/reference/indirect-predicates/` (with submodules) at the commits
@@ -55,7 +63,7 @@ IPCORPUS_OUT=bracket.ipcorpus IPCORPUS_MODEL=bracket \
 | --- | --- |
 | `IPCORPUS_OUT` | Output corpus file. Without it nothing is recorded. |
 | `IPCORPUS_MODEL` | Model name stored in the file and used to seed the sampling (default: empty). |
-| `IPCORPUS_STRATUM_CAP` | Maximum number of calls stored per stratum (default: `100000`). |
+| `IPCORPUS_STRATUM_CAP` | Maximum number of calls stored per stratum (default: `25000`). |
 
 The corpus format is described in `corpus/FORMAT.md`. Two runs on the same
 model give identical files.
@@ -149,6 +157,72 @@ and `inSphere_*` on implicit points), counted at any depth. Each recorded
 call evaluates exactly one cascade, and no cascade is entered outside a
 recorded call, so the two numbers must be equal. A larger cascade count would
 reveal a call path that bypasses the recorder.
+
+## The sample models
+
+The models come from the Thingi10K dataset, through its Python package
+(`thingi10k`). That package needs Python 3.13 and third-party packages, so
+`fetch-models` creates an environment for it with `uv` in `corpus/data/venv/`
+and installs the exact versions pinned in `requirements.txt`. `dataset.py`
+runs inside that environment; every other script uses only the standard
+library. The dataset (the `npz` variant, about 4 GB to download and 14 GB on
+disk, archive included) is cached in `corpus/data/thingi10k/`, and
+`corpus/data/thingi10k/metadata.csv` keeps the metadata of its 9,995 models.
+Only geometry and metadata are read from it. Each model used is exported to
+`corpus/data/models/<file_id>.off`, with coordinates written so that they read
+back to the same doubles.
+
+No published list of the Thingi10K models used to evaluate the mesher was
+found, so the sample is drawn from the whole dataset.
+
+### Selection
+
+`sample.py` groups the models into 16 strata: vertex count up to 1,000
+(`1k`), up to 10,000 (`10k`), up to 100,000 (`100k`) or more (`large`),
+crossed with closed or open and with self-intersecting (`si`) or not
+(`nosi`), as given by the dataset metadata; for example `10k-closed-nosi`.
+The 200 sample models are shared among the strata in proportion to their
+size, with at least 5 per stratum (a smaller stratum is taken whole), by the
+largest remainder. Inside each stratum the candidates are visited in a
+pseudo-random order fixed by the seed `20261110`, and the first valid ones
+are taken. When a stratum runs out of valid candidates, its unfilled share
+goes to the other strata. The same seed and dataset give the same manifest.
+
+A model is valid when the original mesher, within the time limit, exits with
+status 0 and writes a non-empty `.tet` file, and the recording mesher has not
+failed on it. Exit status 0 is not enough: the mesher's error routine also
+exits with status 0, without writing the `.tet` file.
+
+The committed manifest was produced with `--timeout 150`: many
+self-intersecting models make the mesher run for a long time without
+finishing, and the selection has to try most candidates of some strata. Pass
+the same limit to reproduce it.
+
+`select` writes `corpus/manifest/sample.csv` (`file_id,stratum,license,
+vertices,facets`: identifiers and metadata, no geometry). The outcome of
+every original run is kept in `corpus/data/runs/original.csv`, so later
+selections do not run the mesher again on the same model.
+
+### Recording
+
+`run` records every manifest model with the recording mesher into
+`corpus/data/corpus/<file_id>.ipcorpus`, each run in its own directory under
+`corpus/data/runs/` and with the time limit. A recording run succeeds when
+the mesher exits with status 0, writes its `.tet` file and its corpus file,
+and the recorder's count of recorded calls equals its count of cascade
+entries (a difference stops everything: some call bypassed the recorder). A
+model whose recording run fails or times out is replaced by the next valid
+candidate of its stratum, and the manifest is rewritten. The outcome of every
+recording run, including the replaced models, is kept in
+`corpus/data/corpus/run.csv`, with its status (`ok`, `failed` or `timeout`),
+time, number of calls and number of stored calls. Interrupted runs resume:
+models already recorded are not run again.
+
+The default stratum cap of 25,000 stored calls keeps the whole sample
+corpus well under 5 GB. Recorded corpus files take about 30 bytes per
+stored call, and a model has at most 22 strata (orient3d with 0 to 4
+implicit points and insphere with 0 to 5, each with a zero or non-zero
+sign), so a model stores at most 550,000 calls, about 17 MB.
 
 ## Tests
 

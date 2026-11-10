@@ -5,6 +5,7 @@
 //! ignored by default. Run them with
 //! `cargo test -p indirect-predicates-corpus -- --ignored recorded`.
 
+use indirect_predicates_corpus::exact::{REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR};
 use indirect_predicates_corpus::verify::verify_with;
 use indirect_predicates_corpus::{Corpus, Predicate};
 use std::collections::BTreeMap;
@@ -214,7 +215,11 @@ fn recorded_signs_match_the_exact_signs_up_to_a_uniform_factor() {
             "{predicate:?}: factors that fit {fitting:?}; first mismatch per factor: {:?}",
             [1, -1].map(|f| failures.get(&(predicate, f)))
         );
-        eprintln!("{predicate:?}: recorded sign = {} * exact sign", fitting[0]);
+        let constant = match predicate {
+            Predicate::Orient3d => REFERENCE_ORIENT3D_FACTOR,
+            Predicate::InSphere => REFERENCE_INSPHERE_FACTOR,
+        };
+        assert_eq!(fitting[0], constant, "{predicate:?}");
     }
 }
 

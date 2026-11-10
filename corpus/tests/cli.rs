@@ -3,6 +3,7 @@
 mod common;
 
 use common::{call, corpus_from};
+use indirect_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
 use indirect_predicates_corpus::{Corpus, PointDef, Predicate, Stage};
 use std::path::PathBuf;
 use std::process::Command;
@@ -55,9 +56,10 @@ fn write(corpus: &Corpus, file: &Temp) {
 
 #[test]
 fn verify_succeeds_on_a_correct_file_and_fails_on_an_altered_one() {
-    // The reference sign of the first call is +1 for the unit tetrahedron; the
-    // other two calls are not part of this check, so use a file of one call.
-    let mut good = sample(1);
+    // The exact sign of the first call is +1 for the unit tetrahedron, so the
+    // recorded one is the orient3d factor; the other two calls are not part
+    // of this check, so use a file of one call.
+    let mut good = sample(REFERENCE_ORIENT3D_FACTOR);
     good.calls.truncate(1);
     let good = corpus_from(good.points, good.calls);
     let f = Temp::new("good");
@@ -70,7 +72,7 @@ fn verify_succeeds_on_a_correct_file_and_fails_on_an_altered_one() {
     );
 
     let mut bad = good.clone();
-    bad.calls[0].sign = -1;
+    bad.calls[0].sign = -REFERENCE_ORIENT3D_FACTOR;
     let bad = corpus_from(bad.points, bad.calls);
     let g = Temp::new("bad");
     write(&bad, &g);
