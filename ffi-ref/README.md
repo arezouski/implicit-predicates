@@ -178,7 +178,9 @@ ends the process as described above.
 
 ```sh
 cargo bench --manifest-path ffi-ref/Cargo.toml
-IPREF_CORPUS_DIR=corpus/data/corpus cargo bench --manifest-path ffi-ref/Cargo.toml
+# On generated corpus files, see the known crash below; this runs the
+# legacy groups alone:
+IPREF_CORPUS_DIR=corpus/data/corpus cargo bench --manifest-path ffi-ref/Cargo.toml -- '^legacy/'
 ```
 
 `benches/reference.rs` measures both versions on recorded predicate calls:
@@ -198,3 +200,20 @@ element. Every reference figure includes the cost of these bindings, which
 `overhead` measures; subtracting it gives an estimate of the time spent in
 the library itself. Calls on LPI or TPI points, which these bindings cannot
 build, are left out and counted on standard error.
+
+### Known crash of the current library
+
+On some calls of generated corpus files (not of the versioned samples), the
+`current` library ends the process with SIGSEGV: in insphere with 3 or more
+implicit points, and so in the replay of any corpus file that contains such
+calls. The fault happens inside the library's multi-precision arithmetic, on
+memory the library allocates itself, and whether it happens depends on the
+heap layout: the same call may succeed in another process. It was observed
+with GCC 16 and the library's own `-O3 -mavx2` options. The `legacy` library
+is not affected, and the versioned samples run to completion with both.
+
+The compile options of each library are deliberately left as upstream's, so
+the figures of the affected groups (`current/insphere/3+`, and
+`current/replay` of such files) are not available on generated corpora.
+Select the other groups with criterion's filter, for example
+`-- '^current/(orient3d|insphere/[012]|overhead|construct)'`.
