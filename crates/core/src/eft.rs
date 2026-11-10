@@ -9,7 +9,56 @@
 //!
 //! The algorithms are those of Knuth, Dekker and Veltkamp as presented by
 //! Shewchuk, "Adaptive Precision Floating-Point Arithmetic and Fast Robust
-//! Geometric Predicates" (1997).
+//! Geometric Predicates" (1997). When the target has a hardware fused
+//! multiply-add (see [`HAS_FMA`]), the exact product uses it instead.
+
+/// Selects code by whether the target has a hardware fused multiply-add that
+/// the crate can use: x86_64 compiled with the `fma` target feature, or any
+/// aarch64 target. This is the single definition of that condition.
+///
+/// - `fma_target!(has)` is `true` or `false` according to the condition;
+/// - `fma_target!(item)` keeps `item` only when the condition holds;
+/// - `fma_target!(if { a } else { b })` evaluates `a` when the condition
+///   holds and `b` otherwise; only the chosen expression is compiled.
+macro_rules! fma_target {
+    (@with [$pred:meta] has) => {
+        cfg!($pred)
+    };
+    (@with [$pred:meta] if { $yes:expr } else { $no:expr }) => {{
+        #[cfg($pred)]
+        let selected = $yes;
+        #[cfg(not($pred))]
+        let selected = $no;
+        selected
+    }};
+    (@with [$pred:meta] $item:item) => {
+        #[cfg($pred)]
+        $item
+    };
+    ($($input:tt)*) => {
+        fma_target! {
+            @with [any(all(target_arch = "x86_64", target_feature = "fma"), target_arch = "aarch64")]
+            $($input)*
+        }
+    };
+}
+
+/// True when `two_product` uses a fused multiply-add on this target.
+///
+/// That is the case on x86_64 when compiled with the `fma` target feature
+/// (for example with `-C target-feature=+fma` or `-C target-cpu=native` on a
+/// CPU that has it), and on every aarch64 target.
+///
+/// # Examples
+///
+/// ```
+/// use indirect_predicates_core::eft::HAS_FMA;
+///
+/// if HAS_FMA {
+///     // `two_product` and `two_square` use `two_product_fma`.
+/// }
+/// ```
+pub const HAS_FMA: bool = fma_target!(has);
 
 /// `2^27 + 1`: multiplying by it splits an `f64` into two halves of at most
 /// 26 significant bits each (Veltkamp's splitting).
@@ -109,8 +158,62 @@ pub fn two_product_dekker(a: f64, b: f64) -> (f64, f64) {
     (x, a_lo * b_lo - err3)
 }
 
+fma_target! {
+    /// Computes `a * b` and its rounding error with one multiplication and one
+    /// fused multiply-add.
+    ///
+    /// Only available when [`HAS_FMA`] is true. It returns exactly the same
+    /// pair as [`two_product_dekker`].
+    ///
+    /// Requirement: each of `a` and `b` is zero or has magnitude in
+    /// `2^-480 ..= 2^480`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[cfg(any(all(target_arch = "x86_64", target_feature = "fma"), target_arch = "aarch64"))]
+    /// # {
+    /// use indirect_predicates_core::eft::two_product_fma;
+    ///
+    /// let a = 1.0 + f64::EPSILON;
+    /// let (x, y) = two_product_fma(a, a);
+    /// assert_eq!(x, 1.0 + 2.0 * f64::EPSILON);
+    /// assert_eq!(y, f64::EPSILON * f64::EPSILON);
+    /// # }
+    /// ```
+    #[inline]
+    #[must_use]
+    // The `core::arch` intrinsics carry `#[target_feature]`, so calling them
+    // from a function without that attribute needs `unsafe`.
+    #[allow(unsafe_code)]
+    pub fn two_product_fma(a: f64, b: f64) -> (f64, f64) {
+        let x = a * b;
+        // `a * b - x` is representable in the domain, so the fused operation
+        // computes it without rounding.
+        // SAFETY: this function only exists when the target has the features
+        // the intrinsics need: `fma` (and the baseline `sse2`) on x86_64,
+        // enabled at compile time, and the baseline `neon` on aarch64.
+        let y = unsafe {
+            #[cfg(target_arch = "x86_64")]
+            let y = {
+                use core::arch::x86_64::{_mm_cvtsd_f64, _mm_fmsub_sd, _mm_set_sd};
+                _mm_cvtsd_f64(_mm_fmsub_sd(_mm_set_sd(a), _mm_set_sd(b), _mm_set_sd(x)))
+            };
+            #[cfg(target_arch = "aarch64")]
+            let y = {
+                use core::arch::aarch64::{vdup_n_f64, vfma_f64, vget_lane_f64};
+                // `vfma_f64(c, a, b)` is `c + a * b` with a single rounding.
+                vget_lane_f64::<0>(vfma_f64(vdup_n_f64(-x), vdup_n_f64(a), vdup_n_f64(b)))
+            };
+            y
+        };
+        (x, y)
+    }
+}
+
 /// Computes `a * b` and its rounding error with the crate's selected
-/// implementation, currently [`two_product_dekker`].
+/// implementation: `two_product_fma` when [`HAS_FMA`] is true, and
+/// [`two_product_dekker`] otherwise. Both give the same result.
 ///
 /// Requirement: each of `a` and `b` is zero or has magnitude in
 /// `2^-480 ..= 2^480`.
@@ -128,10 +231,11 @@ pub fn two_product_dekker(a: f64, b: f64) -> (f64, f64) {
 #[inline]
 #[must_use]
 pub fn two_product(a: f64, b: f64) -> (f64, f64) {
-    two_product_dekker(a, b)
+    fma_target!(if { two_product_fma(a, b) } else { two_product_dekker(a, b) })
 }
 
-/// Computes `a * a` and its rounding error, with fewer operations than
+/// Computes `a * a` and its rounding error: with `two_product_fma` when
+/// [`HAS_FMA`] is true, and otherwise with fewer operations than
 /// [`two_product_dekker`].
 ///
 /// Requirement: `a` is zero or has magnitude in `2^-480 ..= 2^480`.
@@ -149,12 +253,16 @@ pub fn two_product(a: f64, b: f64) -> (f64, f64) {
 #[inline]
 #[must_use]
 pub fn two_square(a: f64) -> (f64, f64) {
-    let x = a * a;
-    let (hi, lo) = split(a);
-    let err1 = x - hi * hi;
-    // `hi + hi` is exact, and `hi * lo` counts twice in `a * a`.
-    let err3 = err1 - (hi + hi) * lo;
-    (x, lo * lo - err3)
+    fma_target!(if { two_product_fma(a, a) } else {
+        {
+            let x = a * a;
+            let (hi, lo) = split(a);
+            let err1 = x - hi * hi;
+            // `hi + hi` is exact, and `hi * lo` counts twice in `a * a`.
+            let err3 = err1 - (hi + hi) * lo;
+            (x, lo * lo - err3)
+        }
+    })
 }
 
 /// Veltkamp's splitting: returns `(hi, lo)` with `hi + lo == a` exactly and

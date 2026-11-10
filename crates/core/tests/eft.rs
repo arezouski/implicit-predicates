@@ -54,6 +54,12 @@ proptest! {
         prop_assert_eq!(eft::two_product(a, b), eft::two_product_dekker(a, b));
     }
 
+    #[cfg(any(all(target_arch = "x86_64", target_feature = "fma"), target_arch = "aarch64"))]
+    #[test]
+    fn two_product_fma_matches_dekker(a in in_product_domain(), b in in_product_domain()) {
+        prop_assert_eq!(eft::two_product_fma(a, b), eft::two_product_dekker(a, b));
+    }
+
     #[test]
     fn two_square_is_exact(a in in_product_domain()) {
         let (x, y) = eft::two_square(a);
@@ -62,12 +68,38 @@ proptest! {
     }
 }
 
-#[test]
-fn two_product_is_exact_at_domain_edges() {
+/// Checks that `product` is exact for operands at the edges of the documented
+/// domain of `two_product`.
+fn assert_exact_at_domain_edges(product: fn(f64, f64) -> (f64, f64)) {
     let hi = f64::from_bits(0x5DEF_FFFF_FFFF_FFFF); // just below 2^480, full mantissa
     let lo = f64::from_bits(0x21FF_FFFF_FFFF_FFFF); // just below 2^-479, full mantissa
     for (a, b) in [(hi, lo), (lo, lo), (hi, 1.0 + f64::EPSILON), (-hi, lo)] {
-        let (x, y) = eft::two_product_dekker(a, b);
+        let (x, y) = product(a, b);
         assert_eq!(value(&[x, y]), &Dyadic::from_f64(a) * &Dyadic::from_f64(b));
     }
+}
+
+#[test]
+fn two_product_is_exact_at_domain_edges() {
+    assert_exact_at_domain_edges(eft::two_product_dekker);
+}
+
+#[cfg(any(
+    all(target_arch = "x86_64", target_feature = "fma"),
+    target_arch = "aarch64"
+))]
+#[test]
+fn two_product_fma_is_exact_at_domain_edges() {
+    assert_exact_at_domain_edges(eft::two_product_fma);
+}
+
+#[test]
+fn has_fma_matches_target() {
+    assert_eq!(
+        eft::HAS_FMA,
+        cfg!(any(
+            all(target_arch = "x86_64", target_feature = "fma"),
+            target_arch = "aarch64"
+        ))
+    );
 }
