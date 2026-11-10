@@ -11,3 +11,9 @@ categories.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+num-bigint = "0.5"
+
+[dev-dependencies]
+proptest = "1"

@@ -2,6 +2,11 @@
 //!
 //! Meant for tests only, not for production use.
 //!
-//! **Status: early development.** This crate has no usable API yet.
+//! Currently provides [`Dyadic`], an exact dyadic rational number that every
+//! finite `f64` converts into without loss.
 
 #![forbid(unsafe_code)]
+
+mod dyadic;
+
+pub use dyadic::Dyadic;
