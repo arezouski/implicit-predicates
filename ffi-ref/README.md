@@ -195,16 +195,25 @@ version it has these groups:
 
 | Group | What one element is |
 | --- | --- |
-| `<version>/orient3d`, `<version>/insphere` | one recorded call, on points built beforehand, by number of implicit points: `0`, `1`, `2` and `3+` (a bucket with no calls is skipped and named on standard error) |
+| `<version>/orient3d`, `<version>/insphere` | one call, on points built beforehand, by number of implicit points: `0`, `1`, `2` and `3+` (a bucket with no calls is skipped and named on standard error); the calls are a weighted resample of the stored ones, see below |
 | `<version>/overhead` | one call of the benchmark hook, on the points of every orient3d call |
 | `<version>/construct` | one explicit or LNC point built, per corpus file, without freeing them |
-| `<version>/replay` | one recorded call, per corpus file, including building all of its points |
+| `<version>/replay` | one stored call, per corpus file, each once and in stored order, including building all of its points |
 
 The throughput in elements per second is the inverse of the time per
 element. Every reference figure includes the cost of these bindings, which
 `overhead` measures; subtracting it gives an estimate of the time spent in
 the library itself. Calls on LPI or TPI points, which these bindings cannot
 build, are left out and counted on standard error.
+
+A corpus file stores a stratified sample of the calls of its recording run
+(see `corpus/FORMAT.md`), with each stratum capped, so the stored calls
+over-represent rare strata such as zero signs. Each bucket of the
+`orient3d` and `insphere` groups therefore holds as many calls as the files
+store for it, drawn by deterministic weighted resampling: a stored call
+weighs `total / kept` of its stratum, so the bucket reflects the mix of
+calls of the recording runs. `replay` replays the stored calls as they
+are.
 
 ### Known crash of the current library
 

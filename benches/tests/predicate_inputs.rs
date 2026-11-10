@@ -41,20 +41,14 @@ fn every_set_has_its_declared_size_and_is_deterministic() {
     for (x, y) in first.iter().zip(&second) {
         assert_eq!(x.name, y.name);
         assert_eq!(x.cases, y.cases, "{}", x.name);
-        if !x.name.starts_with("corpus") {
-            assert_eq!(x.cases.len(), SET_SIZE, "{}", x.name);
-        }
-        assert!(!x.cases.is_empty(), "{}", x.name);
+        assert_eq!(x.cases.len(), SET_SIZE, "{}", x.name);
     }
     let (first, second) = (insphere_sets(), insphere_sets());
     assert_eq!(first.len(), 4);
     for (x, y) in first.iter().zip(&second) {
         assert_eq!(x.name, y.name);
         assert_eq!(x.cases, y.cases, "{}", x.name);
-        if !x.name.starts_with("corpus") {
-            assert_eq!(x.cases.len(), SET_SIZE, "{}", x.name);
-        }
-        assert!(!x.cases.is_empty(), "{}", x.name);
+        assert_eq!(x.cases.len(), SET_SIZE, "{}", x.name);
     }
 }
 

@@ -1,12 +1,19 @@
 //! Input sets and contenders for the explicit-point predicate benchmarks.
 //!
-//! The sets of [`orient3d_sets`] and [`insphere_sets`] are deterministic:
-//! each has [`SET_SIZE`] cases, except `corpus`, which holds the calls of the
-//! versioned sample corpora whose points are all explicit. The contenders
-//! are the `robust` and `geometry-predicates` crates and an unprotected `f64`
-//! determinant ([`naive_orient3d`], [`naive_insphere`]). Every contender is
-//! exposed through a function that returns the sign in the convention of the
-//! exact computation of `indirect-predicates-corpus`:
+//! The sets of [`orient3d_sets`] and [`insphere_sets`] are deterministic and
+//! have [`SET_SIZE`] cases each. The `corpus` set is drawn from the calls of
+//! the versioned sample corpora whose points are all explicit, weighted by
+//! how many calls of the recording run each stored call stands for.
+//!
+//! The contenders are the `robust` and `geometry-predicates` crates and an
+//! unprotected `f64` determinant ([`naive_orient3d`], [`naive_insphere`]),
+//! the cost of the arithmetic a floating-point filter cannot avoid. The
+//! benchmarks call every contender through a function pointer, so the time
+//! of the naive determinant (about 2 ns for orient3d) is mostly the cost of
+//! that call, which is the same for every contender.
+//!
+//! Every contender is exposed through a function that returns the sign in
+//! the convention of the exact computation of `indirect-predicates-corpus`:
 //!
 //! - `orient3d` is the sign of `det[a - d; b - d; c - d]`;
 //! - `insphere` is the sign of the 4x4 determinant whose rows are
@@ -16,9 +23,17 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use indirect_predicates_corpus::{Corpus, PointDef, Predicate};
+use indirect_predicates_corpus::weighted::weighted_sample;
+use indirect_predicates_corpus::{Call, Corpus, PointDef, Predicate};
 
 use crate::Rng;
+
+mod contenders;
+
+pub use contenders::{
+    geometry_insphere_sign, geometry_orient3d_sign, naive_insphere, naive_insphere_sign,
+    naive_orient3d, naive_orient3d_sign, robust_insphere_sign, robust_orient3d_sign,
+};
 
 /// Four points of `orient3d`.
 pub type Orient3dInput = [[f64; 3]; 4];
@@ -35,8 +50,7 @@ pub struct InputSet<T> {
     pub cases: Vec<T>,
 }
 
-/// Number of cases of every generated set, and the most the `corpus` set
-/// holds.
+/// Number of cases of every set.
 pub const SET_SIZE: usize = 1024;
 
 /// Seed of the `random` sets.
@@ -47,6 +61,9 @@ pub const NEAR_DEGENERATE_SEED: u64 = 0x6e65_6172;
 
 /// Seed of the `degenerate` sets.
 pub const DEGENERATE_SEED: u64 = 0x6465_6765;
+
+/// Seed of the weighted resampling of the `corpus` sets.
+pub const CORPUS_SEED: u64 = 0x636f_7270;
 
 /// Magnitude bound of the random coordinates.
 const RANDOM_SCALE: f64 = 1024.0;
@@ -233,9 +250,8 @@ fn near_cospherical(seed: u64) -> Vec<InSphereInput> {
         .collect()
 }
 
-/// The explicit-only calls of one predicate in the sample corpora, in file
-/// order.
-fn corpus_cases<const N: usize>(predicate: Predicate) -> Vec<[[f64; 3]; N]> {
+/// The sample corpora of `corpus/samples/`, in file name order.
+fn sample_corpora() -> Vec<Corpus> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../corpus/samples");
     let mut files: Vec<_> = std::fs::read_dir(&dir)
         .expect("the sample corpora directory")
@@ -243,158 +259,51 @@ fn corpus_cases<const N: usize>(predicate: Predicate) -> Vec<[[f64; 3]; N]> {
         .filter(|path| path.extension().is_some_and(|e| e == "ipcorpus"))
         .collect();
     files.sort();
-    let mut cases = Vec::new();
-    for path in files {
-        let reader = BufReader::new(File::open(&path).expect("a sample corpus"));
-        let corpus = Corpus::read(reader).expect("a valid sample corpus");
-        for call in corpus.calls.iter().filter(|c| c.predicate == predicate) {
-            let explicit: Option<Vec<[f64; 3]>> = call
-                .points()
-                .iter()
-                .map(|&i| match corpus.points[i as usize] {
-                    PointDef::Explicit(c) => Some(c),
-                    _ => None,
-                })
-                .collect();
-            if let Some(points) = explicit {
-                cases.push(std::array::from_fn(|i| points[i]));
-            }
-        }
-    }
-    cases
+    files
+        .iter()
+        .map(|path| {
+            let reader = BufReader::new(File::open(path).expect("a sample corpus"));
+            Corpus::read(reader).expect("a valid sample corpus")
+        })
+        .collect()
 }
 
-/// The `corpus` set: [`SET_SIZE`] explicit-only calls spread evenly over the
-/// sample corpora, or all of them, with their count in the name, if there are
-/// fewer.
+/// The coordinates of the points of a call, if they are all explicit.
+fn explicit_points(corpus: &Corpus, call: &Call) -> Option<Vec<[f64; 3]>> {
+    call.points()
+        .iter()
+        .map(|&i| match corpus.points[i as usize] {
+            PointDef::Explicit(c) => Some(c),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `corpus` set: [`SET_SIZE`] calls of `predicate` on explicit points,
+/// drawn from the sample corpora by deterministic weighted resampling with
+/// seed [`CORPUS_SEED`] ([`weighted_sample`]): each stored call weighs
+/// `total / kept` of its stratum, so the set reflects the mix of explicit
+/// calls of the recording runs rather than the stratified sample stored in
+/// the files.
 fn corpus_set<const N: usize>(predicate: Predicate) -> InputSet<[[f64; 3]; N]> {
-    let all = corpus_cases::<N>(predicate);
-    if all.len() <= SET_SIZE {
-        let name = if all.len() == SET_SIZE {
-            "corpus"
-        } else {
-            Box::leak(format!("corpus_{}", all.len()).into_boxed_str())
-        };
-        return InputSet { name, cases: all };
-    }
-    let cases = (0..SET_SIZE)
-        .map(|i| all[i * all.len() / SET_SIZE])
+    let corpora = sample_corpora();
+    let draws = weighted_sample(&corpora, SET_SIZE, CORPUS_SEED, |corpus, call| {
+        call.predicate == predicate && explicit_points(corpus, call).is_some()
+    });
+    assert_eq!(
+        draws.len(),
+        SET_SIZE,
+        "no explicit {predicate:?} call in the samples"
+    );
+    let cases = draws
+        .into_iter()
+        .map(|(c, i)| {
+            let points = explicit_points(&corpora[c], &corpora[c].calls[i]).expect("explicit");
+            std::array::from_fn(|k| points[k])
+        })
         .collect();
     InputSet {
         name: "corpus",
         cases,
     }
-}
-
-/// The sign, 1, 0 or -1, of a value.
-fn sign(x: f64) -> i8 {
-    if x > 0.0 {
-        1
-    } else if x < 0.0 {
-        -1
-    } else {
-        0
-    }
-}
-
-/// Multiplier that maps the sign `robust` returns for `orient3d` to the
-/// convention above.
-const ROBUST_ORIENT3D_FACTOR: i8 = 1;
-
-/// Multiplier for `robust::insphere`.
-const ROBUST_INSPHERE_FACTOR: i8 = 1;
-
-/// Multiplier for `geometry_predicates::orient3d`.
-const GEOMETRY_ORIENT3D_FACTOR: i8 = 1;
-
-/// Multiplier for `geometry_predicates::insphere`.
-const GEOMETRY_INSPHERE_FACTOR: i8 = 1;
-
-fn coord(p: &[f64; 3]) -> robust::Coord3D<f64> {
-    robust::Coord3D {
-        x: p[0],
-        y: p[1],
-        z: p[2],
-    }
-}
-
-/// `orient3d` of the `robust` crate.
-#[must_use]
-pub fn robust_orient3d_sign(p: &Orient3dInput) -> i8 {
-    let [a, b, c, d] = p;
-    ROBUST_ORIENT3D_FACTOR * sign(robust::orient3d(coord(a), coord(b), coord(c), coord(d)))
-}
-
-/// `insphere` of the `robust` crate.
-#[must_use]
-pub fn robust_insphere_sign(p: &InSphereInput) -> i8 {
-    let [a, b, c, d, e] = p;
-    ROBUST_INSPHERE_FACTOR
-        * sign(robust::insphere(
-            coord(a),
-            coord(b),
-            coord(c),
-            coord(d),
-            coord(e),
-        ))
-}
-
-/// `orient3d` of the `geometry-predicates` crate.
-#[must_use]
-pub fn geometry_orient3d_sign(p: &Orient3dInput) -> i8 {
-    let [a, b, c, d] = *p;
-    GEOMETRY_ORIENT3D_FACTOR * sign(geometry_predicates::orient3d(a, b, c, d))
-}
-
-/// `insphere` of the `geometry-predicates` crate.
-#[must_use]
-pub fn geometry_insphere_sign(p: &InSphereInput) -> i8 {
-    let [a, b, c, d, e] = *p;
-    GEOMETRY_INSPHERE_FACTOR * sign(geometry_predicates::insphere(a, b, c, d, e))
-}
-
-fn sub(a: &[f64; 3], b: &[f64; 3]) -> [f64; 3] {
-    std::array::from_fn(|i| a[i] - b[i])
-}
-
-/// 3x3 determinant by cofactors along the first row, in plain `f64`.
-fn det3(r: [&[f64; 3]; 3]) -> f64 {
-    r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
-        - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
-        + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0])
-}
-
-/// `det[a - d; b - d; c - d]` in plain `f64`, with no error bound: its sign is
-/// wrong on nearly degenerate inputs.
-#[must_use]
-pub fn naive_orient3d(p: &Orient3dInput) -> f64 {
-    let [a, b, c, d] = p;
-    det3([&sub(a, d), &sub(b, d), &sub(c, d)])
-}
-
-/// The 4x4 determinant with rows `(p - e, |p - e|^2)` in plain `f64`, with no
-/// error bound: its sign is wrong on nearly degenerate inputs.
-#[must_use]
-pub fn naive_insphere(p: &InSphereInput) -> f64 {
-    let [a, b, c, d, e] = p;
-    let rows = [sub(a, e), sub(b, e), sub(c, e), sub(d, e)];
-    let lifted = rows.map(|r| r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
-    // Expansion along the last column; the entry of row i has sign
-    // (-1)^(i + 3).
-    -lifted[0] * det3([&rows[1], &rows[2], &rows[3]])
-        + lifted[1] * det3([&rows[0], &rows[2], &rows[3]])
-        - lifted[2] * det3([&rows[0], &rows[1], &rows[3]])
-        + lifted[3] * det3([&rows[0], &rows[1], &rows[2]])
-}
-
-/// Sign of [`naive_orient3d`].
-#[must_use]
-pub fn naive_orient3d_sign(p: &Orient3dInput) -> i8 {
-    sign(naive_orient3d(p))
-}
-
-/// Sign of [`naive_insphere`].
-#[must_use]
-pub fn naive_insphere_sign(p: &InSphereInput) -> i8 {
-    sign(naive_insphere(p))
 }

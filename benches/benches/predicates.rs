@@ -4,8 +4,11 @@
 //!
 //! Each measurement is one pass over a whole set; the throughput in elements
 //! per second is the number of predicate calls per second, so the time per
-//! call is its inverse. To add a contender, add a row to [`ORIENT3D`] and
-//! [`INSPHERE`].
+//! call is its inverse. Every contender is called through a function
+//! pointer, at the same cost for all; it is most of the time of the
+//! unprotected determinant. The `corpus` sets are a weighted resample of the
+//! stored calls (see `indirect_predicates_benches::predicates`). To add a
+//! contender, add a row to [`ORIENT3D`] and [`INSPHERE`].
 
 use std::hint::black_box;
 

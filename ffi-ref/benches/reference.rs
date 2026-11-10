@@ -2,16 +2,21 @@
 //!
 //! For each version, the groups are:
 //!
-//! - `<version>/orient3d` and `<version>/insphere`: every recorded call of
-//!   the predicate, by number of implicit points (`0`, `1`, `2`, `3+`), on
-//!   points built beforehand;
+//! - `<version>/orient3d` and `<version>/insphere`: calls of the predicate,
+//!   by number of implicit points (`0`, `1`, `2`, `3+`), on points built
+//!   beforehand. Each bucket holds as many calls as the corpora store for
+//!   it, drawn from them by deterministic weighted resampling
+//!   (`indirect_predicates_corpus::weighted`, seed [`SEED`]): each stored
+//!   call weighs `total / kept` of its stratum, so a bucket reflects the mix
+//!   of calls of the recording runs, not the stratified sample of the files;
 //! - `<version>/overhead`: a call that does everything an orient3d call
 //!   does except evaluating the predicate (the C interface, its guard and
 //!   the index lookups), on the same points as the orient3d calls;
 //! - `<version>/construct`: building the explicit and LNC points of each
 //!   corpus, without freeing them;
 //! - `<version>/replay`: building the points of each corpus and evaluating
-//!   all of its recorded calls.
+//!   all of its stored calls, once each and in their stored order (not
+//!   weighted).
 //!
 //! The throughput in elements per second is the number of calls per second
 //! (points per second for `construct`), so the time per call is its
@@ -22,12 +27,16 @@ use std::hint::black_box;
 use std::path::{Path, PathBuf};
 
 use criterion::{BenchmarkGroup, Criterion, SamplingMode, Throughput, measurement::WallTime};
+use indirect_predicates_corpus::weighted::weighted_sample;
 use indirect_predicates_corpus::{Call, Corpus, PointDef, Predicate};
 use indirect_predicates_ffi_ref::{current, legacy};
 
 /// The environment variable naming a directory of corpus files to use
 /// instead of the versioned samples.
 const CORPUS_DIR: &str = "IPREF_CORPUS_DIR";
+
+/// Seed of the weighted resampling of the calls of each bucket.
+const SEED: u64 = 0x6970_7265;
 
 /// The implicit point count buckets; the last one holds 3 or more.
 const BUCKETS: [&str; 4] = ["0", "1", "2", "3+"];
@@ -157,19 +166,32 @@ fn bench_cases<P, I: Copy>(
     });
 }
 
-/// The calls of `predicate` with `N` points, by bucket, on built points.
+/// The calls of `predicate` with `N` points, by bucket, on built points:
+/// as many as the corpora store in each bucket, drawn by weighted
+/// resampling.
 fn bucketed<'a, R: Reference, const N: usize>(
     corpora: &[Corpus],
     built: &'a [Built<R>],
     predicate: Predicate,
 ) -> Vec<Vec<Case<'a, R, N>>> {
-    let mut buckets: Vec<Vec<_>> = BUCKETS.iter().map(|_| Vec::new()).collect();
-    for (corpus, (points, ids)) in corpora.iter().zip(built) {
-        for call in corpus.calls.iter().filter(|c| c.predicate == predicate) {
-            buckets[bucket(corpus, call)].push((points, call_ids(ids, call)));
-        }
-    }
-    buckets
+    (0..BUCKETS.len())
+        .map(|b| {
+            let eligible = |corpus: &Corpus, call: &Call| {
+                call.predicate == predicate && bucket(corpus, call) == b
+            };
+            let stored = corpora
+                .iter()
+                .map(|corpus| corpus.calls.iter().filter(|c| eligible(corpus, c)).count())
+                .sum();
+            weighted_sample(corpora, stored, SEED, eligible)
+                .into_iter()
+                .map(|(c, i)| {
+                    let (points, ids) = &built[c];
+                    (points, call_ids(ids, &corpora[c].calls[i]))
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// The `<version>/<predicate>` group.

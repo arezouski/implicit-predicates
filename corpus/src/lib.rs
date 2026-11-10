@@ -10,6 +10,7 @@ mod format;
 mod model;
 pub mod stats;
 pub mod verify;
+pub mod weighted;
 
 pub use format::CorpusError;
 pub use model::{Call, Corpus, CounterKey, PointDef, Predicate, Sampling, Stage, Stratum};
