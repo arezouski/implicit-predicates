@@ -110,9 +110,9 @@ that exports `ipref_<version>_*` and makes every other symbol local. Inside
 a library every C++ symbol is bound locally at link time, and the dynamic
 linker can bind across libraries only through the exported symbols, which
 are the C functions of each interface: six for the bindings, one benchmark
-hook and three test hooks. The build script checks this with `nm -D
+hook and four test hooks. The build script checks this with `nm -D
 --defined-only` on both libraries: it fails unless each library exports
-exactly the ten functions of its own interface, and if a symbol is exported
+exactly the eleven functions of its own interface, and if a symbol is exported
 by both. The C++ runtime
 (`libstdc++`) is a shared dependency of both and is not duplicated.
 
@@ -139,8 +139,12 @@ Every function of the interface runs its work through one guard
   again on return, and aborts with a message if it is not to nearest:
   `ipref: called with the rounding mode not to nearest` (the caller's
   fault) or `ipref: the reference library returned with the rounding mode
-  not to nearest` (the library's). That is one read of the floating-point
-  control registers per check, negligible next to a predicate call.
+  not to nearest` (the library's). On x86_64 the guard reads the SSE
+  control register (MXCSR), whose rounding mode is the one Rust's
+  arithmetic and the libraries' SSE and AVX code follow; `fegetround`
+  would read the x87 control word, which can differ. Elsewhere it uses
+  `fegetround`. That is one read of a control register per check,
+  negligible next to a predicate call.
 - **Exceptions.** Any C++ exception is caught and the process aborts with a
   message, so no exception crosses the interface.
 - **Error routine.** The libraries report internal errors (such as a
@@ -167,10 +171,11 @@ everything an orient3d call does (the call through the interface, the
 guard, the index checks and the lookup of four points) except evaluating
 the predicate, and returns 0.
 
-The three `test_*` functions of the interface are test hooks, exposed in
+The four `test_*` functions of the interface are test hooks, exposed in
 Rust only through the hidden module `test_hooks`: one calls the error
 routine from inside a call, one returns from a call with the rounding mode
-set upward, and one creates a handle with the rounding mode set upward. The
+set upward, one creates a handle with the rounding mode set upward, and one
+does the same with upward rounding set only in MXCSR on x86_64. The
 tests in `tests/failures.rs` run each in a child process and check that it
 ends the process as described above.
 

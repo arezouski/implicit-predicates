@@ -56,14 +56,19 @@ IPREF_API int ipref_current_insphere(const ipref_current_points *points, uint32_
  * - `test_return_rounding_upward` returns from inside a call with the
  *   rounding mode set upward, which must abort;
  * - `test_enter_rounding_upward` sets the rounding mode upward and then
- *   creates a points handle, which must abort.
+ *   creates a points handle, which must abort;
+ * - `test_enter_sse_rounding_upward` does the same, but on x86_64 sets
+ *   upward rounding only in the SSE control register (MXCSR), leaving the
+ *   x87 control word to nearest.
  */
 IPREF_API void ipref_legacy_test_error_routine(void);
 IPREF_API void ipref_legacy_test_return_rounding_upward(void);
 IPREF_API void ipref_legacy_test_enter_rounding_upward(void);
+IPREF_API void ipref_legacy_test_enter_sse_rounding_upward(void);
 IPREF_API void ipref_current_test_error_routine(void);
 IPREF_API void ipref_current_test_return_rounding_upward(void);
 IPREF_API void ipref_current_test_enter_rounding_upward(void);
+IPREF_API void ipref_current_test_enter_sse_rounding_upward(void);
 
 /*
  * Benchmark hook, used only by the benchmarks of the Rust wrapper to

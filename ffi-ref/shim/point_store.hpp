@@ -132,6 +132,12 @@ private:
         std::fesetround(FE_UPWARD);                                                                \
         ipref_##VERSION##_points_free(ipref_##VERSION##_points_new());                             \
         std::fesetround(FE_TONEAREST);                                                             \
+    }                                                                                              \
+    extern "C" void ipref_##VERSION##_test_enter_sse_rounding_upward(void)                         \
+    {                                                                                              \
+        set_sse_rounding_upward();                                                                 \
+        ipref_##VERSION##_points_free(ipref_##VERSION##_points_new());                             \
+        std::fesetround(FE_TONEAREST);                                                             \
     }
 
 #endif

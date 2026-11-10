@@ -18,6 +18,7 @@ unsafe extern "C" {
     fn ipref_legacy_test_error_routine();
     fn ipref_legacy_test_return_rounding_upward();
     fn ipref_legacy_test_enter_rounding_upward();
+    fn ipref_legacy_test_enter_sse_rounding_upward();
     fn ipref_legacy_points_free(points: *mut RawPoints);
     fn ipref_legacy_explicit(points: *mut RawPoints, x: f64, y: f64, z: f64) -> u32;
     fn ipref_legacy_lnc(points: *mut RawPoints, p: u32, q: u32, t: f64) -> u32;
@@ -42,6 +43,7 @@ unsafe extern "C" {
     fn ipref_current_test_error_routine();
     fn ipref_current_test_return_rounding_upward();
     fn ipref_current_test_enter_rounding_upward();
+    fn ipref_current_test_enter_sse_rounding_upward();
     fn ipref_current_points_free(points: *mut RawPoints);
     fn ipref_current_explicit(points: *mut RawPoints, x: f64, y: f64, z: f64) -> u32;
     fn ipref_current_lnc(points: *mut RawPoints, p: u32, q: u32, t: f64) -> u32;
@@ -75,7 +77,7 @@ pub(crate) struct Api {
     /// The benchmark hook: an orient3d call without the predicate.
     overhead: unsafe extern "C" fn(*const RawPoints, u32, u32, u32, u32) -> c_int,
     /// The test hooks, in the order of [`TestHook`].
-    hooks: [unsafe extern "C" fn(); 3],
+    hooks: [unsafe extern "C" fn(); 4],
 }
 
 /// A library version. The functions are constants, so calls through a
@@ -103,6 +105,7 @@ impl Version for Legacy {
             ipref_legacy_test_error_routine,
             ipref_legacy_test_return_rounding_upward,
             ipref_legacy_test_enter_rounding_upward,
+            ipref_legacy_test_enter_sse_rounding_upward,
         ],
     };
 }
@@ -120,6 +123,7 @@ impl Version for Current {
             ipref_current_test_error_routine,
             ipref_current_test_return_rounding_upward,
             ipref_current_test_enter_rounding_upward,
+            ipref_current_test_enter_sse_rounding_upward,
         ],
     };
 }
@@ -269,6 +273,10 @@ pub enum TestHook {
     /// Sets the rounding mode upward, then creates a points handle; the
     /// process must abort.
     EnterRoundingUpward,
+    /// Like [`TestHook::EnterRoundingUpward`], but on x86_64 changes only
+    /// the rounding mode of the SSE control register (MXCSR), which Rust's
+    /// floating-point arithmetic follows, and not the x87 one.
+    EnterSseRoundingUpward,
 }
 
 /// Runs a test hook of version `V`.

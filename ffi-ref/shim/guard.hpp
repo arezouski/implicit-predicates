@@ -1,7 +1,8 @@
 // The boundary between the C interface and the reference libraries. Every
 // function of the interface runs its work through `guard`, which:
 // - aborts if it is called with a rounding mode other than to nearest, or
-//   if the library returns with one (Rust code requires round-to-nearest);
+//   if the library returns with one (Rust code requires round-to-nearest;
+//   on x86_64 the mode checked is that of the SSE control register, MXCSR);
 // - aborts if a C++ exception reaches it;
 // - marks the calling thread as inside a library call, so that if the
 //   library's error routine ends the process with `exit`, which may use
@@ -15,8 +16,18 @@
 #include <cstdlib>
 #include <exception>
 #include <unistd.h>
+#if defined(__x86_64__)
+#include <xmmintrin.h>
+#endif
 
 namespace {
+
+#if defined(__x86_64__)
+// The rounding-control bits of MXCSR and their value for upward rounding;
+// zero is round to nearest.
+constexpr unsigned mxcsr_rounding = 0x6000;
+constexpr unsigned mxcsr_upward = 0x4000;
+#endif
 
 // Whether this thread is inside a call to the library. `exit` runs the exit
 // handlers on the thread that called it, so the handler reads the flag of
@@ -50,9 +61,34 @@ bool register_exit_handler()
 // Registered once per process, when the library is loaded.
 [[maybe_unused]] const bool exit_handler_registered = register_exit_handler();
 
+// Sets upward rounding in the SSE control register only, on x86_64; for the
+// test hooks. Elsewhere there is one rounding mode, set with `fesetround`.
+inline void set_sse_rounding_upward()
+{
+#if defined(__x86_64__)
+    _mm_setcsr((_mm_getcsr() & ~mxcsr_rounding) | mxcsr_upward);
+#else
+    std::fesetround(FE_UPWARD);
+#endif
+}
+
+// Whether the rounding mode is to nearest. On x86_64 this reads the SSE
+// control register (MXCSR), whose rounding mode is the one Rust's
+// floating-point arithmetic and the libraries' SSE and AVX code follow;
+// `fegetround` reads the x87 control word there, which can differ. One read
+// of a control register either way.
+inline bool rounding_is_nearest()
+{
+#if defined(__x86_64__)
+    return (_mm_getcsr() & mxcsr_rounding) == 0;
+#else
+    return std::fegetround() == FE_TONEAREST;
+#endif
+}
+
 void require_nearest(const char *what)
 {
-    if (std::fegetround() != FE_TONEAREST) {
+    if (!rounding_is_nearest()) {
         fail(what);
     }
 }

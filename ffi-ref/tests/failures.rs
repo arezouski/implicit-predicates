@@ -10,10 +10,14 @@ use std::process::{Command, Output};
 /// Names the version and hook the child runs.
 const CHILD_CASE: &str = "IPREF_CHILD_CASE";
 
-const CASES: [(&str, TestHook); 3] = [
+const CASES: [(&str, TestHook); 4] = [
     ("error-routine", TestHook::ErrorRoutine),
     ("return-rounding-upward", TestHook::ReturnRoundingUpward),
     ("enter-rounding-upward", TestHook::EnterRoundingUpward),
+    (
+        "enter-sse-rounding-upward",
+        TestHook::EnterSseRoundingUpward,
+    ),
 ];
 
 #[test]
@@ -87,6 +91,21 @@ fn returning_with_directed_rounding_aborts() {
 fn entering_with_directed_rounding_aborts() {
     for version in ["legacy", "current"] {
         let output = run_child(version, "enter-rounding-upward");
+        let err = stderr(&output);
+        assert_eq!(output.status.code(), None, "{version}: {err}");
+        assert!(
+            err.contains("ipref: called with the rounding mode not to nearest"),
+            "{version}: {err}"
+        );
+    }
+}
+
+#[test]
+fn entering_with_directed_rounding_in_the_sse_control_register_only_aborts() {
+    // The arithmetic of Rust code on x86_64 follows the rounding mode of the
+    // SSE control register, which can differ from the x87 one.
+    for version in ["legacy", "current"] {
+        let output = run_child(version, "enter-sse-rounding-upward");
         let err = stderr(&output);
         assert_eq!(output.status.code(), None, "{version}: {err}");
         assert!(
