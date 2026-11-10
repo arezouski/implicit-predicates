@@ -100,6 +100,14 @@ class BuildTests(unittest.TestCase):
                 reference.build_cdt(self.source, Path(self._tmp.name) / "b")
         run.assert_not_called()
 
+    def test_recording_build_refuses_a_checkout_at_another_commit(self):
+        build = Path(self._tmp.name) / "b"
+        with mock.patch.object(reference, "_run") as run:
+            with self.assertRaises(reference.ReferenceError):
+                reference.build_recording_cdt(self.source, build)
+        run.assert_not_called()
+        self.assertFalse(build.exists())
+
     def test_build_refuses_a_dirty_checkout(self):
         head = git(self.source, "rev-parse", "HEAD")
         (self.source / "CMakeLists.txt").write_text("# edited\n")

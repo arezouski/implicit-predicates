@@ -17,6 +17,7 @@ def fetch_reference(_args):
 
 def build(_args):
     print(f"built {reference.build_cdt()}")
+    print(f"built {reference.build_recording_cdt()}")
 
 
 COMMANDS = {
@@ -24,7 +25,10 @@ COMMANDS = {
         fetch_reference,
         "download the reference repositories at their pinned commits",
     ),
-    "build": (build, "build the original reference mesher"),
+    "build": (
+        build,
+        "build the original reference mesher and the one that records its predicate calls",
+    ),
 }
 
 

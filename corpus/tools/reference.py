@@ -9,6 +9,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import instrument
+
 CORPUS_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = CORPUS_DIR / "data"
 REFERENCE_DIR = DATA_DIR / "reference"
@@ -22,6 +24,7 @@ IP_COMMIT = "f8f243d18a6851fe3128b7e09af5b3574259d700"
 CDT_DIR = REFERENCE_DIR / "cdt-legacy"
 IP_DIR = REFERENCE_DIR / "indirect-predicates"
 CDT_BUILD_DIR = BUILD_DIR / "cdt-original"
+RECORDING_BUILD_DIR = BUILD_DIR / "cdt-recording"
 
 
 class ReferenceError(Exception):
@@ -107,11 +110,7 @@ def _run(command, **kwargs):
         raise ReferenceError(f"command failed: {' '.join(map(str, command))}")
 
 
-def build_cdt(source=CDT_DIR, build=CDT_BUILD_DIR):
-    """Build the original mesher out of tree and return the `cdt` executable."""
-    if not source.exists():
-        raise ReferenceError(f"{source} is missing; run fetch-reference first")
-    _check_existing(Repo(CDT_URL, CDT_COMMIT, source))
+def _cmake_build(source, build):
     if shutil.which("cmake") is None:
         raise ReferenceError("cmake was not found in PATH")
     generator = ["-G", "Ninja"] if shutil.which("ninja") else []
@@ -124,3 +123,31 @@ def build_cdt(source=CDT_DIR, build=CDT_BUILD_DIR):
     if not executable.is_file():
         raise ReferenceError(f"the build did not produce {executable}")
     return executable
+
+
+def _check_cdt_source(source):
+    if not source.exists():
+        raise ReferenceError(f"{source} is missing; run fetch-reference first")
+    _check_existing(Repo(CDT_URL, CDT_COMMIT, source))
+
+
+def build_cdt(source=CDT_DIR, build=CDT_BUILD_DIR):
+    """Build the original mesher out of tree and return the `cdt` executable."""
+    _check_cdt_source(source)
+    return _cmake_build(source, build)
+
+
+def build_recording_cdt(source=CDT_DIR, build=RECORDING_BUILD_DIR):
+    """Build the mesher that records its predicate calls and return its `cdt`.
+
+    The sources are copied to ``build/src`` (replacing an earlier copy) and the
+    copy is instrumented; the downloaded checkout is not modified.
+    """
+    _check_cdt_source(source)
+    copy = build / "src"
+    shutil.rmtree(copy, ignore_errors=True)
+    try:
+        instrument.prepare(source, copy)
+    except instrument.InstrumentError as error:
+        raise ReferenceError(f"cannot instrument {source}: {error}") from error
+    return _cmake_build(copy, build)
