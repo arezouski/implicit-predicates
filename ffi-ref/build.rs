@@ -10,8 +10,9 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, exit};
 
-const SHIM_FILES: [&str; 4] = [
+const SHIM_FILES: [&str; 5] = [
     "shim/ipref.h",
+    "shim/guard.hpp",
     "shim/point_store.hpp",
     "shim/cdt_legacy.cpp",
     "shim/ip_current.cpp",
@@ -181,30 +182,41 @@ fn exported_symbols(library: &Path) -> BTreeSet<String> {
         .collect()
 }
 
-/// Fails unless every library exports only symbols with its own prefix,
-/// which also means no symbol is exported by two of them.
+/// The functions of the C interface of each version, after its prefix
+/// `ipref_<version>_`: six for the bindings and three test hooks.
+const INTERFACE: [&str; 9] = [
+    "points_new",
+    "points_free",
+    "explicit",
+    "lnc",
+    "orient3d",
+    "insphere",
+    "test_error_routine",
+    "test_return_rounding_upward",
+    "test_enter_rounding_upward",
+];
+
+/// Fails unless every library exports exactly the functions of its own C
+/// interface, which also means no symbol is exported by two of them.
 fn check_isolation(libraries: &[(&Version, PathBuf)]) {
     let mut seen = BTreeSet::new();
     for (version, library) in libraries {
-        let prefix = format!("ipref_{}_", version.name);
+        let expected: BTreeSet<String> = INTERFACE
+            .iter()
+            .map(|function| format!("ipref_{}_{function}", version.name))
+            .collect();
         let symbols = exported_symbols(library);
-        let foreign: Vec<_> = symbols.iter().filter(|s| !s.starts_with(&prefix)).collect();
-        if !foreign.is_empty() {
+        if symbols != expected {
+            let extra: Vec<_> = symbols.difference(&expected).collect();
+            let missing: Vec<_> = expected.difference(&symbols).collect();
             fail(&format!(
-                "{} exports symbols outside its interface: {foreign:?}",
+                "{} does not export exactly its C interface: extra {extra:?}, missing {missing:?}",
                 library.display()
             ));
         }
         let shared: Vec<_> = symbols.intersection(&seen).collect();
         if !shared.is_empty() {
             fail(&format!("symbols defined by both libraries: {shared:?}"));
-        }
-        if symbols.len() != 6 {
-            fail(&format!(
-                "{} exports {} symbols, expected 6",
-                library.display(),
-                symbols.len()
-            ));
         }
         seen.extend(symbols);
     }

@@ -125,3 +125,20 @@ mod sys;
 
 pub mod current;
 pub mod legacy;
+
+/// Hooks for the tests of this package only: each one ends the process
+/// when the C interface works as intended.
+#[doc(hidden)]
+pub mod test_hooks {
+    pub use crate::sys::TestHook;
+
+    /// Runs a test hook of the legacy library.
+    pub fn legacy(hook: TestHook) {
+        crate::sys::test_hook::<crate::sys::Legacy>(hook);
+    }
+
+    /// Runs a test hook of the current library.
+    pub fn current(hook: TestHook) {
+        crate::sys::test_hook::<crate::sys::Current>(hook);
+    }
+}

@@ -6,15 +6,16 @@ mod common;
 use common::{generated, sample_corpora};
 use indirect_predicates_corpus::Predicate;
 use indirect_predicates_ffi_ref::{current, legacy};
+use std::hint::black_box;
 use std::sync::Mutex;
 
 /// Serializes the tests of this file, so that the memory test measures
 /// only its own allocations.
 static SERIAL: Mutex<()> = Mutex::new(());
 
-#[test]
-fn both_versions_answer_in_one_process() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+/// Runs every call of the sample corpora through both versions, on this
+/// thread, asserting that they agree; returns the number of calls.
+fn sample_calls_agree() -> usize {
     let mut compared = 0;
     for corpus in sample_corpora() {
         let (old, old_ids) = legacy::from_corpus(&corpus);
@@ -44,6 +45,13 @@ fn both_versions_answer_in_one_process() {
             compared += 1;
         }
     }
+    compared
+}
+
+#[test]
+fn both_versions_answer_in_one_process() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut compared = sample_calls_agree();
     for p in generated(100) {
         let mut old = legacy::Points::new();
         let mut new = current::Points::new();
@@ -61,6 +69,19 @@ fn both_versions_answer_in_one_process() {
         compared += 2;
     }
     assert!(compared > 9000, "only {compared} calls compared");
+}
+
+#[test]
+fn rounding_is_to_nearest_after_the_reference_calls() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(sample_calls_agree() > 8000);
+    // 2^-60 is far below half an ulp of 1: rounding to nearest drops it,
+    // rounding upward, downward or toward zero does not in one of these.
+    let tiny = black_box(2f64.powi(-60));
+    assert_eq!(black_box(1.0) + tiny, 1.0);
+    assert_eq!(black_box(1.0) - tiny, 1.0);
+    assert_eq!(black_box(-1.0) + tiny, -1.0);
+    assert_eq!(black_box(-1.0) - tiny, -1.0);
 }
 
 /// Resident set size of this process, in bytes (Linux only).

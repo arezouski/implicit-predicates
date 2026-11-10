@@ -5,11 +5,11 @@
 #ifndef IPREF_POINT_STORE_HPP
 #define IPREF_POINT_STORE_HPP
 
+#include "guard.hpp"
+
+#include <cfenv>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <deque>
-#include <exception>
 #include <vector>
 
 namespace {
@@ -55,33 +55,14 @@ private:
     std::vector<const Generic *> all;
 };
 
-[[noreturn]] void fail(const char *what)
-{
-    std::fprintf(stderr, "ipref: C++ exception reached the C interface: %s\n", what);
-    std::abort();
-}
-
-// Runs `body`, aborting the process if it throws: no exception may cross
-// the C interface.
-template <class Body>
-auto guard(Body body) noexcept -> decltype(body())
-{
-    try {
-        return body();
-    } catch (const std::exception &e) {
-        fail(e.what());
-    } catch (...) {
-        fail("unknown exception");
-    }
-}
-
 } // namespace
 
 // Defines the C interface of one version. `VERSION` is the prefix word,
 // `STORE` the PointStore type, `INIT` a statement run when a handle is
-// created and `ORIENT3D`, `INSPHERE` the library's predicates on generic
-// points.
-#define IPREF_DEFINE_INTERFACE(VERSION, STORE, INIT, ORIENT3D, INSPHERE)                           \
+// created, `ORIENT3D`, `INSPHERE` the library's predicates on generic
+// points and `ERROR_ROUTINE` the library's error routine (used only by a
+// test hook).
+#define IPREF_DEFINE_INTERFACE(VERSION, STORE, INIT, ORIENT3D, INSPHERE, ERROR_ROUTINE)            \
     struct ipref_##VERSION##_points {                                                              \
         STORE store;                                                                               \
     };                                                                                             \
@@ -121,6 +102,20 @@ auto guard(Body body) noexcept -> decltype(body())
             const STORE &s = points->store;                                                        \
             return INSPHERE(s.at(a), s.at(b), s.at(c), s.at(d), s.at(e));                          \
         });                                                                                        \
+    }                                                                                              \
+    extern "C" void ipref_##VERSION##_test_error_routine(void)                                     \
+    {                                                                                              \
+        guard([] { ERROR_ROUTINE("ipref test hook: error routine\n"); });                          \
+    }                                                                                              \
+    extern "C" void ipref_##VERSION##_test_return_rounding_upward(void)                            \
+    {                                                                                              \
+        guard([] { std::fesetround(FE_UPWARD); });                                                 \
+    }                                                                                              \
+    extern "C" void ipref_##VERSION##_test_enter_rounding_upward(void)                             \
+    {                                                                                              \
+        std::fesetround(FE_UPWARD);                                                                \
+        ipref_##VERSION##_points_free(ipref_##VERSION##_points_new());                             \
+        std::fesetround(FE_TONEAREST);                                                             \
     }
 
 #endif

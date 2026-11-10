@@ -13,4 +13,4 @@ using LegacyStore = PointStore<genericPoint, explicitPoint3D, implicitPoint3D_LN
 // The mesher calls initFPU() once before using the predicates; a handle
 // does the same when it is created.
 IPREF_DEFINE_INTERFACE(legacy, LegacyStore, initFPU(), genericPoint::orient3D,
-                       genericPoint::inSphere)
+                       genericPoint::inSphere, ip_error)

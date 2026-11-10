@@ -109,10 +109,10 @@ So each version, with its shim, is built into its own shared library,
 that exports `ipref_<version>_*` and makes every other symbol local. Inside
 a library every C++ symbol is bound locally at link time, and the dynamic
 linker can bind across libraries only through the exported symbols, which
-are the six C functions of each interface. The build script checks this
-with `nm -D --defined-only` on both libraries: it fails if a library
-exports any symbol without its own prefix, if a symbol is exported by both,
-or if a library does not export exactly its six functions. The C++ runtime
+are the C functions of each interface: six for the bindings and three test
+hooks. The build script checks this with `nm -D --defined-only` on both
+libraries: it fails unless each library exports exactly the nine functions
+of its own interface, and if a symbol is exported by both. The C++ runtime
 (`libstdc++`) is a shared dependency of both and is not duplicated.
 
 The test `both_versions_answer_in_one_process` loads both libraries in one
@@ -127,18 +127,42 @@ package linking this one would need its own rpath.
 `shim/ipref.h` declares opaque handles and functions that take and return
 only doubles and integers. Points are named by indices; the Rust wrapper
 checks every index and that the parents of an LNC point are explicit
-before calling. Every C function catches any C++ exception and aborts the
-process with a message, so no exception crosses the interface.
+before calling.
 
-The libraries report internal errors (such as a division by zero in their
-exact arithmetic) through their error routine `ip_error`, which prints a
-message and ends the process with `exit`: with status 0 in the legacy
-library and with a failure status in the current one. These bindings do not
-intercept it. A test that reaches it ends the whole test process, in the
-legacy case with a success status; look for the message on standard error.
-It is not expected for orient3d and insphere on explicit and LNC points.
+Every function of the interface runs its work through one guard
+(`shim/guard.hpp`), always on, in release builds too:
 
-The interval stages of both libraries switch the floating-point rounding
-mode to upward and back to round-to-nearest inside each function, in
-straight-line code. The bindings rely on that and do not check the rounding
-mode after a call.
+- **Rounding mode.** Rust code requires round-to-nearest. The interval
+  stages of both libraries switch the rounding mode to upward and back
+  inside their functions. The guard reads the rounding mode on entry and
+  again on return, and aborts with a message if it is not to nearest:
+  `ipref: called with the rounding mode not to nearest` (the caller's
+  fault) or `ipref: the reference library returned with the rounding mode
+  not to nearest` (the library's). That is one read of the floating-point
+  control registers per check, negligible next to a predicate call.
+- **Exceptions.** Any C++ exception is caught and the process aborts with a
+  message, so no exception crosses the interface.
+- **Error routine.** The libraries report internal errors (such as a
+  division by zero in their exact arithmetic) through their error routine
+  `ip_error`, which prints a message and ends the process with `exit`: with
+  status 0 in the legacy library and with a failure status in the current
+  one. A status of 0 would make a test run that ended there look
+  successful. The guard marks the calling thread as inside a library call,
+  and an exit handler registered once per process (when each library is
+  loaded) turns an `exit` from inside a call into `_exit(EXIT_FAILURE)`,
+  after printing `ipref: the reference library ended the process from
+  inside a call`. `exit` runs the handlers on the thread that called it, so
+  the per-thread flag is correct with tests running on several threads.
+  Nothing in the libraries is modified. The error routine is not reachable
+  from orient3d and insphere on explicit and LNC points: in both libraries
+  it is called only from their rational and big-integer division and from
+  coordinate conversions of point types these bindings never create, and
+  the built bindings, without the test hook below, contain neither its
+  messages nor a reference to `exit`.
+
+The three `test_*` functions of the interface are test hooks, exposed in
+Rust only through the hidden module `test_hooks`: one calls the error
+routine from inside a call, one returns from a call with the rounding mode
+set upward, and one creates a handle with the rounding mode set upward. The
+tests in `tests/failures.rs` run each in a child process and check that it
+ends the process as described above.

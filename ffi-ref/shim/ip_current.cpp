@@ -12,4 +12,4 @@ using CurrentStore =
 }
 
 IPREF_DEFINE_INTERFACE(current, CurrentStore, NFG::initFPU(), IPs::genericPoint::orient3D,
-                       IPs::genericPoint::inSphere)
+                       IPs::genericPoint::inSphere, NFG::ip_error)

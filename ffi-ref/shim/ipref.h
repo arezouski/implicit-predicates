@@ -48,6 +48,23 @@ IPREF_API int ipref_current_orient3d(const ipref_current_points *points, uint32_
 IPREF_API int ipref_current_insphere(const ipref_current_points *points, uint32_t a, uint32_t b,
                                      uint32_t c, uint32_t d, uint32_t e);
 
+/*
+ * Test hooks, used only by the tests of the Rust wrapper. None of them
+ * returns normally when the interface works as intended:
+ * - `test_error_routine` calls the library's error routine from inside a
+ *   call, which must end the process with a failure status;
+ * - `test_return_rounding_upward` returns from inside a call with the
+ *   rounding mode set upward, which must abort;
+ * - `test_enter_rounding_upward` sets the rounding mode upward and then
+ *   creates a points handle, which must abort.
+ */
+IPREF_API void ipref_legacy_test_error_routine(void);
+IPREF_API void ipref_legacy_test_return_rounding_upward(void);
+IPREF_API void ipref_legacy_test_enter_rounding_upward(void);
+IPREF_API void ipref_current_test_error_routine(void);
+IPREF_API void ipref_current_test_return_rounding_upward(void);
+IPREF_API void ipref_current_test_enter_rounding_upward(void);
+
 #ifdef __cplusplus
 }
 #endif

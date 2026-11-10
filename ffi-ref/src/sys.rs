@@ -15,6 +15,9 @@ pub(crate) struct RawPoints {
 
 unsafe extern "C" {
     fn ipref_legacy_points_new() -> *mut RawPoints;
+    fn ipref_legacy_test_error_routine();
+    fn ipref_legacy_test_return_rounding_upward();
+    fn ipref_legacy_test_enter_rounding_upward();
     fn ipref_legacy_points_free(points: *mut RawPoints);
     fn ipref_legacy_explicit(points: *mut RawPoints, x: f64, y: f64, z: f64) -> u32;
     fn ipref_legacy_lnc(points: *mut RawPoints, p: u32, q: u32, t: f64) -> u32;
@@ -29,6 +32,9 @@ unsafe extern "C" {
     ) -> c_int;
 
     fn ipref_current_points_new() -> *mut RawPoints;
+    fn ipref_current_test_error_routine();
+    fn ipref_current_test_return_rounding_upward();
+    fn ipref_current_test_enter_rounding_upward();
     fn ipref_current_points_free(points: *mut RawPoints);
     fn ipref_current_explicit(points: *mut RawPoints, x: f64, y: f64, z: f64) -> u32;
     fn ipref_current_lnc(points: *mut RawPoints, p: u32, q: u32, t: f64) -> u32;
@@ -52,6 +58,8 @@ pub(crate) struct Api {
     lnc: unsafe extern "C" fn(*mut RawPoints, u32, u32, f64) -> u32,
     orient3d: unsafe extern "C" fn(*const RawPoints, u32, u32, u32, u32) -> c_int,
     insphere: unsafe extern "C" fn(*const RawPoints, u32, u32, u32, u32, u32) -> c_int,
+    /// The test hooks, in the order of [`TestHook`].
+    hooks: [unsafe extern "C" fn(); 3],
 }
 
 /// A library version. The functions are constants, so calls through a
@@ -74,6 +82,11 @@ impl Version for Legacy {
         lnc: ipref_legacy_lnc,
         orient3d: ipref_legacy_orient3d,
         insphere: ipref_legacy_insphere,
+        hooks: [
+            ipref_legacy_test_error_routine,
+            ipref_legacy_test_return_rounding_upward,
+            ipref_legacy_test_enter_rounding_upward,
+        ],
     };
 }
 
@@ -85,6 +98,11 @@ impl Version for Current {
         lnc: ipref_current_lnc,
         orient3d: ipref_current_orient3d,
         insphere: ipref_current_insphere,
+        hooks: [
+            ipref_current_test_error_routine,
+            ipref_current_test_return_rounding_upward,
+            ipref_current_test_enter_rounding_upward,
+        ],
     };
 }
 
@@ -205,6 +223,31 @@ impl<V: Version> Drop for Handle<V> {
         // is freed only here, once.
         unsafe { (V::API.free)(self.raw.as_ptr()) }
     }
+}
+
+/// A test hook of the C interface (see `shim/ipref.h`). None of them
+/// returns when the interface works as intended: each ends the process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TestHook {
+    /// Calls the library's error routine from inside a call; the process
+    /// must exit with a failure status.
+    ErrorRoutine,
+    /// Returns from inside a call with the rounding mode set upward; the
+    /// process must abort.
+    ReturnRoundingUpward,
+    /// Sets the rounding mode upward, then creates a points handle; the
+    /// process must abort.
+    EnterRoundingUpward,
+}
+
+/// Runs a test hook of version `V`.
+pub(crate) fn test_hook<V: Version>(hook: TestHook) {
+    // SAFETY: the hooks take no arguments and touch no memory of ours.
+    // Each ends the process unless the C interface is broken; only then can
+    // `ReturnRoundingUpward` come back with the rounding mode set upward.
+    // The tests run the hooks in a child process that does nothing else
+    // and is judged only by how it ended.
+    unsafe { (V::API.hooks[hook as usize])() }
 }
 
 fn sign(value: c_int) -> i8 {
