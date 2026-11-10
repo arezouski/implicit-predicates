@@ -142,3 +142,24 @@ fn robust_and_geometry_predicates_match_the_exact_sign_on_every_set() {
         }
     }
 }
+
+#[test]
+fn naive_determinants_have_the_exact_sign_on_random_inputs() {
+    // At magnitude below 2^10 with generic coordinates the rounding error of
+    // the plain f64 determinant is far below the value, so the signs agree on
+    // every case; a mismatch means the naive formula has the wrong convention.
+    for case in &set(&orient3d_sets(), "random").cases {
+        assert_eq!(
+            signum(naive_orient3d(case)),
+            exact_orient3d(case),
+            "{case:?}"
+        );
+    }
+    for case in &set(&insphere_sets(), "random").cases {
+        assert_eq!(
+            signum(naive_insphere(case)),
+            exact_insphere(case),
+            "{case:?}"
+        );
+    }
+}
