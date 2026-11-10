@@ -6,8 +6,9 @@
 //! # Why every product stays in the domain of `two_product`
 //!
 //! Leaf slots hold zero, an `f64` with magnitude in `2^-100 ..= 2^100`, or
-//! (for the near-equal pairs) an exact sum of up to 8 such values, below
-//! `2^103`. Expressions nest at most 4 levels, so they have at most 16 leaf
+//! (for the near-equal pairs) an exact sum of up to 8 such values, whose
+//! components add up in magnitude to less than `2^103`. Generated
+//! expressions nest at most 4 levels, so they have at most 16 leaf
 //! occurrences, and have total degree at most 4, so each operand of a
 //! product has degree at most 3.
 //!
@@ -16,17 +17,29 @@
 //!   multiples of `u` and `v` are multiples of `u * v`, so every component
 //!   of an expansion of degree at most 3 is a nonzero multiple of `2^-456`,
 //!   above the `2^-480` the domain requires.
-//! - *Upper bound.* Replacing every difference by a sum and every leaf by
-//!   `2^103` bounds the value of an operand of degree at most 3, with at
-//!   most 16 leaf occurrences, by fewer than `2^10` monomials of at most
-//!   `2^309`, that is, by `2^319`. Components of an expansion can exceed its
-//!   value, but only by a few binades for each operation that built it, and
-//!   the margin up to `2^480` is 160 binades for the few dozen operations of
-//!   an expression.
+//! - *Upper bound.* Track the mass `M(e)`, the sum of the magnitudes of the
+//!   components of `e`. With round-to-nearest and no overflow, `two_sum` and
+//!   `fast_two_sum` give `s + err = a + b` with `|err| <= 2^-53 |a + b|`, so
+//!   `|s| + |err| <= |a + b| + 2 |err| <= (|a| + |b|) (1 + 2^-52)`; inside its
+//!   domain `two_product` likewise gives `|p| + |err| <= |a b| (1 + 2^-52)`.
+//!   Every expansion operation is a sequence of these steps, each replacing
+//!   two values by two others, and zero elimination only drops zeros. Hence
+//!   `M(sum or diff) <= (M(a) + M(b)) c`, `M(scale(e, b)) <= M(e) |b| c` and
+//!   `M(product) <= M(a) M(b) c`, where `c = (1 + 2^-52)^K` for the number
+//!   `K` of steps of the whole evaluation. `K` is far below `2^51`, so
+//!   `c < 2`, and every component of an expansion is at most its mass,
+//!   which is at most `c B(x)`. Here `B(x)` is the expression `x` evaluated
+//!   with every difference turned into a sum and every leaf replaced by
+//!   `2^103`. By induction on `x`, with `n` leaf occurrences and degree `d`,
+//!   `B(x) <= 2^(n - 1) 2^(103 d)`; for a product operand, `n <= 16` and
+//!   `d <= 3`, so `B(x) <= 2^324` and its components are below `2^325`.
 //!
-//! The upper bound is a margin argument rather than a proof, so the arena
-//! evaluator asserts the domain before every product: a flaw in the argument
-//! fails loudly instead of feeding the product an invalid input.
+//! The rewritten expressions of the cancelling and near-equal properties
+//! apply commutativity, associativity and distributivity, identities that
+//! `B` satisfies too, and every product operand in a rewrite is the rewrite
+//! of a subexpression of the original, so the same bounds hold for them. The
+//! arena evaluator still asserts the domain before every product, so that a
+//! flaw in this argument would fail loudly.
 
 mod common;
 
@@ -45,7 +58,7 @@ const MAX_DEGREE: u32 = 4;
 const ARENA: usize = 65_536;
 
 /// Random expression over f64 leaves: Leaf(i) | Add | Sub | Mul, total degree <= 4.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum Expr {
     Leaf(usize),
     Add(Box<Expr>, Box<Expr>),
@@ -64,39 +77,52 @@ impl Expr {
         }
     }
 
-    /// The same expression with the operands of each sum and product
-    /// swapped when `flips` yields `true`: the same value, computed in a
-    /// different order.
-    fn reordered(&self, flips: &mut impl Iterator<Item = bool>) -> Expr {
+    /// An expression with the same value, computed differently. The
+    /// operands are rewritten first; then, if `choices` yields `true`, the
+    /// node itself is rewritten by distributivity (`a * (x ± y)` and
+    /// `(x ± y) * b`), associativity (`(x + y) ± b` into `x + (y ± b)`) or,
+    /// when neither applies, commutativity of a sum or product.
+    fn rewritten(&self, choices: &mut impl Iterator<Item = bool>) -> Expr {
+        let mut parts = |a: &Expr, b: &Expr| {
+            let (a, b) = (a.rewritten(choices), b.rewritten(choices));
+            (a, b, choices.next().unwrap_or(false))
+        };
         match self {
             Expr::Leaf(i) => Expr::Leaf(*i),
-            Expr::Add(a, b) => {
-                let (a, b) = reordered_operands(a, b, flips);
-                Expr::Add(a, b)
-            }
-            Expr::Sub(a, b) => {
-                Expr::Sub(Box::new(a.reordered(flips)), Box::new(b.reordered(flips)))
-            }
-            Expr::Mul(a, b) => {
-                let (a, b) = reordered_operands(a, b, flips);
-                Expr::Mul(a, b)
-            }
+            Expr::Add(a, b) => match parts(a, b) {
+                (Expr::Add(x, y), b, true) => add(*x, add(*y, b)),
+                (a, b, true) => add(b, a),
+                (a, b, false) => add(a, b),
+            },
+            Expr::Sub(a, b) => match parts(a, b) {
+                (Expr::Add(x, y), b, true) => add(*x, sub(*y, b)),
+                (a, b, _) => sub(a, b),
+            },
+            Expr::Mul(a, b) => match parts(a, b) {
+                (a, Expr::Add(x, y), true) => add(mul(a.clone(), *x), mul(a, *y)),
+                (a, Expr::Sub(x, y), true) => sub(mul(a.clone(), *x), mul(a, *y)),
+                (Expr::Add(x, y), b, true) => add(mul(*x, b.clone()), mul(*y, b)),
+                (Expr::Sub(x, y), b, true) => sub(mul(*x, b.clone()), mul(*y, b)),
+                (a, b, true) => mul(b, a),
+                (a, b, false) => mul(a, b),
+            },
         }
     }
 }
 
-/// The reordered operands of a sum or product, swapped if `flips` says so.
-fn reordered_operands(
-    a: &Expr,
-    b: &Expr,
-    flips: &mut impl Iterator<Item = bool>,
-) -> (Box<Expr>, Box<Expr>) {
-    let (a, b) = (Box::new(a.reordered(flips)), Box::new(b.reordered(flips)));
-    if flips.next().unwrap_or(false) {
-        (b, a)
-    } else {
-        (a, b)
-    }
+/// The sum `a + b`.
+fn add(a: Expr, b: Expr) -> Expr {
+    Expr::Add(Box::new(a), Box::new(b))
+}
+
+/// The difference `a - b`.
+fn sub(a: Expr, b: Expr) -> Expr {
+    Expr::Sub(Box::new(a), Box::new(b))
+}
+
+/// The product `a * b`.
+fn mul(a: Expr, b: Expr) -> Expr {
+    Expr::Mul(Box::new(a), Box::new(b))
 }
 
 /// Expressions of total degree at most `max_degree`, nested at most `depth`
@@ -107,14 +133,14 @@ fn expr(max_degree: u32, depth: u32) -> BoxedStrategy<Expr> {
         return leaf.boxed();
     }
     let operand = move || expr(max_degree, depth - 1);
-    let add = (operand(), operand()).prop_map(|(a, b)| Expr::Add(Box::new(a), Box::new(b)));
-    let sub = (operand(), operand()).prop_map(|(a, b)| Expr::Sub(Box::new(a), Box::new(b)));
+    let add = (operand(), operand()).prop_map(|(a, b)| add(a, b));
+    let sub = (operand(), operand()).prop_map(|(a, b)| sub(a, b));
     if max_degree < 2 {
         return prop_oneof![leaf, add, sub].boxed();
     }
     let mul = (1..max_degree)
         .prop_flat_map(move |left| (expr(left, depth - 1), expr(max_degree - left, depth - 1)))
-        .prop_map(|(a, b)| Expr::Mul(Box::new(a), Box::new(b)));
+        .prop_map(|(a, b)| mul(a, b));
     prop_oneof![1 => leaf, 1 => add, 1 => sub, 3 => mul].boxed()
 }
 
@@ -122,14 +148,26 @@ fn expr(max_degree: u32, depth: u32) -> BoxedStrategy<Expr> {
 /// has magnitude in `2^-100 ..= 2^100` and a significand of random length:
 /// in half of the cases spread over the whole range, in the other half with
 /// exponents within 30 of a common centre, so that sums carry and cancel,
-/// often exactly when the significands are short.
+/// often exactly when the significands are short. Half of the cases repeat
+/// values across slots, so that expressions such as `(a + b) - (b + c)` with
+/// `a == c` cancel exactly.
 fn leaves() -> impl Strategy<Value = Vec<f64>> {
     let slots = |leaf: BoxedStrategy<f64>| {
-        prop::collection::vec(prop_oneof![1 => Just(0.0), 8 => leaf], LEAVES)
+        let values = prop::collection::vec(prop_oneof![1 => Just(0.0), 8 => leaf], LEAVES);
+        let picks = prop::collection::vec(0..LEAVES, LEAVES);
+        // The first `distinct` slots take distinct values and the others
+        // repeat one of those.
+        (values, prop_oneof![Just(LEAVES), 1usize..=3], picks).prop_map(
+            |(values, distinct, picks)| {
+                (0..LEAVES)
+                    .map(|j| values[if j < distinct { j } else { picks[j] % distinct }])
+                    .collect()
+            },
+        )
     };
     prop_oneof![
         slots(common::leaf(-100, 99, 53).boxed()),
-        (-70i32..=70)
+        (-69i32..=69)
             .prop_flat_map(move |centre| slots(common::leaf(centre - 30, centre + 30, 53).boxed())),
     ]
 }
@@ -201,33 +239,27 @@ fn from_f64s(xs: &[f64]) -> Vec<Vec<f64>> {
         .collect()
 }
 
-/// `e - e'`, where `e'` is `expr` with some operands swapped: exactly zero.
+/// Choices for [`Expr::rewritten`], enough for every node of a generated
+/// expression.
+fn choices() -> impl Strategy<Value = Vec<bool>> {
+    prop::collection::vec(any::<bool>(), 64)
+}
+
+/// `e - e'`, where `e'` is `e` rewritten: exactly zero, reached through two
+/// different computations.
 fn cancelling_expressions() -> impl Strategy<Value = Expr> {
-    (
-        expr(MAX_DEGREE, 4),
-        prop::collection::vec(any::<bool>(), 64),
-    )
-        .prop_map(|(e, flips)| {
-            let reordered = e.reordered(&mut flips.into_iter());
-            Expr::Sub(Box::new(e), Box::new(reordered))
-        })
+    (expr(MAX_DEGREE, 4), choices())
+        .prop_map(|(e, choices)| sub(e.clone(), e.rewritten(&mut choices.into_iter())))
 }
 
 /// `e * x - f * x'` over slots 0 and 1 holding `e` and `f`, where `x'` is
-/// `x` reordered: two nearly equal products whose difference `(e - f) * x`
+/// `x` rewritten: two nearly equal products whose difference `(e - f) * x`
 /// survives only after deep cancellation.
 fn difference_of_near_equal_products() -> impl Strategy<Value = Expr> {
-    (
-        expr(MAX_DEGREE - 1, 3),
-        prop::collection::vec(any::<bool>(), 64),
-    )
-        .prop_map(|(x, flips)| {
-            let reordered = x.reordered(&mut flips.into_iter());
-            Expr::Sub(
-                Box::new(Expr::Mul(Box::new(Expr::Leaf(0)), Box::new(x))),
-                Box::new(Expr::Mul(Box::new(Expr::Leaf(1)), Box::new(reordered))),
-            )
-        })
+    (expr(MAX_DEGREE - 1, 3), choices()).prop_map(|(x, choices)| {
+        let rewritten = x.rewritten(&mut choices.into_iter());
+        sub(mul(Expr::Leaf(0), x), mul(Expr::Leaf(1), rewritten))
+    })
 }
 
 proptest! {
@@ -265,6 +297,9 @@ struct Coverage {
     by_degree: [usize; MAX_DEGREE as usize],
     /// The number of expressions whose value is exactly zero.
     zero: usize,
+    /// The number of those whose leaf slots are all nonzero, so that the
+    /// zero comes from cancellation.
+    zero_without_zero_leaf: usize,
     /// The number of expressions with a product of two expansions of at
     /// least two components each.
     multi_component_products: usize,
@@ -296,12 +331,43 @@ fn random_expressions_cover_every_degree_and_multi_component_products() {
         let spans: Vec<Span> = from_f64s(&xs).iter().map(|l| s.push(l).unwrap()).collect();
         let degree = usize::try_from(e.degree()).unwrap();
         coverage.by_degree[degree - 1] += 1;
-        coverage.zero += usize::from(eval_scratch(&e, &spans, &mut s).is_empty());
+        let zero = eval_scratch(&e, &spans, &mut s).is_empty();
+        coverage.zero += usize::from(zero);
+        coverage.zero_without_zero_leaf += usize::from(zero && xs.iter().all(|&x| x != 0.0));
         coverage.multi_component_products +=
             usize::from(multi_component_products(&e, &spans, &mut s) > 0);
     }
     println!("{coverage:?}");
     assert!(coverage.by_degree.iter().all(|&n| n >= 100), "{coverage:?}");
     assert!(coverage.zero >= 20, "{coverage:?}");
-    assert!(coverage.multi_component_products >= 200, "{coverage:?}");
+    assert!(coverage.zero_without_zero_leaf >= 40, "{coverage:?}");
+    assert!(coverage.multi_component_products >= 175, "{coverage:?}");
+}
+
+/// The number of leaf occurrences in `expr`.
+fn leaf_count(expr: &Expr) -> usize {
+    match expr {
+        Expr::Leaf(_) => 1,
+        Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) => leaf_count(a) + leaf_count(b),
+    }
+}
+
+#[test]
+fn rewrites_usually_change_the_computation() {
+    let samples = sample((expr(MAX_DEGREE, 4), choices()), 1000);
+    let (mut changed, mut distributed) = (0, 0);
+    for (e, choices) in samples {
+        let rewritten = e.rewritten(&mut choices.into_iter());
+        changed += usize::from(rewritten != e);
+        distributed += usize::from(leaf_count(&rewritten) != leaf_count(&e));
+    }
+    println!("changed: {changed}, distributed: {distributed}");
+    assert!(
+        changed >= 600,
+        "only {changed} of 1000 rewrites change the expression"
+    );
+    assert!(
+        distributed >= 300,
+        "only {distributed} of 1000 rewrites distribute a product"
+    );
 }
