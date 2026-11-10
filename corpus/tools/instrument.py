@@ -31,6 +31,9 @@ INSPHERE_DECLARATION = (
     "const genericPoint& c, const genericPoint& d, const genericPoint& e);"
 )
 EXECUTABLE_ANCHOR = "add_executable(${PROJECT_NAME}"
+# The function the mesher calls to report an error and exit.
+ERROR_ANCHOR = "inline void ip_error(const char* msg)"
+NUMERICS_H = "include/numerics.h"
 
 # Definitions of the two predicates the mesher calls. ``inSphere`` has two
 # alternative definitions selected by the preprocessor; both are renamed.
@@ -124,6 +127,7 @@ HOOKS = [
     Hook("definitions of genericPoint::orient3D and inSphere", IMPLICIT_POINT_HPP,
          WRAPPED_DEFINITION, WRAPPED_COUNT, _rename("_unrecorded")),
     _anchor("CMakeLists.txt", EXECUTABLE_ANCHOR, _line_after("    src/recorder.cpp")),
+    _anchor(NUMERICS_H, ERROR_ANCHOR, _in_body(lambda _match: "ipcorpus::abandon();")),
 ]
 for _path, _count in STAGE_FUNCTIONS.items():
     HOOKS.append(Hook("stage functions", _path, STAGE_DEFINITION, _count, _in_body(_mark_stage)))
@@ -132,7 +136,7 @@ for _path, _count in DISPATCHERS.items():
                       _in_body(lambda _match: "ipcorpus::count_low_level();")))
 
 # Files that use the recorder and include it first.
-USERS = [IMPLICIT_POINT_H, IMPLICIT_POINT_HPP, HAND_OPTIMIZED, INDIRECT]
+USERS = [NUMERICS_H, IMPLICIT_POINT_H, IMPLICIT_POINT_HPP, HAND_OPTIMIZED, INDIRECT]
 
 
 def _apply(source, hook):

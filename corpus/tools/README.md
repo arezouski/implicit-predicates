@@ -57,11 +57,21 @@ IPCORPUS_OUT=bracket.ipcorpus IPCORPUS_MODEL=bracket \
 | `IPCORPUS_MODEL` | Model name stored in the file and used to seed the sampling (default: empty). |
 | `IPCORPUS_STRATUM_CAP` | Maximum number of calls stored per stratum (default: `100000`). |
 
-The corpus format is described in `corpus/FORMAT.md`. The file is written to
-`IPCORPUS_OUT` plus `.partial` when the process exits normally (returning
-from `main` or calling `exit`) and then renamed to `IPCORPUS_OUT`; a run that
-is killed or aborts leaves no final file. Two runs on the same model give
-identical files.
+The corpus format is described in `corpus/FORMAT.md`. Two runs on the same
+model give identical files.
+
+- Before `main` starts, the recorder removes any `IPCORPUS_OUT` and
+  `IPCORPUS_OUT.partial` left by an earlier run, so an old file can never
+  pass for the output of a later run, whatever happens to that run.
+- When the mesher finishes, the file is written to `IPCORPUS_OUT` plus
+  `.partial` and renamed to `IPCORPUS_OUT`.
+- When the mesher reports an error, it calls `ip_error`, which prints the
+  message and exits with status 0. The instrumented `ip_error` first
+  abandons the recording: no file is written, and standard error gets one
+  line starting with `ipcorpus: recording abandoned after N calls`. A tool
+  driving the mesher must therefore treat a missing `IPCORPUS_OUT` as a
+  failed run, even when the exit status is 0.
+- A run that is killed or aborts leaves no file.
 
 The recorder (`recorder/recorder.hpp` and `recorder/recorder.cpp`) is our own
 code. It keeps global state and is not thread-safe; the mesher evaluates
@@ -73,7 +83,9 @@ point table holding only the points they use and their parents. A point is
 identified by value: an explicit point by the bits of its coordinates, an LNC
 point by its two parents and the bits of its parameter.
 
-`instrument.py` places each hook with a one-line anchor that must appear
+Besides the predicate hooks described below, `instrument.py` adds a call to
+the recorder at the start of `ip_error` (`include/numerics.h`). It places
+each hook with a one-line anchor that must appear
 exactly once, or with a regular expression over function definitions that
 must match a number of times fixed in the script; otherwise it fails, naming
 the hook, before writing anything. It contains no excerpt of the reference
@@ -156,4 +168,7 @@ For every example model they check that the original and the recording
 mesher write identical `.tet` files, that the corpus is valid, that every
 recorded sign equals the exact sign times one factor per predicate, the same
 for every call, that a small stratum cap bounds the stored calls without
-changing any counter, and that two runs give identical files.
+changing any counter, and that two runs give identical files. They also
+check that a model the mesher rejects after evaluating predicates leaves no
+corpus. The Python tests of the recorder alone (`tests/test_recorder.py`)
+build a small driver program and are skipped when no C++ compiler is found.

@@ -19,6 +19,7 @@ def write_toy_tree(root):
     files = {
         "CMakeLists.txt": "project(cdt)\nadd_executable(${PROJECT_NAME}\n    src/main.cpp\n)\n",
         "src/main.cpp": "int main() { return 0; }\n",
+        "include/numerics.h": f"{instrument.ERROR_ANCHOR}\n{{\n\texit(0);\n}}\n",
         "include/implicit_point.h": (
             "class genericPoint {\n"
             f"\t{instrument.ORIENT3D_DECLARATION}\n"
@@ -64,6 +65,9 @@ class InstrumentTests(unittest.TestCase):
         dispatchers = sum(instrument.DISPATCHERS.values())
         self.assertEqual(everything.count("ipcorpus::mark_stage("), stages)
         self.assertEqual(everything.count("ipcorpus::count_low_level()"), dispatchers)
+        self.assertEqual(everything.count("ipcorpus::abandon();"), 1)
+        numerics = (self.dest / "include" / "numerics.h").read_text()
+        self.assertTrue(numerics.startswith('#include "recorder.hpp"'))
         self.assertEqual(everything.count("inline int genericPoint::orient3D_unrecorded("), 1)
         self.assertEqual(everything.count("inline int genericPoint::inSphere_unrecorded("), 2)
         self.assertEqual(everything.count("inline int genericPoint::orient3D("), 1)

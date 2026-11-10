@@ -12,10 +12,14 @@
 //
 // Counters cover every call. Stored calls are a reservoir sample of each
 // stratum (predicate, number of implicit points, zero or non-zero sign),
-// seeded by the model name, so a run is deterministic. The file is written
-// to IPCORPUS_OUT plus ".partial" when the process exits normally (return
-// from main or exit()), then renamed to IPCORPUS_OUT; a killed or aborted run
-// leaves no final file.
+// seeded by the model name, so a run is deterministic.
+//
+// Before main starts, any IPCORPUS_OUT and IPCORPUS_OUT.partial left by an
+// earlier run are removed. The file is written to IPCORPUS_OUT plus
+// ".partial" when the process exits (return from main or exit()), then
+// renamed to IPCORPUS_OUT. A run that calls `abandon` (the instrumented
+// mesher does so when it reports an error), aborts or is killed leaves no
+// file at all.
 //
 // The recorder keeps global state and is not thread-safe: the recorded
 // program must evaluate predicates from a single thread.
@@ -105,6 +109,10 @@ PointRecord describe(const Point& p) {
 }
 
 }  // namespace detail
+
+// Marks the run as failed: nothing is written at exit, and one line on
+// standard error says the recording was abandoned.
+void abandon();
 
 // Called on entry to a stage function: the last stage marked before a
 // predicate returns is the one that decided it.

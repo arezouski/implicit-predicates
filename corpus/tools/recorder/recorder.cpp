@@ -103,6 +103,7 @@ struct Session {
     std::string out;
     std::string model;
     std::uint64_t cap = kDefaultCap;
+    bool abandoned = false;
     Random random{""};
     std::uint64_t calls = 0;
     std::uint64_t counters[kPredicates][kMaxArity + 1][3][kStages] = {};
@@ -157,6 +158,9 @@ Session* create_session() {
     if (out == nullptr || *out == '\0') return nullptr;
     auto* s = new Session;  // Never freed: it must outlive static destructors.
     s->out = out;
+    // Files of an earlier run must not pass for the output of this one.
+    std::remove(s->out.c_str());
+    std::remove((s->out + ".partial").c_str());
     const char* model = std::getenv("IPCORPUS_MODEL");
     s->model = model != nullptr ? model : "";
     const char* cap = std::getenv("IPCORPUS_STRATUM_CAP");
@@ -170,6 +174,9 @@ Session* session() {
     static Session* const instance = create_session();
     return instance;
 }
+
+// Creates the session (and removes stale files) before main starts.
+[[maybe_unused]] const bool started = session() != nullptr;
 
 // Little-endian encoder of the file contents.
 class Buffer {
@@ -289,6 +296,7 @@ Buffer encode(const Session& s, const Selection& sel) {
 
 void write_at_exit() {
     const Session& s = *session();
+    if (s.abandoned) return;
     const Selection sel = select(s);
     const Buffer b = encode(s, sel);
     const std::string partial = s.out + ".partial";
@@ -344,6 +352,24 @@ void store(const PointRecord* points) {
         kept[s.pending_slot] = sample;
     }
 }
+
+}  // namespace ipcorpus::detail
+
+namespace ipcorpus {
+
+void abandon() {
+    detail::Session* s = detail::session();
+    if (s == nullptr || s->abandoned) return;
+    s->abandoned = true;
+    std::fprintf(stderr,
+                 "ipcorpus: recording abandoned after %llu calls: the program reported an "
+                 "error; no corpus written\n",
+                 static_cast<unsigned long long>(s->calls));
+}
+
+}  // namespace ipcorpus
+
+namespace ipcorpus::detail {
 
 void unsupported_point() { fail("a predicate was called with a point that is not 3D"); }
 

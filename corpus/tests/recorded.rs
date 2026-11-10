@@ -5,7 +5,7 @@
 //! ignored by default. Run them with
 //! `cargo test -p indirect-predicates-corpus -- --ignored recorded`.
 
-use indirect_predicates_corpus::exact::{coordinates, insphere, orient3d};
+use indirect_predicates_corpus::verify::verify_with;
 use indirect_predicates_corpus::{Corpus, Predicate};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -53,8 +53,8 @@ fn models() -> Vec<PathBuf> {
 struct Scratch(PathBuf);
 
 impl Scratch {
-    fn new() -> Scratch {
-        let dir = data_dir().join(format!("scratch/recorded-{}", std::process::id()));
+    fn new(name: &str) -> Scratch {
+        let dir = data_dir().join(format!("scratch/recorded-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         Scratch(dir)
     }
@@ -113,7 +113,7 @@ fn runs() -> &'static [ModelRuns] {
     RUNS.get_or_init(|| {
         let original = executable("cdt-original");
         let recording = executable("cdt-recording");
-        let scratch = Scratch::new();
+        let scratch = Scratch::new("models");
         let uncapped = [("IPCORPUS_STRATUM_CAP", "100000".to_string())];
         let capped = [("IPCORPUS_STRATUM_CAP", SMALL_CAP.to_string())];
         models()
@@ -182,51 +182,40 @@ fn describe(corpus: &Corpus, call: usize) -> String {
 #[test]
 #[ignore = "needs the reference mesher built by corpus/tools/corpus.py"]
 fn recorded_signs_match_the_exact_signs_up_to_a_uniform_factor() {
-    // The factor of each predicate, fixed by the first call with a non-zero
-    // exact sign and required of every other call of every model.
-    let mut factors: BTreeMap<Predicate, (i8, String)> = BTreeMap::new();
+    // A factor fits a predicate when `verify_with` finds no mismatch of that
+    // predicate in any model; exactly one of +1 and -1 must fit each.
+    let predicates = [Predicate::Orient3d, Predicate::InSphere];
+    let mut failures: BTreeMap<(Predicate, i8), String> = BTreeMap::new();
     for r in runs() {
         let corpus = read(&r.corpus, &r.name);
-        for (i, call) in corpus.calls.iter().enumerate() {
-            let coords: Option<Vec<_>> = call
-                .points()
-                .iter()
-                .map(|&p| coordinates(&corpus.points, p))
-                .collect();
-            let Some(c) = coords else { continue };
-            let exact = match call.predicate {
-                Predicate::Orient3d => orient3d(&c[0], &c[1], &c[2], &c[3]),
-                Predicate::InSphere => insphere(&c[0], &c[1], &c[2], &c[3], &c[4]),
-            };
-            let here = || format!("{}: {}", r.name, describe(&corpus, i));
-            if exact == 0 || call.sign == 0 {
-                assert_eq!(
-                    call.sign,
-                    exact,
-                    "zero sign mismatch, exact {exact}: {}",
-                    here()
-                );
-                continue;
+        for factor in [1, -1] {
+            let v = verify_with(&corpus, factor, factor);
+            for m in &v.mismatches {
+                let predicate = corpus.calls[m.call].predicate;
+                failures.entry((predicate, factor)).or_insert_with(|| {
+                    format!(
+                        "{}: {}, exact {}",
+                        r.name,
+                        describe(&corpus, m.call),
+                        m.exact
+                    )
+                });
             }
-            let (factor, first) = factors
-                .entry(call.predicate)
-                .or_insert_with(|| (call.sign * exact, here()));
-            assert_eq!(
-                call.sign * exact,
-                *factor,
-                "sign factor differs from the one of {first}: exact {exact}: {}",
-                here()
-            );
         }
     }
-    for (predicate, (factor, _)) in &factors {
-        eprintln!("{predicate:?}: recorded sign = {factor} * exact sign");
+    for predicate in predicates {
+        let fitting: Vec<i8> = [1, -1]
+            .into_iter()
+            .filter(|&f| !failures.contains_key(&(predicate, f)))
+            .collect();
+        assert_eq!(
+            fitting.len(),
+            1,
+            "{predicate:?}: factors that fit {fitting:?}; first mismatch per factor: {:?}",
+            [1, -1].map(|f| failures.get(&(predicate, f)))
+        );
+        eprintln!("{predicate:?}: recorded sign = {} * exact sign", fitting[0]);
     }
-    assert_eq!(
-        factors.len(),
-        2,
-        "both predicates must be observed with a non-zero sign"
-    );
 }
 
 #[test]
@@ -261,4 +250,39 @@ fn recorded_runs_are_deterministic() {
     for r in runs() {
         assert!(r.corpus == r.repeated_corpus, "{}: two runs differ", r.name);
     }
+}
+
+/// Four coplanar vertices: the mesher evaluates orient3d on them, finds no
+/// volume and reports an error through `ip_error`, which exits with status 0.
+const FLAT_MODEL: &str = "OFF\n4 2 0\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n3 0 1 2\n3 0 2 3\n";
+
+#[test]
+#[ignore = "needs the reference mesher built by corpus/tools/corpus.py"]
+fn recorded_run_that_reports_an_error_leaves_no_corpus() {
+    let recording = executable("cdt-recording");
+    let scratch = Scratch::new("flat");
+    let model = scratch.0.join("flat.off");
+    std::fs::write(&model, FLAT_MODEL).unwrap();
+    let out = scratch.0.join("calls.ipcorpus");
+    let partial = scratch.0.join("calls.ipcorpus.partial");
+    std::fs::write(&out, b"stale").unwrap();
+    std::fs::write(&partial, b"stale").unwrap();
+    let output = Command::new(recording)
+        .arg(&model)
+        .current_dir(&scratch.0)
+        .env("IPCORPUS_OUT", &out)
+        .env("IPCORPUS_MODEL", "flat")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert!(stderr.contains("do not define a volume"), "{stderr}");
+    let calls: u64 = stderr
+        .split("recording abandoned after ")
+        .nth(1)
+        .and_then(|rest| rest.split(' ').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("no abandon message: {stderr}"));
+    assert!(calls > 0, "the error came before any predicate call");
+    assert!(!out.exists() && !partial.exists());
 }
