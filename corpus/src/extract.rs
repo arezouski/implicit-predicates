@@ -1,6 +1,6 @@
 //! Extraction of a small corpus out of a large one.
 
-use crate::{Call, Corpus, CounterKey, PointDef, Sampling, Stratum};
+use crate::{Call, Corpus, PointDef, Sampling, Stratum};
 use std::collections::BTreeMap;
 
 fn parents(point: &PointDef) -> Vec<u32> {
@@ -34,17 +34,32 @@ fn remap(point: &PointDef, map: &[u32]) -> PointDef {
 impl Corpus {
     /// Keeps the first `max_calls` stored calls of each stratum, in their
     /// original order, and only the points those calls cite together with
-    /// their ancestors. Indices are renumbered; counters and sampling are
-    /// recomputed over what was kept, so every stratum has `total == kept`.
+    /// their ancestors. Indices are renumbered. The counters and each
+    /// stratum's `total` are those of the recording run, unchanged; only
+    /// `kept` shrinks to the number of calls kept.
     ///
     /// The corpus must be valid (see [`Corpus::validate`]).
     pub fn extract(&self, max_calls: usize) -> Corpus {
-        let mut taken: BTreeMap<Stratum, usize> = BTreeMap::new();
+        let mut sampling: BTreeMap<Stratum, Sampling> = self
+            .sampling
+            .iter()
+            .map(|(s, sampling)| {
+                (
+                    *s,
+                    Sampling {
+                        kept: 0,
+                        ..*sampling
+                    },
+                )
+            })
+            .collect();
         let mut calls: Vec<Call> = Vec::new();
         for call in &self.calls {
-            let n = taken.entry(self.stratum_of(call)).or_insert(0);
-            if *n < max_calls {
-                *n += 1;
+            let s = sampling
+                .get_mut(&self.stratum_of(call))
+                .expect("a valid corpus has a sampling entry for every stored call");
+            if s.kept < max_calls as u64 {
+                s.kept += 1;
                 calls.push(*call);
             }
         }
@@ -71,16 +86,7 @@ impl Corpus {
                 points.push(remap(point, &map));
             }
         }
-        let mut counters: BTreeMap<CounterKey, u64> = BTreeMap::new();
-        let mut sampling: BTreeMap<Stratum, Sampling> = BTreeMap::new();
         for call in &mut calls {
-            let (stratum, key) = (self.stratum_of(call), self.counter_key_of(call));
-            *counters.entry(key).or_insert(0) += 1;
-            let s = sampling
-                .entry(stratum)
-                .or_insert(Sampling { total: 0, kept: 0 });
-            s.total += 1;
-            s.kept += 1;
             for p in &mut call.points[..call.predicate.arity()] {
                 *p = map[*p as usize];
             }
@@ -88,7 +94,7 @@ impl Corpus {
         Corpus {
             model: self.model.clone(),
             points,
-            counters,
+            counters: self.counters.clone(),
             sampling,
             calls,
         }

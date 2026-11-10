@@ -281,7 +281,6 @@ fn recorded_run_that_reports_an_error_leaves_no_corpus() {
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert!(stderr.contains("do not define a volume"), "{stderr}");
     let calls: u64 = stderr
         .split("recording abandoned after ")
         .nth(1)

@@ -110,6 +110,33 @@ impl Stats {
             .collect()
     }
 
+    /// Names of the per-file columns, matching [`Stats::values`]: for each
+    /// predicate and implicit count `i` from 0 to its arity, the number of
+    /// calls (`<predicate>_<i>`) and of calls with a zero sign
+    /// (`<predicate>_<i>_zero`).
+    pub fn columns() -> Vec<String> {
+        PREDICATES
+            .iter()
+            .flat_map(|&p| {
+                (0..=p.arity()).flat_map(move |i| {
+                    [format!("{}_{i}", name(p)), format!("{}_{i}_zero", name(p))]
+                })
+            })
+            .collect()
+    }
+
+    /// The counts named by [`Stats::columns`], in the same order.
+    pub fn values(&self) -> Vec<u64> {
+        let get = |m: &BTreeMap<(Predicate, u8), u64>, k| m.get(&k).copied().unwrap_or(0);
+        PREDICATES
+            .iter()
+            .flat_map(|&p| {
+                (0..=p.arity() as u8)
+                    .flat_map(move |i| [get(&self.total, (p, i)), get(&self.zeros, (p, i))])
+            })
+            .collect()
+    }
+
     /// Renders the statistics as Markdown tables, one per predicate.
     pub fn to_markdown(&self) -> String {
         let mut out = String::new();

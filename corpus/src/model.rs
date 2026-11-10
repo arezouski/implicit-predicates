@@ -231,15 +231,6 @@ impl Corpus {
         }
     }
 
-    pub(crate) fn counter_key_of(&self, call: &Call) -> CounterKey {
-        CounterKey {
-            predicate: call.predicate,
-            implicit: self.implicit_count(call) as u8,
-            sign: call.sign,
-            stage: call.stage,
-        }
-    }
-
     fn validate_calls(&self) -> Result<(), CorpusError> {
         for (i, call) in self.calls.iter().enumerate() {
             if !(-1..=1).contains(&call.sign) {

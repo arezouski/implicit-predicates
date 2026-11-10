@@ -34,7 +34,11 @@ The implicit count of a call is the number of its points (4 or 5) that are not
 explicit points. A counter counts calls with one outcome: predicate, implicit
 count, returned sign, and deciding stage. A stratum groups calls by predicate,
 implicit count and whether the sign is zero; `total` is how many calls of the
-stratum were seen and `kept` how many are stored in the file.
+stratum were seen and `kept` how many are stored in the file. The counters
+and `total` always describe the whole recording run: a corpus cut from a
+larger one (`ipcorpus extract`) keeps them unchanged and stores fewer calls,
+so only `kept` changes. A stored call thus stands for `total / kept` calls
+of its stratum.
 
 ## Validity rules
 

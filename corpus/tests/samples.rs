@@ -105,3 +105,20 @@ fn the_samples_folder_is_small() {
         .sum();
     assert!(total < MAX_TOTAL_BYTES, "{total} bytes");
 }
+
+#[test]
+fn the_samples_keep_the_totals_of_their_recording_runs() {
+    // Each file was cut from a full recording: its counters and totals are
+    // those of the run, so some strata store far fewer calls than were made.
+    for path in sample_files() {
+        let corpus = read(&path);
+        let total: u64 = corpus.sampling.values().map(|s| s.total).sum();
+        let kept: u64 = corpus.sampling.values().map(|s| s.kept).sum();
+        assert_eq!(kept, corpus.calls.len() as u64, "{}", path.display());
+        assert!(
+            total > 10 * kept,
+            "{}: {total} calls, {kept} kept",
+            path.display()
+        );
+    }
+}

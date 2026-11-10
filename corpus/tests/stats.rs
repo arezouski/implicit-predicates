@@ -97,3 +97,25 @@ fn merge_adds_counters() {
     assert!((z[0].2 - 0.1).abs() < 1e-12);
     assert!(a.to_markdown().contains("2000"));
 }
+
+#[test]
+fn per_file_columns_hold_calls_and_zeros_by_predicate_and_implicit_count() {
+    let columns = Stats::columns();
+    // orient3d with 0 to 4 implicit points, insphere with 0 to 5, each with
+    // its calls and its zero calls.
+    assert_eq!(columns.len(), 2 * (5 + 6));
+    assert_eq!(
+        &columns[..4],
+        [
+            "orient3d_0",
+            "orient3d_0_zero",
+            "orient3d_1",
+            "orient3d_1_zero"
+        ]
+    );
+    assert_eq!(columns.last().unwrap(), "insphere_5_zero");
+    let values = Stats::from_corpus(&counted()).values();
+    assert_eq!(values.len(), columns.len());
+    assert_eq!(&values[..4], [1000, 100, 10, 0]);
+    assert!(values[4..].iter().all(|&v| v == 0));
+}

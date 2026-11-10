@@ -10,7 +10,10 @@ ipcorpus extract --max-calls 200 <full>.ipcorpus thingi10k-<file id>.ipcorpus
 ```
 
 which keeps the first 200 stored calls of each stratum (predicate, number of
-implicit points, zero or non-zero sign), and the points they use.
+implicit points, zero or non-zero sign) and the points they use. The
+counters and the total of each stratum are those of the full recording, so
+the statistics of a sample file describe the whole run of its model, and a
+stored call stands for `total / kept` calls of its stratum.
 
 Together they contain orient3d and insphere calls, calls with explicit and
 LNC points, and calls with a zero sign, for both predicates; every recorded
