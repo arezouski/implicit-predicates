@@ -29,11 +29,18 @@ pub struct Verification {
 
 /// Recomputes the sign of every call with exact arithmetic and compares it
 /// with the recorded one: a call matches when `recorded == factor * exact`,
-/// with the factor of its predicate.
+/// with the factor of its predicate ([`REFERENCE_ORIENT3D_FACTOR`] or
+/// [`REFERENCE_INSPHERE_FACTOR`]).
 ///
 /// Calls that involve an LPI or TPI point are skipped. The corpus must be
 /// valid (see [`Corpus::validate`]).
 pub fn verify(corpus: &Corpus) -> Verification {
+    verify_with(corpus, REFERENCE_ORIENT3D_FACTOR, REFERENCE_INSPHERE_FACTOR)
+}
+
+/// Like [`verify`], with the given factors of orient3d and insphere instead
+/// of the reference ones.
+pub fn verify_with(corpus: &Corpus, orient3d_factor: i8, insphere_factor: i8) -> Verification {
     let mut result = Verification {
         checked: 0,
         skipped: 0,
@@ -50,14 +57,8 @@ pub fn verify(corpus: &Corpus) -> Verification {
             continue;
         };
         let (exact, factor) = match call.predicate {
-            Predicate::Orient3d => (
-                orient3d(&c[0], &c[1], &c[2], &c[3]),
-                REFERENCE_ORIENT3D_FACTOR,
-            ),
-            Predicate::InSphere => (
-                insphere(&c[0], &c[1], &c[2], &c[3], &c[4]),
-                REFERENCE_INSPHERE_FACTOR,
-            ),
+            Predicate::Orient3d => (orient3d(&c[0], &c[1], &c[2], &c[3]), orient3d_factor),
+            Predicate::InSphere => (insphere(&c[0], &c[1], &c[2], &c[3], &c[4]), insphere_factor),
         };
         result.checked += 1;
         if call.sign != factor * exact {

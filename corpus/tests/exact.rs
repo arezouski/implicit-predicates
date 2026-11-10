@@ -4,9 +4,9 @@ mod common;
 
 use common::{call, corpus_from};
 use indirect_predicates_corpus::exact::{
-    REFERENCE_ORIENT3D_FACTOR, coordinates, insphere, orient3d,
+    REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR, coordinates, insphere, orient3d,
 };
-use indirect_predicates_corpus::verify::{Mismatch, verify};
+use indirect_predicates_corpus::verify::{Mismatch, verify, verify_with};
 use indirect_predicates_corpus::{PointDef, Predicate, Stage};
 use indirect_predicates_oracle::Dyadic;
 
@@ -202,4 +202,41 @@ fn calls_with_lpi_are_skipped_and_counted() {
     let v = verify(&corpus_from(tetra_points(), calls));
     assert_eq!((v.checked, v.skipped), (1, 1));
     assert!(v.mismatches.is_empty());
+}
+
+#[test]
+fn verify_with_applies_the_factor_of_each_predicate() {
+    let mut points = tetra_points();
+    points[4] = PointDef::Explicit([0.1, 0.1, 0.1]);
+    let c: Vec<_> = (0..5).map(|i| coordinates(&points, i).unwrap()).collect();
+    let o = orient3d(&c[0], &c[1], &c[2], &c[3]);
+    let s = insphere(&c[0], &c[1], &c[2], &c[3], &c[4]);
+    assert!(o != 0 && s != 0);
+    let calls = vec![
+        call(Predicate::Orient3d, [0, 1, 2, 3, 0], -o, Stage::Filtered),
+        call(Predicate::InSphere, [0, 1, 2, 3, 4], s, Stage::Exact),
+    ];
+    let corpus = corpus_from(points, calls);
+    assert!(verify_with(&corpus, -1, 1).mismatches.is_empty());
+    let orient_wrong = verify_with(&corpus, 1, 1);
+    assert_eq!(orient_wrong.checked, 2);
+    assert_eq!(
+        orient_wrong.mismatches,
+        vec![Mismatch {
+            call: 0,
+            recorded: -o,
+            exact: o
+        }]
+    );
+    let insphere_wrong = verify_with(&corpus, -1, -1);
+    assert_eq!(insphere_wrong.mismatches.len(), 1);
+    assert_eq!(insphere_wrong.mismatches[0].call, 1);
+    assert_eq!(
+        verify(&corpus),
+        verify_with(
+            &corpus,
+            REFERENCE_ORIENT3D_FACTOR,
+            REFERENCE_INSPHERE_FACTOR
+        )
+    );
 }
