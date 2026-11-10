@@ -4,10 +4,13 @@ Each run happens in its own scratch directory under ``corpus/data/runs/``,
 with a time limit. A run is valid only when the mesher exits with status 0,
 writes a non-empty ``.tet`` file and, for the recording mesher, writes its
 corpus file: the mesher's error routine also exits with status 0, and the
-recording mesher then writes no corpus.
+recording mesher then writes no corpus. A recording run is valid only when
+its ``.tet`` file is identical to the original mesher's: the logs keep the
+SHA-256 digest of every ``.tet`` file, and the files themselves are deleted.
 """
 
 import csv
+import hashlib
 import os
 import re
 import resource
@@ -39,7 +42,7 @@ SUMMARY = re.compile(
 )
 ABANDONED = "ipcorpus: recording abandoned"
 
-LOG_COLUMNS = ["file_id", "status", "seconds", "calls", "stored", "reason"]
+LOG_COLUMNS = ["file_id", "status", "seconds", "calls", "stored", "reason", "digest"]
 
 
 @dataclass(frozen=True)
@@ -52,10 +55,11 @@ class Outcome:
     calls: int = 0
     stored: int = 0
     reason: str = ""
+    digest: str = ""  # SHA-256 of the .tet output, when the mesher wrote one
 
     def row(self):
         return [self.file_id, self.status, f"{self.seconds:.2f}", self.calls,
-                self.stored, self.reason]
+                self.stored, self.reason, self.digest]
 
 
 def _without_core_dumps():
@@ -108,6 +112,17 @@ def _failure_reason(status, tet):
     return ""
 
 
+def _digest(tet):
+    """The SHA-256 digest of a ``.tet`` output, or "" when there is none."""
+    if not tet.exists():
+        return ""
+    sha = hashlib.sha256()
+    with open(tet, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            sha.update(block)
+    return sha.hexdigest()
+
+
 def _finish(workdir, tet, ok):
     """Remove a successful run's directory; keep a failed one's logs only."""
     if ok:
@@ -122,13 +137,20 @@ def run_original(file_id, model, timeout, cdt=ORIGINAL_CDT, runs_dir=RUNS_DIR):
     status, seconds, _, tet = _execute(cdt, model, workdir, timeout, None)
     reason = _failure_reason(status, tet)
     state = "timeout" if status is None else "failed" if reason else "ok"
+    digest = "" if reason else _digest(tet)
     _finish(workdir, tet, not reason)
-    return Outcome(file_id, state, seconds, reason=reason)
+    return Outcome(file_id, state, seconds, reason=reason, digest=digest)
 
 
-def run_recording(file_id, model, timeout, out, cap=None,
+def run_recording(file_id, model, timeout, out, expected, cap=None,
                   cdt=RECORDING_CDT, runs_dir=RUNS_DIR):
-    """Run the recording mesher; on success its corpus is moved to ``out``."""
+    """Run the recording mesher; on success its corpus is moved to ``out``.
+
+    ``expected`` is the digest of the original mesher's output on the same
+    model; a different output fails the run. Any earlier ``out`` is removed
+    first, so that it cannot pass for the output of this run.
+    """
+    out.unlink(missing_ok=True)
     workdir = runs_dir / "recording" / str(file_id)
     corpus = workdir / "calls.ipcorpus"
     env = dict(os.environ, IPCORPUS_OUT=str(corpus), IPCORPUS_MODEL=f"thingi10k-{file_id}")
@@ -138,6 +160,9 @@ def run_recording(file_id, model, timeout, out, cap=None,
     reason = "abandoned" if ABANDONED in stderr else _failure_reason(status, tet)
     if not reason and not corpus.exists():
         reason = "no corpus output"
+    digest = _digest(tet) if not reason or reason == "no corpus output" else ""
+    if not reason and digest != expected:
+        reason = "output differs"
     calls = stored = 0
     if not reason:
         summary = SUMMARY.search(stderr)
@@ -153,7 +178,7 @@ def run_recording(file_id, model, timeout, out, cap=None,
         shutil.move(corpus, out)
     state = "timeout" if status is None else "failed" if reason else "ok"
     _finish(workdir, tet, not reason)
-    return Outcome(file_id, state, seconds, calls, stored, reason)
+    return Outcome(file_id, state, seconds, calls, stored, reason, digest)
 
 
 def within(outcome, timeout):
@@ -162,9 +187,28 @@ def within(outcome, timeout):
 
 
 def settled(outcome, timeout):
-    """Whether an earlier run decides the outcome under ``timeout``: any run
-    but one that timed out under a shorter limit."""
-    return outcome is not None and (outcome.status != "timeout" or outcome.seconds >= timeout)
+    """Whether an earlier original run decides the outcome under ``timeout``:
+    any run but one that timed out under a shorter limit, or a successful one
+    logged without the digest of its output."""
+    if outcome is None or (outcome.status == "ok" and not outcome.digest):
+        return False
+    return outcome.status != "timeout" or outcome.seconds >= timeout
+
+
+def current(recording, original):
+    """Whether a recording run succeeded with the output of the original run."""
+    return (recording is not None and recording.status == "ok"
+            and bool(recording.digest) and recording.digest == original.digest)
+
+
+def reconcile(directory, file_ids):
+    """Remove the corpus files of ``directory`` whose model is not in
+    ``file_ids``; returns the removed file ids, sorted."""
+    removed = sorted(int(p.stem) for p in directory.glob("*.ipcorpus")
+                     if int(p.stem) not in file_ids)
+    for file_id in removed:
+        (directory / f"{file_id}.ipcorpus").unlink()
+    return removed
 
 
 def run_parallel(task, items, jobs, label):
@@ -186,7 +230,8 @@ def read_log(path):
     with open(path, newline="") as f:
         return {
             int(r["file_id"]): Outcome(int(r["file_id"]), r["status"], float(r["seconds"]),
-                                       int(r["calls"]), int(r["stored"]), r["reason"])
+                                       int(r["calls"]), int(r["stored"]), r["reason"],
+                                       r.get("digest") or "")
             for r in csv.DictReader(f)
         }
 

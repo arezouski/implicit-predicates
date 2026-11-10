@@ -33,8 +33,11 @@ python3 corpus/tools/corpus.py all               # all of the above, in sequence
 ```
 
 `all` regenerates the corpus with one command: it runs `fetch-reference`,
-`build`, `fetch-models` and `run` (which selects) in sequence, and every step
-skips the work already done.
+`build`, `fetch-models` and `run` (which selects) in sequence.
+`fetch-reference`, `fetch-models` and `run` skip the work already done;
+`build` does not: it always makes a fresh instrumented copy of the sources
+and so rebuilds the recording mesher (the original mesher's build is
+incremental).
 
 `select`, `run` and `all` take `--jobs N` (parallel mesher runs, default
 three quarters of the hardware threads), `--timeout S` (seconds per mesher
@@ -65,9 +68,10 @@ includes `numerics.h` from NFG, which its own CMake build would fetch from
 NFG's moving `main` branch; NFG is pinned instead to its last commit before
 the pinned Indirect_Predicates commit. NFG is LGPL licensed and, like the
 other references, is not part of this repository. If a checkout is already
-at the pinned commit it does nothing. If a checkout is at another commit or has modified
-tracked files, it fails without changing anything. Untracked files, such as
-outputs written by running the mesher's examples, are ignored by that check.
+at the pinned commit it does nothing. If a checkout is at another commit or
+has modified tracked files, it fails without changing anything. Untracked
+files, such as outputs written by running the mesher's examples, are
+ignored by that check.
 
 `build` compiles the mesher out of tree with `-DLGPL=ON` and `Release` into
 `corpus/data/build/cdt-original/`, leaving the downloaded sources untouched.
@@ -120,11 +124,11 @@ point by its two parents and the bits of its parameter.
 
 Besides the predicate hooks described below, `instrument.py` adds a call to
 the recorder at the start of `ip_error` (`include/numerics.h`). It places
-each hook with a one-line anchor that must appear
-exactly once, or with a regular expression over function definitions that
-must match a number of times fixed in the script; otherwise it fails, naming
-the hook, before writing anything. It contains no excerpt of the reference
-code.
+each hook with a one-line anchor that must appear exactly once, or with a
+regular expression over function definitions that must match a number of
+times fixed in the script; otherwise it fails, naming the hook, before
+writing anything. Of the reference code, the script contains only those
+one-line anchors, which locate the hook points, and nothing else.
 
 ### What is recorded
 
@@ -217,8 +221,10 @@ goes to the other strata. The same seed and dataset give the same manifest.
 
 A model is valid when the original mesher, within the time limit, exits with
 status 0 and writes a non-empty `.tet` file, and the recording mesher has not
-failed on it. Exit status 0 is not enough: the mesher's error routine also
-exits with status 0, without writing the `.tet` file.
+failed on it; a recording run that writes a `.tet` file different from the
+original's is a failure (see Recording). Exit status 0 is not enough: the
+mesher's error routine also exits with status 0, without writing the `.tet`
+file.
 
 The committed manifest was produced with `--timeout 150`: many
 self-intersecting models make the mesher run for a long time without
@@ -229,8 +235,12 @@ close to the limit may be valid on one machine and not on another.
 
 `select` writes the manifest (`file_id,stratum,license,vertices,facets`:
 identifiers and metadata, no geometry). The outcome of every original run is
-kept in `corpus/data/runs/original.csv`, so later selections do not run the
-mesher again on the same model. Validity also depends on the recording runs,
+kept in `corpus/data/runs/original.csv`, with the SHA-256 digest of its
+`.tet` output (the file itself is deleted), so later selections do not run
+the mesher again on the same model; a successful run logged without a
+digest, by an older version of the tools, is run again. Validity also
+depends on the recording runs (their status and whether their output equals
+the original's),
 so the committed manifest is the output of `run` (or `all`), not of `select`
 alone: on a fresh data directory, `select` can choose models that `run` then
 replaces. Given the run logs of the committed sample, `select --timeout 150`
@@ -240,16 +250,21 @@ writes the committed manifest again without running the mesher.
 
 `run` records every manifest model with the recording mesher into
 `corpus/data/corpus/<file_id>.ipcorpus`, each run in its own directory under
-`corpus/data/runs/` and with the time limit. A recording run succeeds when
-the mesher exits with status 0, writes its `.tet` file and its corpus file,
-and the recorder's count of recorded calls equals its count of cascade
-entries (a difference stops everything: some call bypassed the recorder). A
-model whose recording run fails or times out is replaced by the next valid
-candidate of its stratum, and the manifest is rewritten. The outcome of every
-recording run, including the replaced models, is kept in
-`corpus/data/corpus/run.csv`, with its status (`ok`, `failed` or `timeout`),
-time, number of calls and number of stored calls. Interrupted runs resume:
-models already recorded are not run again.
+`corpus/data/runs/` and with the time limit. Each recording run first
+removes the model's earlier corpus file. A recording run succeeds when the
+mesher exits with status 0, writes its `.tet` file and its corpus file, the
+`.tet` file is byte for byte the original mesher's (compared by SHA-256
+digest; otherwise the run fails with reason `output differs`), and the
+recorder's count of recorded calls equals its count of cascade entries (a
+difference stops everything: some call bypassed the recorder). A model whose
+recording run fails or times out is replaced by the next valid candidate of
+its stratum, and the manifest is rewritten. The outcome of every recording
+run, including the replaced models, is kept in `corpus/data/corpus/run.csv`,
+with its status (`ok`, `failed` or `timeout`), time, number of calls, number
+of stored calls and the digest of its `.tet` output. Interrupted runs
+resume: models already recorded with the original's output are not run
+again. When every manifest model is recorded, `run` removes the corpus
+files of models that are no longer in the manifest.
 
 The default stratum cap of 25,000 stored calls keeps the whole sample
 corpus well under 5 GB. Recorded corpus files take about 30 bytes per

@@ -28,7 +28,10 @@ def build(_args):
 
 def _select(args):
     """Select the sample: a model is valid when the original mesher meshes it
-    and the recording mesher has not failed on it."""
+    and the recording mesher has not failed on it (a recording that writes
+    another output than the original's is a failure).
+
+    Returns the selection and the log of the original runs."""
     if not models.METADATA.exists():
         raise reference.ReferenceError(f"{models.METADATA} is missing; run fetch-models first")
     original = run.read_log(run.VALIDITY_LOG)
@@ -55,7 +58,7 @@ def _select(args):
     sample.write_manifest(args.manifest, selection.models)
     print(f"selected {len(selection.models)} models into {args.manifest} "
           f"({len(selection.invalid)} candidates were not valid)")
-    return selection
+    return selection, original
 
 
 def fetch_models(args):
@@ -74,25 +77,29 @@ def _corpus_file(file_id):
 
 def run_sample(args):
     """Record every manifest model, replacing those the recording mesher
-    fails on by the next candidate of their stratum, until all succeed."""
+    fails on by the next candidate of their stratum, until all succeed; then
+    remove the corpus files of models that are no longer in the manifest."""
     while True:
-        selection = _select(args)
+        selection, original = _select(args)
         recording = run.read_log(run.RUN_LOG)
         todo = [m for m in selection.models
-                if m.file_id not in recording or not _corpus_file(m.file_id).exists()]
+                if not run.current(recording.get(m.file_id), original[m.file_id])
+                or not _corpus_file(m.file_id).exists()]
         if not todo:
             break
 
         def record(m):
-            return run.run_recording(m.file_id, models.model_path(m.file_id),
-                                     args.timeout, _corpus_file(m.file_id))
+            return run.run_recording(m.file_id, models.model_path(m.file_id), args.timeout,
+                                     _corpus_file(m.file_id), original[m.file_id].digest)
 
         for outcome in run.run_parallel(record, todo, args.jobs, "recording"):
             recording[outcome.file_id] = outcome
             run.write_log(run.RUN_LOG, recording)
+    removed = run.reconcile(run.CORPUS_OUT_DIR, {m.file_id for m in selection.models})
     failed = [o for o in recording.values() if o.status != "ok"]
     print(f"recorded {len(selection.models)} models into {run.CORPUS_OUT_DIR}; "
-          f"{len(failed)} were replaced after failing to record")
+          f"{len(failed)} were replaced after failing to record; "
+          f"removed the corpus files of {len(removed)} models no longer in the manifest")
 
 
 def all_commands(args):

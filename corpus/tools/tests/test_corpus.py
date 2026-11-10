@@ -72,6 +72,54 @@ class SelectTests(unittest.TestCase):
         self.assertEqual(calls, {"select": (8, sample.SEED), "write": manifest})
 
 
+class RunSampleTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.out = self.tmp / "corpus"
+        self.out.mkdir()
+        for target, value in [("RUN_LOG", self.out / "run.csv"), ("CORPUS_OUT_DIR", self.out)]:
+            p = mock.patch.object(corpus.run, target, value)
+            p.start()
+            self.addCleanup(p.stop)
+        self.model = sample.Model(1, "CC0", 10, 10, True, False)
+        self.original = {1: corpus.run.Outcome(1, "ok", 1.0, digest="d" * 64)}
+        p = mock.patch.object(corpus, "_select", lambda _args: (
+            sample.Selection([self.model], []), self.original))
+        p.start()
+        self.addCleanup(p.stop)
+        self.recorded = []
+
+    def record(self, file_id, _model, _timeout, out, expected):
+        self.recorded.append((file_id, expected))
+        out.write_text("corpus")
+        return corpus.run.Outcome(file_id, "ok", 1.0, 7, 5, digest=expected)
+
+    def run_sample(self):
+        with mock.patch.object(corpus.run, "run_recording", self.record):
+            corpus.run_sample(corpus.parse(["run", "--jobs", "1"]))
+
+    def test_a_recording_logged_without_digest_is_recorded_again(self):
+        (self.out / "1.ipcorpus").write_text("old")
+        corpus.run.write_log(corpus.run.RUN_LOG, {1: corpus.run.Outcome(1, "ok", 1.0, 7, 5)})
+        self.run_sample()
+        self.assertEqual(self.recorded, [(1, "d" * 64)])
+        self.assertEqual((self.out / "1.ipcorpus").read_text(), "corpus")
+
+    def test_a_current_recording_is_not_run_again(self):
+        (self.out / "1.ipcorpus").write_text("kept")
+        corpus.run.write_log(corpus.run.RUN_LOG,
+                             {1: corpus.run.Outcome(1, "ok", 1.0, 7, 5, digest="d" * 64)})
+        self.run_sample()
+        self.assertEqual(self.recorded, [])
+
+    def test_corpus_files_of_models_not_in_the_manifest_are_removed(self):
+        (self.out / "2.ipcorpus").write_text("replaced model")
+        self.run_sample()
+        self.assertEqual(sorted(p.name for p in self.out.glob("*.ipcorpus")), ["1.ipcorpus"])
+
+
 class DataDirTests(unittest.TestCase):
     def test_the_data_directory_can_be_moved(self):
         with tempfile.TemporaryDirectory() as tmp:
