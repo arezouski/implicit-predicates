@@ -1,0 +1,147 @@
+//! The sign of a quantity: the result type of every predicate.
+
+use core::ops::{Mul, Neg};
+
+/// The sign of a real quantity.
+///
+/// The discriminants are `-1`, `0` and `1`, so `sign as i8` gives the usual
+/// integer sign.
+///
+/// # Examples
+///
+/// ```
+/// use indirect_predicates_core::Sign;
+///
+/// assert_eq!(Sign::Negative as i8, -1);
+/// assert_eq!(Sign::Zero as i8, 0);
+/// assert_eq!(Sign::Positive as i8, 1);
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[repr(i8)]
+pub enum Sign {
+    /// Strictly less than zero.
+    Negative = -1,
+    /// Exactly zero.
+    Zero = 0,
+    /// Strictly greater than zero.
+    Positive = 1,
+}
+
+impl Sign {
+    /// Returns the sign of `x`. Both `0.0` and `-0.0` give [`Sign::Zero`].
+    ///
+    /// NaN is not a valid input: debug builds panic on it, and release builds
+    /// return [`Sign::Zero`], which is meaningless.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indirect_predicates_core::Sign;
+    ///
+    /// assert_eq!(Sign::of(2.5), Sign::Positive);
+    /// assert_eq!(Sign::of(-2.5), Sign::Negative);
+    /// assert_eq!(Sign::of(-0.0), Sign::Zero);
+    /// ```
+    #[must_use]
+    pub fn of(x: f64) -> Sign {
+        debug_assert!(!x.is_nan(), "Sign::of called with NaN");
+        if x > 0.0 {
+            Sign::Positive
+        } else if x < 0.0 {
+            Sign::Negative
+        } else {
+            Sign::Zero
+        }
+    }
+
+    /// Returns `true` if the sign is [`Sign::Zero`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indirect_predicates_core::Sign;
+    ///
+    /// assert!(Sign::Zero.is_zero());
+    /// assert!(!Sign::Positive.is_zero());
+    /// ```
+    #[must_use]
+    pub fn is_zero(self) -> bool {
+        self == Sign::Zero
+    }
+
+    /// Returns `true` if the sign is [`Sign::Positive`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indirect_predicates_core::Sign;
+    ///
+    /// assert!(Sign::Positive.is_positive());
+    /// assert!(!Sign::Zero.is_positive());
+    /// ```
+    #[must_use]
+    pub fn is_positive(self) -> bool {
+        self == Sign::Positive
+    }
+
+    /// Returns `true` if the sign is [`Sign::Negative`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indirect_predicates_core::Sign;
+    ///
+    /// assert!(Sign::Negative.is_negative());
+    /// assert!(!Sign::Zero.is_negative());
+    /// ```
+    #[must_use]
+    pub fn is_negative(self) -> bool {
+        self == Sign::Negative
+    }
+}
+
+impl Neg for Sign {
+    type Output = Sign;
+
+    /// Flips the sign; [`Sign::Zero`] stays zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indirect_predicates_core::Sign;
+    ///
+    /// assert_eq!(-Sign::Positive, Sign::Negative);
+    /// assert_eq!(-Sign::Zero, Sign::Zero);
+    /// ```
+    fn neg(self) -> Sign {
+        match self {
+            Sign::Negative => Sign::Positive,
+            Sign::Zero => Sign::Zero,
+            Sign::Positive => Sign::Negative,
+        }
+    }
+}
+
+impl Mul for Sign {
+    type Output = Sign;
+
+    /// The sign of a product: zero if either factor is zero, positive if the
+    /// signs agree, negative otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use indirect_predicates_core::Sign;
+    ///
+    /// assert_eq!(Sign::Negative * Sign::Negative, Sign::Positive);
+    /// assert_eq!(Sign::Negative * Sign::Positive, Sign::Negative);
+    /// assert_eq!(Sign::Zero * Sign::Positive, Sign::Zero);
+    /// ```
+    fn mul(self, rhs: Sign) -> Sign {
+        match (self, rhs) {
+            (Sign::Zero, _) | (_, Sign::Zero) => Sign::Zero,
+            (a, b) if a == b => Sign::Positive,
+            _ => Sign::Negative,
+        }
+    }
+}
