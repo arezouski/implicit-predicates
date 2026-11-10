@@ -1,0 +1,28 @@
+[package]
+name = "indirect-predicates-benches"
+description = "Benchmarks for the arithmetic core of indirect-predicates"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+indirect-predicates-core = { path = "../crates/core", features = ["alloc"] }
+criterion = { version = "0.8", default-features = false }
+geometry-predicates = "0.3.0"
+
+[[bench]]
+name = "eft"
+harness = false
+
+[[bench]]
+name = "expansion"
+harness = false
+
+[[bench]]
+name = "det3"
+harness = false

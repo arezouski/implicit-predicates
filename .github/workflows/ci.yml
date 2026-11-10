@@ -39,6 +39,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
       - run: cargo test --workspace --all-features
+      - run: cargo bench -p indirect-predicates-benches --no-run
 
   msrv:
     runs-on: ubuntu-latest

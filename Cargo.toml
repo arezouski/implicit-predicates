@@ -5,6 +5,7 @@ members = [
     "crates/gen",
     "crates/oracle",
     "crates/indirect-predicates",
+    "benches",
 ]
 
 [workspace.package]
