@@ -17,14 +17,18 @@
 //! form used for exact evaluation.
 //!
 //! Input is bounded so that no definition can make [`parse`] panic or
-//! overflow the stack: brackets nest at most 64 deep, a statement has at most
-//! 6000 tokens (comments are free), and an expression tree is at most 1000
-//! levels deep, which allows a flat sum of about 1000 terms. Parsing runs on a
-//! helper thread with a 256 MiB stack, reserved but only committed as used.
+//! overflow the stack of the calling thread, even in a debug build with a
+//! 1 MiB stack: brackets nest at most 16 deep; on the way from a statement to
+//! any leaf there are at most 600 of `+ - * >`, 320 `.` and 4 `=`; at most 2
+//! punctuation tokens come in a row; and Rust keywords other than `fn` and
+//! `let`, and punctuation the language does not use, are refused. Comments
+//! cost nothing. An error names the limit and suggests splitting the
+//! expression with `let`.
 
 #![forbid(unsafe_code)]
 
 mod error;
+mod eval;
 mod graph;
 mod limits;
 mod parse;
