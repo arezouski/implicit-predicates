@@ -16,6 +16,10 @@ const INSPHERE: &str = include_str!("fixtures/insphere.pred");
 /// build.
 const LIMIT: Duration = Duration::from_secs(5);
 
+/// The most subexpressions of a main form for which the checks are
+/// generated.
+const MAX_NODES: usize = 256;
+
 /// Runs `generate` on `source` and returns its result with the time it took.
 fn timed(source: &str) -> (Result<usize, Error>, Duration) {
     let start = Instant::now();
@@ -141,4 +145,62 @@ fn the_real_predicates_are_accepted() {
         assert_eq!(result, Ok(1));
         assert!(elapsed < LIMIT, "took {elapsed:?}");
     }
+}
+
+/// A predicate whose main form is a balanced sum of `terms` products of two
+/// differences, cycling through the products of the differences of four
+/// points, written with `let` so that brackets stay shallow and the text
+/// stays short.
+fn balanced_sum(terms: usize) -> String {
+    let points = ["a", "b", "c", "d"];
+    let mut lines = String::new();
+    let mut leaves = 0;
+    for p in points {
+        for q in points.iter().filter(|&&q| q != p) {
+            for axis in ["x", "y", "z"] {
+                lines.push_str(&format!("    let l{leaves} = {p}.{axis} - {q}.{axis};\n"));
+                leaves += 1;
+            }
+        }
+    }
+    let mut level: Vec<String> = (0..terms)
+        .map(|i| format!("l{} * l{}", i % leaves, (i / leaves + i) % leaves))
+        .collect();
+    let mut next_name = 0;
+    while level.len() > 1 {
+        let mut next = Vec::new();
+        for pair in level.chunks(2) {
+            if let [x, y] = pair {
+                lines.push_str(&format!("let s{next_name} = {x} + {y};\n"));
+                next.push(format!("s{next_name}"));
+                next_name += 1;
+            } else {
+                next.push(pair[0].clone());
+            }
+        }
+        level = next;
+    }
+    format!(
+        "fn p(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {{\n{lines}    {}\n}}\n",
+        level[0]
+    )
+}
+
+#[test]
+fn a_wide_balanced_sum_is_rejected_quickly() {
+    // Shallow enough for every other budget, but too many subexpressions
+    // for the search of the edge cases of the checks.
+    rejected_quickly(&balanced_sum(250_000), (1, 4), "subexpressions");
+}
+
+#[test]
+fn the_largest_accepted_chain_generates_in_a_few_seconds() {
+    // The worst shape found for the search of the edge cases: a sum of one
+    // difference, whose edge cases are hard to find, at the largest number
+    // of subexpressions accepted.
+    let start = Instant::now();
+    assert_eq!(timed(&long_sum(MAX_NODES)).0, Ok(1));
+    let elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_secs(15), "took {elapsed:?}");
+    rejected_quickly(&long_sum(MAX_NODES + 1), (1, 4), "subexpressions");
 }

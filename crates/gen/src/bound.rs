@@ -280,8 +280,8 @@ impl FilterBound {
 /// For `D <= d_max` every computed node then has magnitude at most
 /// `c_x * D^(g_x) <= 2^1022` (for `D < 1`, `D^(g_x) <= 1 < d_max^(g_x)`),
 /// a quarter of the overflow threshold `2^1024`, so no intermediate value
-/// and not the result overflows. An overflow in the evaluation of the bound itself
-/// gives an infinite bound, which only makes the filter abstain.
+/// and not the result overflows. An overflow in the evaluation of the bound
+/// itself gives an infinite bound, which only makes the filter abstain.
 ///
 /// Returns the degree of a node that overflows for every `j >= 1` if there is
 /// no such `j`.
@@ -347,8 +347,8 @@ fn d_max_exponent(nodes: &[NodeBound]) -> Result<i64, u32> {
 ///   (`e` is an upper bound on `E`, rounded up by the caller, so it adds
 ///   none; a caller that rounded it to nearest instead would add one factor
 ///   for each use of `e` and of `d`, `3k + 3` in all, within `2k + 8` only
-///   for `k <= 5`). That holds while no partial result is subnormal: condition 2
-///   keeps every partial result built from `EPSILON * d` at least
+///   for `k <= 5`). That holds while no partial result is subnormal:
+///   condition 2 keeps every partial result built from `EPSILON * d` at least
 ///   `epsilon * min(1, D)^k >= 2^-1021`, and the term `KAPPA * e`, which
 ///   may underflow, loses at most `2^-1075`, a fraction `2^-54` of the sum
 ///   it joins. The constants were derived for up to `2k + 8` such factors,

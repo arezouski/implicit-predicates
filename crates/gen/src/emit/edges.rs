@@ -25,6 +25,14 @@ use crate::dyadic::Dyadic;
 /// The coordinates of the points of one case.
 pub(crate) type Case = Vec<[f64; 3]>;
 
+/// The most nodes of a difference form for which edge cases are searched.
+///
+/// The search makes at most `8 * 64` attempts, each with at most about 330
+/// exact evaluations of the whole form, so its work is proportional to the
+/// number of nodes; at 256 nodes the slowest form found, a long sum of one
+/// difference, takes a few seconds in a debug build.
+pub(crate) const MAX_NODES: usize = 256;
+
 /// The cases built at each scale, and the attempts allowed for them.
 const PER_SCALE: usize = 6;
 const ATTEMPTS_PER_SCALE: usize = 64;

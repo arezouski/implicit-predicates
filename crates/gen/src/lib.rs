@@ -34,10 +34,13 @@
 //! read in loops, so [`parse`] cannot panic or overflow the stack of the
 //! calling thread, even in a debug build with a 1 MiB stack, and it accepts
 //! a sum of any length. The later steps have budgets instead: a sum written
-//! as one chain of more than about 1,560 terms is rejected by [`filter_bound`],
-//! because the exact coefficients of its error bound grow with the length of
-//! the chain, and an expression too large to expand is rejected by
-//! [`canonical`]. Both report the limit they hit, before doing the work.
+//! as one chain of more than about 1,560 terms is rejected by
+//! [`filter_bound`], because the exact coefficients of its error bound grow
+//! with the length of the chain, an expression too large to expand is
+//! rejected by [`canonical`], and [`generate`] rejects main forms of more
+//! than 256 distinct subexpressions, for which the search of the edge cases
+//! of the checks would be slow. Each reports the limit it hit, before doing
+//! the work; the work section of [`generate`] lists every budget.
 //!
 //! Two analyses work on the graphs. [`check_same_polynomial`] expands the
 //! main and the exact form of a predicate with [`canonical`] and requires

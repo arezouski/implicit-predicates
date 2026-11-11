@@ -70,11 +70,33 @@ pub struct Generated {
 /// main form that is not homogeneous in differences of coordinates, a
 /// degree above the 1022 that the filter accepts, a definition too large to
 /// derive the filter bound for or to expand, an `#[exact]` form that is a
-/// different polynomial, or a predicate that the exact stages cannot
-/// support. The checks run from the cheapest to the most expensive, and
-/// every expensive one has a budget that it checks before doing the work,
-/// so a definition that is too large fails quickly; see [`crate::canonical`]
-/// and [`crate::filter_bound`] for the limits.
+/// different polynomial, a main form with more than 256 distinct
+/// subexpressions, or a predicate that the exact stages cannot support.
+///
+/// # Work
+///
+/// The checks run from the cheapest to the most expensive, and each step
+/// whose work can grow faster than the size of the definition has a budget,
+/// checked before the work it limits:
+///
+/// - [`parse`] nests brackets at most 32 deep, and the difference form and
+///   the degree of the `#[exact]` form take one pass each;
+/// - [`crate::filter_bound`] keeps its exact coefficients within `2^26`
+///   bits in all;
+/// - [`crate::canonical`] keeps every expansion within `2^16` terms, `2^16`
+///   bits per coefficient and `2^20` units of work;
+/// - the exact plans reject temporaries of `2^32` components or more, or of
+///   more than `2^51` operations, and take a few passes over the graph for
+///   each power of two they try;
+/// - the search for the edge cases of the checks, the most expensive step
+///   per node, runs only on main forms of at most 256 distinct
+///   subexpressions, and makes at most a fixed number of exact evaluations
+///   of the form.
+///
+/// So the work of `generate` is bounded for every definition, and the
+/// slowest definitions accepted take a few seconds in a debug build, most
+/// of it in the search for the edge cases; a definition beyond a budget is
+/// rejected with an error that names the limit.
 pub fn generate(source: &str, file: &str, regenerate: &str) -> Result<Vec<Generated>, Error> {
     let notice = notice(file, regenerate);
     parse(source, file)?
@@ -115,6 +137,20 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
     }
     let constants = filter_bound(&graph, file, position)?.constants();
     check_same_polynomial(predicate, file)?;
+    if graph.nodes.len() > edges::MAX_NODES {
+        return Err(Error::at(
+            file,
+            position,
+            format!(
+                "the main form of `{}` has {} distinct subexpressions, more than the {} \
+                 for which the checks of its tests are generated: their edge cases take \
+                 thousands of exact evaluations of the whole form",
+                predicate.name,
+                graph.nodes.len(),
+                edges::MAX_NODES
+            ),
+        ));
+    }
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
     let plan = |leaves| {
         exact_plan_differences(&graph, leaves, file, position, min, max).map(|plan| {
