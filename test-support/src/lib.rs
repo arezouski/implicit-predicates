@@ -1,6 +1,7 @@
 //! Shared test infrastructure for the `indirect-predicates` workspace: the
-//! proptest configuration, input generators, structural checks of
-//! expansions, and exact values from the oracle.
+//! proptest configuration, input generators (values, expansions and sets of
+//! points), structural checks of expansions, and exact values from the
+//! oracle.
 //!
 //! This crate is not published. The crates of the workspace use it as a
 //! dev-dependency only.
@@ -16,12 +17,17 @@ mod arena;
 mod bit_patterns;
 mod checks;
 mod expansions;
+mod points;
 mod values;
 
 pub use arena::{Applied, ArenaOp, PRODUCT_OPERAND_LIMIT, arena_op, product_working_space};
 pub use bit_patterns::{bit_pattern_expansion, bit_pattern_pair};
 pub use checks::{assert_valid_expansion, has_adjacent_components};
 pub use expansions::{expansion, expansion_with, expansion_within, near_equal};
+pub use points::{
+    Point3, Points4, coplanar4, extreme4, grid4, near_coplanar4, point3, random4, repeated4,
+    signed_zeros4,
+};
 pub use values::{
     any_finite, cancellation_that_rounds, correlated_pair, leaf, near_cancelling,
     product_domain_bits, product_operand,

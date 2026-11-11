@@ -1,18 +1,25 @@
 //! The emitted stages have the value of the source polynomial, their buffers
 //! are large enough for every call, and the filter bound stays within the
-//! operation count its constants allow for.
+//! operation count its constants allow for; the checks have the value of the
+//! source polynomial too, and their cases straddle the bound of the filter.
+
+mod readback;
 
 use std::collections::BTreeMap;
 
 use indirect_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 
+use super::edges::bound_edge_cases;
 use super::filter::{bound_operations, bound_statements, write_filter};
 use super::program::{Program, Scalar, Step};
-use crate::differences::{DiffGraph, difference_graph};
+use crate::bound::filter_bound;
+use crate::differences::{DiffGraph, DiffNode, difference_graph};
+use crate::dyadic::Dyadic;
 use crate::graph::{Graph, Node, NodeId};
 use crate::parse::{Predicate, parse};
 use crate::polynomial::canonical;
 use crate::range::{Leaves, exact_plan_differences, exact_plan_raw};
+use readback::{Symbolic, interpret_statements};
 
 const ORIENT3D: &str = include_str!("../../tests/fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("../../tests/fixtures/insphere.pred");
@@ -67,30 +74,6 @@ fn programs(p: &Predicate) -> Vec<(&'static str, Program, DiffGraph)> {
         ));
     }
     out
-}
-
-/// A graph under construction, without sharing.
-#[derive(Default)]
-struct Symbolic {
-    nodes: Vec<Node>,
-}
-
-impl Symbolic {
-    fn push(&mut self, node: Node) -> NodeId {
-        self.nodes.push(node);
-        self.nodes.len() - 1
-    }
-
-    fn coordinate(&mut self, point: usize, axis: u8) -> NodeId {
-        self.push(Node::Coord { point, axis })
-    }
-
-    fn finish(self, root: NodeId) -> Graph {
-        Graph {
-            nodes: self.nodes,
-            root,
-        }
-    }
 }
 
 /// The value of the program as a graph over the coordinates: each step is
@@ -234,53 +217,6 @@ fn a_product_of_two_short_expansions_is_a_sum_of_scalings() {
     assert_eq!(translated.product_scratch(), (32, 64));
 }
 
-/// The value of the emitted filter, read back from its statements.
-fn interpret_filter(code: &str) -> Graph {
-    let mut g = Symbolic::default();
-    let mut names: BTreeMap<String, NodeId> = BTreeMap::new();
-    let operand = |g: &mut Symbolic, names: &BTreeMap<String, NodeId>, text: &str| {
-        if let Some(rest) = text.strip_prefix("p[") {
-            let (point, axis) = rest.trim_end_matches(']').split_once("][").unwrap();
-            g.coordinate(point.parse().unwrap(), axis.parse().unwrap())
-        } else {
-            names[text]
-        }
-    };
-    let mut last = None;
-    for line in code.lines() {
-        let Some(statement) = line.strip_prefix("let ") else {
-            continue;
-        };
-        let (name, value) = statement.trim_end_matches(';').split_once(" = ").unwrap();
-        if !(name == "det" || name.starts_with('t')) {
-            continue;
-        }
-        let tokens: Vec<&str> = value.split(' ').collect();
-        let id = match tokens.as_slice() {
-            [x] => {
-                let x = x.strip_prefix('-').expect("a negation");
-                let (zero, x) = (g.push(Node::Int(0)), operand(&mut g, &names, x));
-                g.push(Node::Sub(zero, x))
-            }
-            [x, op, y] => {
-                let (x, y) = (operand(&mut g, &names, x), operand(&mut g, &names, y));
-                g.push(match *op {
-                    "+" => Node::Add(x, y),
-                    "-" => Node::Sub(x, y),
-                    "*" => Node::Mul(x, y),
-                    _ => panic!("{line}"),
-                })
-            }
-            _ => panic!("{line}"),
-        };
-        names.insert(name.to_string(), id);
-        last = Some(name.to_string());
-    }
-    assert_eq!(last.as_deref(), Some("det"));
-    let root = names["det"];
-    g.finish(root)
-}
-
 #[test]
 fn the_filter_has_the_value_of_the_source_polynomial() {
     for p in predicates() {
@@ -288,7 +224,7 @@ fn the_filter_has_the_value_of_the_source_polynomial() {
         let mut code = String::new();
         write_filter(&mut code, &diff, p.params.len(), diff.degrees[diff.root]);
         assert_eq!(
-            canonical(&interpret_filter(&code)),
+            canonical(&interpret_statements(&code, "p")),
             canonical(&p.main),
             "{}",
             p.name
@@ -314,4 +250,138 @@ fn the_filter_bound_takes_at_most_2k_plus_8_operations() {
         bound_statements(3),
         "let d = delta + e;\nlet bound = (EPSILON * d + KAPPA * e) * d * d;\n"
     );
+}
+
+/// The emitted exact stages of every test predicate, with their names, and
+/// the expected polynomial.
+fn emitted_stages() -> Vec<(String, String, crate::Polynomial)> {
+    let mut out = Vec::new();
+    for source in [ORIENT3D, INSPHERE, NEGATIONS] {
+        for (p, g) in parse(source, "t.pred")
+            .unwrap()
+            .iter()
+            .zip(super::generate(source, "t.pred").unwrap())
+        {
+            for stage in [
+                "exact_differences",
+                "expansions_translated",
+                "expansions_untranslated",
+            ] {
+                if stage == "expansions_untranslated" && p.exact.is_none() {
+                    assert!(!g.stages.contains(stage));
+                    continue;
+                }
+                let code = readback::function(&g.stages, stage).to_string();
+                out.push((format!("{} {stage}", p.name), code, canonical(&p.main)));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn the_text_of_every_exact_stage_has_the_value_of_the_source_polynomial() {
+    let stages = emitted_stages();
+    for (name, code, expected) in &stages {
+        assert_eq!(
+            &canonical(&readback::interpret_stage(code)),
+            expected,
+            "{name}"
+        );
+    }
+    // orient3d and n have three stages, in-sphere and linear two.
+    assert_eq!(stages.len(), 3 + 2 + 3 + 2);
+}
+
+#[test]
+fn the_exact_evaluator_of_the_checks_has_the_value_of_the_source_polynomial() {
+    for source in [ORIENT3D, INSPHERE, NEGATIONS] {
+        for (p, g) in parse(source, "t.pred")
+            .unwrap()
+            .iter()
+            .zip(super::generate(source, "t.pred").unwrap())
+        {
+            let code = readback::function(&g.checks, "exact");
+            assert_eq!(
+                canonical(&interpret_statements(code, "c")),
+                canonical(&p.main),
+                "{}",
+                p.name
+            );
+        }
+    }
+}
+
+/// The exact value of the source form `graph` at the points `p`.
+fn value_at(graph: &Graph, p: &[[f64; 3]]) -> Dyadic {
+    let mut values: Vec<Dyadic> = Vec::new();
+    for node in &graph.nodes {
+        let value = match *node {
+            Node::Coord { point, axis } => Dyadic::from_f64(p[point][usize::from(axis)]),
+            Node::Int(n) => Dyadic::integer(n),
+            Node::Add(x, y) => &values[x] + &values[y],
+            Node::Sub(x, y) => &values[x] - &values[y],
+            Node::Mul(x, y) => &values[x] * &values[y],
+        };
+        values.push(value);
+    }
+    values.swap_remove(graph.root)
+}
+
+#[test]
+fn the_bound_edge_cases_straddle_the_bound() {
+    for source in [ORIENT3D, INSPHERE] {
+        let p = parse(source, "t.pred").unwrap().remove(0);
+        let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();
+        let constants = filter_bound(&diff, "t.pred", p.position)
+            .unwrap()
+            .constants();
+        let cases = bound_edge_cases(&diff, p.params.len(), &constants);
+        assert!(cases.len() >= 32, "{}: {} pairs", p.name, cases.len());
+        // `|value| > EPSILON * delta^k`, with `delta` the largest difference
+        // of coordinates of the form, computed in `f64` as the filter does.
+        let above = |q: &[[f64; 3]]| {
+            let mut delta = 0.0f64;
+            for node in &diff.nodes {
+                if let DiffNode::Leaf {
+                    axis,
+                    minuend,
+                    subtrahend,
+                } = *node
+                {
+                    let axis = usize::from(axis);
+                    delta = delta.max((q[minuend][axis] - q[subtrahend][axis]).abs());
+                }
+            }
+            assert!((constants.d_min..=constants.d_max).contains(&delta));
+            let mut bound = Dyadic::from_f64(constants.epsilon);
+            for _ in 0..constants.degree {
+                bound = &bound * &Dyadic::from_f64(delta);
+            }
+            let value = value_at(&p.main, q);
+            value > bound || value < &Dyadic::integer(0) - &bound
+        };
+        let mut scales = Vec::new();
+        for (below, over) in &cases {
+            assert!(!above(below), "{}: {below:?}", p.name);
+            assert!(above(over), "{}: {over:?}", p.name);
+            // One coordinate apart, by one representable value.
+            let moved: Vec<(f64, f64)> = below
+                .iter()
+                .flatten()
+                .zip(over.iter().flatten())
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .map(|(&a, &b)| (a, b))
+                .collect();
+            assert_eq!(moved.len(), 1, "{}: {below:?} {over:?}", p.name);
+            let (a, b) = moved[0];
+            assert!(a.next_up() == b || a.next_down() == b, "{a:e} {b:e}");
+            let top = below.iter().flatten().fold(0.0f64, |m, x| m.max(x.abs()));
+            scales.push(top.log2().floor() as i64);
+        }
+        // From near D_MIN to near D_MAX.
+        let (low, high) = (constants.d_min.log2() as i64, constants.d_max.log2() as i64);
+        assert!(scales.iter().any(|&s| s < low + 10), "{scales:?}");
+        assert!(scales.iter().any(|&s| s > high - 13), "{scales:?}");
+    }
 }

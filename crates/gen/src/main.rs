@@ -1,6 +1,6 @@
-//! The command line tool: generates the stages of every predicate defined in
-//! a directory and writes them, formatted with rustfmt, or checks that the
-//! files already there are up to date.
+//! The command line tool: generates the stages and the checks of every
+//! predicate defined in a directory and writes them, formatted with rustfmt,
+//! or checks that the files already there are up to date.
 //!
 //! ```text
 //! indirect-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
@@ -136,7 +136,7 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
                 path: options.stages.join(&file),
                 contents: rustfmt(&g.stages)?,
             });
-            // A predicate without generated tests has no checks file.
+            // A predicate without checks has no checks file.
             if !g.checks.is_empty() {
                 outputs.push(Output {
                     path: options.checks.join(&file),

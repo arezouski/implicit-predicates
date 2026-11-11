@@ -12,9 +12,9 @@
 //!   exact;
 //! - `d = delta + e` and `bound = (EPSILON * d + KAPPA * e) * d * ... * d`,
 //!   with `DEGREE - 1` multiplications by `d`, from left to right;
-//! - the decision `D_MIN <= d <= D_MAX` and `|det| > bound`, combined with
-//!   a non-short-circuiting `&`; the sign is then chosen by a comparison,
-//!   not a branch on the decision.
+//! - the decision `e >= 0`, `D_MIN <= d <= D_MAX` and `|det| > bound`,
+//!   combined with a non-short-circuiting `&`; the sign is then chosen by a
+//!   comparison, not a branch on the decision.
 //!
 //! # Why the decision is sound
 //!
@@ -36,17 +36,30 @@
 //! down, so for `D >= D_MIN` none of them leaves the normal range on the way
 //! (the term `KAPPA * e` may underflow, which loses at most `2^-1075`, a
 //! fraction `2^-54` of the sum it joins and within the same allowance).
-//! `d` is compared with `D_MIN` and `D_MAX` after rounding, which can only
-//! make it smaller than `D` by the factor already counted.
 //!
+//! `d` is compared with `D_MIN` and `D_MAX` after rounding to nearest, which
+//! can make it larger or smaller than the exact `D`, by a factor `1 + u` at
+//! most. That is harmless, because both conditions have slack. A `D` just
+//! below `D_MIN` that rounds up to it raises the underflow allowance, at
+//! most `2^-32` of the bound at `D_MIN`, by a factor `(1 + u)^k`, far within
+//! the margin `2^-31` of the constants, and keeps the bound normal, since
+//! at `D_MIN` the term `epsilon D^k` is at least `2^-1021`, twice the
+//! smallest normal. A `D` just above
+//! `D_MAX` that rounds down to it keeps every computed value below
+//! `2^1022 (1 + u)^k`, still below the overflow threshold `2^1024`, since
+//! `D_MAX` asks for `2^1022`. With `e = 0`, `d = delta` is exact.
+//!
+//! The bound needs `E >= 0`: a negative `e` shrinks it, so the filter only
+//! decides when `e >= 0`, a comparison that is also false for a NaN `e`.
 //! Non-finite inputs never decide: a NaN leaf makes `det` NaN, an infinite
-//! leaf makes `delta` and `d` infinite, a non-finite `e` makes `d` infinite
-//! or NaN, and every comparison with NaN is false. A decision implies
+//! leaf makes `delta` and `d` infinite, an infinite `e` makes `d` infinite,
+//! and every comparison with NaN is false. A decision implies
 //! `|det| > bound > 0`, so the filter never returns zero.
 
 use std::fmt::Write;
 
 use super::comment;
+use super::statements::{node_name, node_statements};
 use crate::differences::{DiffGraph, DiffNode};
 use crate::graph::NodeId;
 
@@ -75,13 +88,6 @@ pub(crate) fn write_filter(
     points: usize,
     degree: u32,
 ) -> bool {
-    let name = |id: NodeId| {
-        if id == graph.root {
-            "det".to_string()
-        } else {
-            format!("t{id}")
-        }
-    };
     comment(
         out,
         "///",
@@ -89,10 +95,11 @@ pub(crate) fn write_filter(
         "The sign of the predicate from an evaluation of its main form in `f64`, \
          when the rounding error cannot change it.\n\n\
          `e` is the sum of the two largest errors of the coordinates of the points \
-         given, as approximations of the exact points; it is `0.0` for explicit points. \
-         `None` means that this stage cannot decide: the value is too close to zero for \
-         its error bound, the scale of the differences is outside `D_MIN..=D_MAX`, or an \
-         input is not finite. The result is never `Some(Sign::Zero)`.",
+         given, as approximations of the exact points, rounded up; it is `0.0` for \
+         explicit points. `None` means that this stage cannot decide: the value is too \
+         close to zero for its error bound, the scale of the differences is outside \
+         `D_MIN..=D_MAX`, `e` is negative, or an input is not finite. The result is \
+         never `Some(Sign::Zero)`.",
     );
     out.push_str("#[inline]\n");
     writeln!(
@@ -100,24 +107,12 @@ pub(crate) fn write_filter(
         "pub fn filter(p: [&[f64; 3]; {points}], e: f64) -> Option<Sign> {{"
     )
     .unwrap();
-    let mut leaves = Vec::new();
-    for (id, node) in graph.nodes.iter().enumerate() {
-        let value = match *node {
-            DiffNode::Leaf {
-                axis,
-                minuend,
-                subtrahend,
-            } => {
-                leaves.push(id);
-                format!("p[{minuend}][{axis}] - p[{subtrahend}][{axis}]")
-            }
-            DiffNode::Neg(x) => format!("-{}", name(x)),
-            DiffNode::Add(x, y) => format!("{} + {}", name(x), name(y)),
-            DiffNode::Sub(x, y) => format!("{} - {}", name(x), name(y)),
-            DiffNode::Mul(x, y) => format!("{} * {}", name(x), name(y)),
-        };
-        writeln!(out, "let {} = {value};", name(id)).unwrap();
+    for statement in node_statements(graph, "p", false) {
+        writeln!(out, "{statement}").unwrap();
     }
+    let leaves: Vec<NodeId> = (0..graph.nodes.len())
+        .filter(|&id| matches!(graph.nodes[id], DiffNode::Leaf { .. }))
+        .collect();
     comment(
         out,
         "//",
@@ -126,9 +121,14 @@ pub(crate) fn write_filter(
     );
     for (i, &leaf) in leaves.iter().enumerate() {
         if i == 0 {
-            writeln!(out, "let delta = {}.abs();", name(leaf)).unwrap();
+            writeln!(out, "let delta = {}.abs();", node_name(graph, leaf)).unwrap();
         } else {
-            writeln!(out, "let delta = max(delta, {}.abs());", name(leaf)).unwrap();
+            writeln!(
+                out,
+                "let delta = max(delta, {}.abs());",
+                node_name(graph, leaf)
+            )
+            .unwrap();
         }
     }
     comment(
@@ -142,7 +142,7 @@ pub(crate) fn write_filter(
     );
     out.push_str(&bound_statements(degree));
     out.push_str(
-        "let decided = (D_MIN..=D_MAX).contains(&d) & (det.abs() > bound);\n\
+        "let decided = (e >= 0.0) & (D_MIN..=D_MAX).contains(&d) & (det.abs() > bound);\n\
          let sign = if det > 0.0 { Sign::Positive } else { Sign::Negative };\n\
          decided.then_some(sign)\n}\n\n",
     );

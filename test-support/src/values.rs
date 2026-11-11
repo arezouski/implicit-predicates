@@ -152,7 +152,7 @@ fn with_leading_bit(exp: i32, low_bits: u64, negative: bool) -> f64 {
 }
 
 /// `x` moved `ulps` representable values up (positive) or down (negative).
-fn step_ulps(x: f64, ulps: i32) -> f64 {
+pub(crate) fn step_ulps(x: f64, ulps: i32) -> f64 {
     let step = if ulps >= 0 {
         f64::next_up
     } else {

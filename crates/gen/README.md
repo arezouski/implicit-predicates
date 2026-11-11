@@ -67,8 +67,18 @@ For each predicate the generator writes one module with:
 - `staged`, which runs the filter, then the exact differences, then the
   stage of the `#[exact]` form (or of the main form when there is none).
 
-Each stage returns `None` when it cannot decide. Generated files start with a
-header saying that they must not be edited.
+Each stage returns `None` when it cannot decide.
+
+For the tests of each predicate it writes a second module, of checks, with:
+
+- `exact`, the main form evaluated with the exact dyadic numbers of
+  `indirect-predicates-oracle`, the reference the stages are tested against;
+- `bound_edge_cases`, pairs of inputs on either side of the error bound of
+  the filter, one representable value apart in one coordinate, built with
+  exact arithmetic from points on a grid at scales from just above `D_MIN`
+  to just below `D_MAX`, and written as bit patterns.
+
+Generated files start with a header saying that they must not be edited.
 
 ## Command line
 
@@ -77,8 +87,8 @@ indirect-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
 ```
 
 reads every `.pred` file in `<pred-dir>` and writes `<name>.rs` for each
-predicate to the `--stages` directory, and its generated tests, when it has
-any, to the `--checks` directory. The output is formatted with
+predicate to the `--stages` directory, and the module of its checks to the
+`--checks` directory. The output is formatted with
 `rustfmt --edition 2024`, which must be installed. With `--check` nothing is
 written: the tool compares the files with what it would write, names each
 one that differs or is missing, and exits with a nonzero status if any does.
@@ -90,7 +100,8 @@ with a single command from the root:
 cargo run -p indirect-predicates-gen -- crates/indirect-predicates/predicates --stages crates/indirect-predicates/src/generated --checks crates/indirect-predicates/tests/generated
 ```
 
-and checked with the same command followed by `--check`.
+and checked, stages and checks alike, with the same command followed by
+`--check`.
 
 ## License
 

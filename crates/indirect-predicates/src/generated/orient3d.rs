@@ -47,11 +47,11 @@ pub const UNTRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 8.8342353238
 /// the rounding error cannot change it.
 ///
 /// `e` is the sum of the two largest errors of the coordinates of the points
-/// given, as approximations of the exact points; it is `0.0` for explicit
-/// points. `None` means that this stage cannot decide: the value is too close
-/// to zero for its error bound, the scale of the differences is outside
-/// `D_MIN..=D_MAX`, or an input is not finite. The result is never
-/// `Some(Sign::Zero)`.
+/// given, as approximations of the exact points, rounded up; it is `0.0` for
+/// explicit points. `None` means that this stage cannot decide: the value is
+/// too close to zero for its error bound, the scale of the differences is
+/// outside `D_MIN..=D_MAX`, `e` is negative, or an input is not finite. The
+/// result is never `Some(Sign::Zero)`.
 #[inline]
 pub fn filter(p: [&[f64; 3]; 4], e: f64) -> Option<Sign> {
     let t0 = p[0][0] - p[3][0];
@@ -90,7 +90,7 @@ pub fn filter(p: [&[f64; 3]; 4], e: f64) -> Option<Sign> {
     // The bound takes 7 f64 operations, counting the sum that forms `e`.
     let d = delta + e;
     let bound = (EPSILON * d + KAPPA * e) * d * d;
-    let decided = (D_MIN..=D_MAX).contains(&d) & (det.abs() > bound);
+    let decided = (e >= 0.0) & (D_MIN..=D_MAX).contains(&d) & (det.abs() > bound);
     let sign = if det > 0.0 {
         Sign::Positive
     } else {

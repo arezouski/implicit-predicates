@@ -251,6 +251,7 @@ name = "indirect-predicates"
 version = "0.0.0"
 dependencies = [
  "indirect-predicates-core",
+ "indirect-predicates-corpus",
  "indirect-predicates-oracle",
  "indirect-predicates-test-support",
  "proptest",

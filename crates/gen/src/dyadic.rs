@@ -46,7 +46,6 @@ impl Dyadic {
     }
 
     /// The value of `x`, which must be finite.
-    #[cfg(test)]
     pub(crate) fn from_f64(x: f64) -> Self {
         assert!(x.is_finite());
         let bits = x.to_bits();

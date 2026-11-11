@@ -75,7 +75,6 @@ fn the_output_parses_as_rust() {
         g.stages
             .parse::<TokenStream>()
             .unwrap_or_else(|e| panic!("{file}: {e}"));
-        assert!(g.checks.is_empty());
     }
 }
 
