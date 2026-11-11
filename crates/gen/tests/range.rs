@@ -97,9 +97,10 @@ fn insphere_lengths_match_the_known_worst_cases() {
 fn the_two_insphere_forms_are_the_same_polynomial() {
     let raw = parse(INSPHERE_RAW, "t.pred").unwrap().remove(0);
     let differences = parse(INSPHERE, "t.pred").unwrap().remove(0);
-    let polynomial = canonical(&raw.main);
+    let polynomial = canonical(&raw.main, "t.pred", raw.position).unwrap();
     assert!(!polynomial.is_zero());
-    assert_eq!(polynomial, canonical(&differences.main));
+    let expected = canonical(&differences.main, "t.pred", differences.position).unwrap();
+    assert_eq!(polynomial, expected);
 }
 
 #[test]
@@ -189,10 +190,20 @@ fn a_temporary_too_large_is_an_error() {
 
 #[test]
 fn an_operation_count_too_large_is_an_error() {
-    // `t5` has 2^31 components and the last product 2^32, within the size
-    // limit, but merging its scalings takes about 2^64 operations.
+    // `x` has 2^30 components and the last product 2^31, within the size
+    // limit, but merging its scalings takes about 2^62 operations.
+    let source = "fn p(a: Point3, b: Point3) -> Sign { let t0 = a.x - b.x; \
+                  let t1 = t0 * t0; let t2 = t1 * t1; let t3 = t2 * t2; let t4 = t3 * t3; \
+                  let w = t1 * t0; let v = t2 * w; let u = t3 * v; let x = t4 * u; x * t0 }";
+    rejected(try_differences(source, Leaves::One), "operations");
+}
+
+#[test]
+fn a_temporary_of_exactly_2_32_components_is_an_error() {
+    // `t5` has 2^31 components and the last product exactly 2^32, which
+    // does not fit in a `usize` on a 32-bit host.
     rejected(
         try_differences(&squarings(5, "t0"), Leaves::One),
-        "operations",
+        "2^32 components or more",
     );
 }

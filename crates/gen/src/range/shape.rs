@@ -28,8 +28,9 @@ enum Op {
 /// node, `2^51`; it keeps `3 u T <= 3/4` in the component bound.
 const MAX_OPERATIONS: u128 = 1 << 51;
 
-/// The upper limit on the worst-case length of a temporary, and on the
-/// total length of all of them: `2^32` components, 32 GiB.
+/// The limit on the worst-case length of a temporary, and on the total
+/// length of all of them: fewer than `2^32` components, 32 GiB, so that
+/// every length fits in a `usize` even on a 32-bit host.
 pub(crate) const MAX_LENGTH: u64 = 1 << 32;
 
 /// An exact evaluation of a graph with leaves of one kind.
@@ -110,7 +111,7 @@ impl Shape {
     /// scalings are merged: `3 l_x l_y + 4 l_x l_y (l_x + l_y)`.
     ///
     /// Fails, with the message to report, at the first node whose length
-    /// exceeds [`MAX_LENGTH`] or whose operation count exceeds `2^51`, before
+    /// reaches [`MAX_LENGTH`] or whose operation count exceeds `2^51`, before
     /// anything is computed from the oversized values.
     fn new(ops: Vec<Op>, leaves: Leaves) -> Result<Self, String> {
         let (leaf_length, leaf_scale, leaf_operations): (u64, i64, u128) = match leaves {
@@ -121,7 +122,7 @@ impl Shape {
         let mut degrees: Vec<u64> = Vec::with_capacity(ops.len());
         let mut operations: Vec<u128> = Vec::with_capacity(ops.len());
         for op in &ops {
-            // Lengths are at most 2^32, so none of this overflows.
+            // Lengths are below 2^32, so none of this overflows.
             let (length, degree, own) = match *op {
                 Op::Leaf => (leaf_length, 1, leaf_operations),
                 Op::Constant(n) => (u64::from(n != 0), 0, 0),
@@ -137,10 +138,10 @@ impl Shape {
                     (length, degree, 3 * lx * ly + 4 * lx * ly * (lx + ly))
                 }
             };
-            if length > MAX_LENGTH {
+            if length >= MAX_LENGTH {
                 return Err(
                     "the expression is too large for exact evaluation: a temporary \
-                            would need more than 2^32 components"
+                            would need 2^32 components or more"
                         .to_string(),
                 );
             }
@@ -163,7 +164,7 @@ impl Shape {
         }
         let lengths = lengths
             .into_iter()
-            .map(|n| usize::try_from(n).expect("a length of at most 2^32 fits in usize"))
+            .map(|n| usize::try_from(n).expect("a length below 2^32 fits in usize"))
             .collect();
         Ok(Shape {
             ops,

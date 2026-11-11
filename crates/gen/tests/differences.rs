@@ -16,7 +16,9 @@ fn diff(source: &str) -> Result<DiffGraph, Error> {
 fn assert_same_value(source: &str) {
     let p = parse(source, "t.pred").unwrap().remove(0);
     let g = difference_graph(&p.main, "t.pred", p.position).unwrap();
-    assert_eq!(canonical_of_differences(&g), canonical(&p.main), "{source}");
+    let from_differences = canonical_of_differences(&g, "t.pred", p.position).unwrap();
+    let expected = canonical(&p.main, "t.pred", p.position).unwrap();
+    assert_eq!(from_differences, expected, "{source}");
 }
 
 fn rejected(source: &str, fragment: &str) {

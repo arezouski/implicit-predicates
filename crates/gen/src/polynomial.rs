@@ -49,8 +49,10 @@ impl Polynomial {
         p
     }
 
-    /// Adds `other`, or subtracts it when `negate`.
-    fn add_scaled(&mut self, other: &Polynomial, negate: bool) {
+    /// Adds `other`, or subtracts it when `negate`, and returns the number of
+    /// bits of the largest coefficient it changed.
+    fn add_scaled(&mut self, other: &Polynomial, negate: bool) -> u64 {
+        let mut bits = 0;
         for (monomial, coefficient) in &other.terms {
             let entry = self.terms.entry(monomial.clone()).or_default();
             if negate {
@@ -58,22 +60,26 @@ impl Polynomial {
             } else {
                 *entry += coefficient;
             }
+            bits = bits.max(entry.bits());
             if *entry == BigInt::ZERO {
                 self.terms.remove(monomial);
             }
         }
+        bits
     }
 
-    fn multiply(&self, other: &Polynomial) -> Polynomial {
+    /// The product with `other`, or the message to report when an exponent
+    /// would exceed `u32::MAX`.
+    fn multiply(&self, other: &Polynomial) -> Result<Polynomial, String> {
         let mut result = Polynomial::zero();
         for (m1, c1) in &self.terms {
             for (m2, c2) in &other.terms {
-                let entry = result.terms.entry(multiply_monomials(m1, m2)).or_default();
+                let entry = result.terms.entry(multiply_monomials(m1, m2)?).or_default();
                 *entry += c1 * c2;
             }
         }
         result.terms.retain(|_, c| *c != BigInt::ZERO);
-        result
+        Ok(result)
     }
 
     /// Total degree of the highest-degree term, or `None` for the zero
@@ -103,12 +109,23 @@ impl Polynomial {
     }
 }
 
+/// The total degree of a monomial. Every monomial [`canonical`] builds has
+/// a total degree of at most `u32::MAX`, so this sum does not overflow.
 fn monomial_degree(monomial: &Monomial) -> u32 {
     monomial.iter().map(|&(_, e)| e).sum()
 }
 
-/// Merges two sorted monomials, adding the exponents of shared variables.
-fn multiply_monomials(a: &Monomial, b: &Monomial) -> Monomial {
+/// Merges two sorted monomials, adding the exponents of shared variables, or
+/// returns the message to report when the total degree would exceed
+/// `u32::MAX`.
+fn multiply_monomials(a: &Monomial, b: &Monomial) -> Result<Monomial, String> {
+    let degree = u64::from(monomial_degree(a)) + u64::from(monomial_degree(b));
+    if degree > u64::from(u32::MAX) {
+        return Err(format!(
+            "the expression is too large to expand: a term would have a degree above {}",
+            u32::MAX
+        ));
+    }
     let mut out = Vec::with_capacity(a.len() + b.len());
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {
@@ -122,6 +139,7 @@ fn multiply_monomials(a: &Monomial, b: &Monomial) -> Monomial {
                 j += 1;
             }
             std::cmp::Ordering::Equal => {
+                // At most the total degree, checked above.
                 out.push((a[i].0, a[i].1 + b[j].1));
                 i += 1;
                 j += 1;
@@ -130,7 +148,57 @@ fn multiply_monomials(a: &Monomial, b: &Monomial) -> Monomial {
     }
     out.extend_from_slice(&a[i..]);
     out.extend_from_slice(&b[j..]);
-    out
+    Ok(out)
+}
+
+/// The most terms a polynomial may have while a graph is expanded.
+pub(crate) const MAX_TERMS: usize = 1 << 16;
+
+/// The most work an expansion may take, in units of one product or sum of
+/// two coefficients of at most 64 bits, or one term copied.
+pub(crate) const MAX_WORK: u64 = 1 << 20;
+
+/// The most bits a coefficient may have while a graph is expanded.
+pub(crate) const MAX_COEFFICIENT_BITS: u64 = 1 << 16;
+
+/// A polynomial being expanded, with an upper bound on the number of bits of
+/// its coefficients.
+#[derive(Clone)]
+struct Value {
+    polynomial: Polynomial,
+    bits: u64,
+}
+
+/// The work done so far, against [`MAX_WORK`].
+struct Budget {
+    work: u64,
+}
+
+impl Budget {
+    /// Spends `pairs` operations on coefficients of at most `bits` bits, or
+    /// returns the message to report, before the work is done.
+    fn spend(&mut self, pairs: u64, bits: u64) -> Result<(), String> {
+        if bits > MAX_COEFFICIENT_BITS {
+            return Err(format!(
+                "the expression is too large to expand: a coefficient would have \
+                 more than {MAX_COEFFICIENT_BITS} bits"
+            ));
+        }
+        let cost = pairs.saturating_mul(1 + bits / 64);
+        self.work = self.work.saturating_add(cost);
+        if self.work > MAX_WORK {
+            return Err(format!(
+                "the expression is too large to expand: expanding it would take \
+                 more than {MAX_WORK} operations on its terms"
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// The number of bits of the largest coefficient of `p`.
+fn coefficient_bits(p: &Polynomial) -> u64 {
+    p.terms.values().map(BigInt::bits).max().unwrap_or(0)
 }
 
 /// Expands `graph` into its canonical polynomial.
@@ -138,7 +206,20 @@ fn multiply_monomials(a: &Monomial, b: &Monomial) -> Monomial {
 /// The graph is walked iteratively in node order, so the depth of the
 /// expression does not matter. A node's polynomial is dropped after its last
 /// use, which keeps long sums linear in memory.
-pub fn canonical(graph: &Graph) -> Polynomial {
+///
+/// # Errors
+///
+/// Returns an error, at `position` in `file`, when the expansion is too
+/// large: a polynomial with more than 2^16 terms, a coefficient of more than
+/// 2^16 bits, a term of degree above `u32::MAX`, or more than 2^20 units of
+/// work, a unit being one product or sum of two coefficients of up to 64
+/// bits or one term copied. Each limit is checked before the work it
+/// guards, so an expansion that is too large fails quickly.
+pub fn canonical(graph: &Graph, file: &str, position: Position) -> Result<Polynomial, Error> {
+    expand(graph).map_err(|message| Error::at(file, position, message))
+}
+
+fn expand(graph: &Graph) -> Result<Polynomial, String> {
     let mut uses = vec![0usize; graph.nodes.len()];
     uses[graph.root] += 1;
     for node in &graph.nodes {
@@ -147,34 +228,68 @@ pub fn canonical(graph: &Graph) -> Polynomial {
             uses[y] += 1;
         }
     }
-    let mut values: Vec<Option<Polynomial>> = vec![None; graph.nodes.len()];
-    let mut take = |values: &mut Vec<Option<Polynomial>>, id: usize| {
+    let mut budget = Budget { work: 0 };
+    let mut values: Vec<Option<Value>> = vec![None; graph.nodes.len()];
+    let mut take = |values: &mut Vec<Option<Value>>, budget: &mut Budget, id: usize| {
         uses[id] -= 1;
         if uses[id] == 0 {
-            values[id].take().expect("children come before parents")
+            Ok(values[id].take().expect("children come before parents"))
         } else {
-            values[id].clone().expect("children come before parents")
+            let value = values[id].as_ref().expect("children come before parents");
+            budget.spend(value.polynomial.terms() as u64, value.bits)?;
+            Ok::<Value, String>(value.clone())
         }
     };
     for (id, node) in graph.nodes.iter().enumerate() {
         let value = match *node {
-            Node::Coord { point, axis } => Polynomial::variable(point, axis),
-            Node::Int(n) => Polynomial::constant(n),
+            Node::Coord { point, axis } => Value {
+                polynomial: Polynomial::variable(point, axis),
+                bits: 1,
+            },
+            Node::Int(n) => {
+                let polynomial = Polynomial::constant(n);
+                let bits = coefficient_bits(&polynomial);
+                Value { polynomial, bits }
+            }
             Node::Add(x, y) | Node::Sub(x, y) => {
-                let mut left = take(&mut values, x);
-                let right = take(&mut values, y);
-                left.add_scaled(&right, matches!(node, Node::Sub(..)));
+                let mut left = take(&mut values, &mut budget, x)?;
+                let right = take(&mut values, &mut budget, y)?;
+                budget.spend(
+                    right.polynomial.terms() as u64,
+                    left.bits.max(right.bits) + 1,
+                )?;
+                let changed = left
+                    .polynomial
+                    .add_scaled(&right.polynomial, matches!(node, Node::Sub(..)));
+                // Coefficients that did not change keep their bound.
+                left.bits = left.bits.max(changed);
                 left
             }
             Node::Mul(x, y) => {
-                let left = take(&mut values, x);
-                let right = take(&mut values, y);
-                left.multiply(&right)
+                let left = take(&mut values, &mut budget, x)?;
+                let right = take(&mut values, &mut budget, y)?;
+                let (l, r) = (
+                    left.polynomial.terms() as u64,
+                    right.polynomial.terms() as u64,
+                );
+                // A coefficient of the product is a sum of at most
+                // `min(l, r)` products of coefficients.
+                let bits = left.bits + right.bits + u64::from(64 - l.min(r).leading_zeros());
+                budget.spend(l.saturating_mul(r), bits)?;
+                let polynomial = left.polynomial.multiply(&right.polynomial)?;
+                let bits = coefficient_bits(&polynomial);
+                Value { polynomial, bits }
             }
         };
+        if value.polynomial.terms() > MAX_TERMS {
+            return Err(format!(
+                "the expression is too large to expand: a subexpression has more \
+                 than {MAX_TERMS} terms"
+            ));
+        }
         values[id] = Some(value);
     }
-    take(&mut values, graph.root)
+    Ok(take(&mut values, &mut budget, graph.root)?.polynomial)
 }
 
 /// Checks that the main form of `predicate` is a nonzero polynomial and, if
@@ -183,18 +298,14 @@ pub fn canonical(graph: &Graph) -> Polynomial {
 /// # Errors
 ///
 /// Returns an error at the position of the predicate's name when the main
-/// form expands to zero, or when the exact form expands to a different
-/// polynomial.
+/// form expands to zero, at the position of the exact form's name when it
+/// expands to a different polynomial, and at the position of the form when
+/// [`canonical`] cannot expand it.
 pub fn check_same_polynomial(predicate: &Predicate, file: &str) -> Result<(), Error> {
-    let main = canonical(&predicate.main);
-    let error = |at: Position, message: String| Error {
-        file: file.to_string(),
-        line: at.line,
-        column: at.column,
-        message,
-    };
+    let main = canonical(&predicate.main, file, predicate.position)?;
     if main.is_zero() {
-        return Err(error(
+        return Err(Error::at(
+            file,
             predicate.position,
             format!(
                 "the polynomial of `{}` is identically zero, so its sign is always zero",
@@ -203,10 +314,12 @@ pub fn check_same_polynomial(predicate: &Predicate, file: &str) -> Result<(), Er
         ));
     }
     if let Some(exact_graph) = &predicate.exact {
-        let exact = canonical(exact_graph);
+        let position = predicate.exact_position.unwrap_or(predicate.position);
+        let exact = canonical(exact_graph, file, position)?;
         if exact != main {
-            return Err(error(
-                predicate.exact_position.unwrap_or(predicate.position),
+            return Err(Error::at(
+                file,
+                position,
                 format!(
                     "the exact form of `{}` differs from its main form: \
                      they are not the same polynomial (main form has {} terms, exact form has {})",
@@ -226,7 +339,16 @@ pub fn check_same_polynomial(predicate: &Predicate, file: &str) -> Result<(), Er
 ///
 /// For the graph a difference form was made from, the result equals
 /// [`canonical`] of that graph.
-pub fn canonical_of_differences(graph: &DiffGraph) -> Polynomial {
+///
+/// # Errors
+///
+/// Returns the error of [`canonical`], at `position` in `file`, when the
+/// expansion is too large.
+pub fn canonical_of_differences(
+    graph: &DiffGraph,
+    file: &str,
+    position: Position,
+) -> Result<Polynomial, Error> {
     let mut nodes = vec![Node::Int(0)];
     let mut ids = Vec::with_capacity(graph.nodes.len());
     for node in &graph.nodes {
@@ -266,8 +388,9 @@ pub fn canonical_of_differences(graph: &DiffGraph) -> Polynomial {
         };
         ids.push(id);
     }
-    canonical(&Graph {
+    let graph = Graph {
         root: ids[graph.root],
         nodes,
-    })
+    };
+    canonical(&graph, file, position)
 }

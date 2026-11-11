@@ -13,6 +13,14 @@ use crate::parse::Position;
 /// The exponent of the limit on the magnitude of every computed node.
 const OVERFLOW_EXPONENT: i64 = 1022;
 
+/// The highest degree the filter accepts. Every `c` is at least 1, so a
+/// node of higher degree exceeds `2^1022` for every `D > 1`.
+pub(crate) const MAX_DEGREE: u32 = 1022;
+
+/// The most bits that the exact coefficients of all the nodes may take
+/// together, by the estimate of [`coefficient_bits`].
+pub(crate) const MAX_COEFFICIENT_BITS: u64 = 1 << 26;
+
 /// The bounds of one node of degree `g`, in terms of `D` and `E`:
 /// `|true value| <= m * D^g`, `|computed value| <= c * D^g` and
 /// `|computed - true| <= (alpha * D + beta * E) * D^(g - 1)`.
@@ -96,22 +104,33 @@ pub struct FilterConstants {
 /// Returns an error, at `position` (the name of the predicate) in `file`,
 /// when the degree is so high that no `D > 1` keeps every computed node
 /// below `2^1022`, or that no `D < 1` keeps the bound clear of underflow (see
-/// [`FilterBound::constants`]).
+/// [`FilterBound::constants`]), and when the exact coefficients would take
+/// more than `2^26` bits in all. The coefficients of a sum are about 53
+/// bits longer than those of its operands, so a sum written as one chain of
+/// more than about 1,560 terms reaches that limit; the same terms summed in a
+/// balanced tree, with `let`, need far fewer bits. The size is estimated
+/// node by node before any coefficient is computed, so a definition that
+/// is too large fails quickly.
 pub fn filter_bound(
     graph: &DiffGraph,
     file: &str,
     position: Position,
 ) -> Result<FilterBound, Error> {
-    // Every `c` is at least 1, so a node of degree above 1022 overflows for
-    // every `D > 1`; rejecting it first also keeps the exact coefficients
-    // small.
-    if let Some(&degree) = graph
-        .degrees
-        .iter()
-        .filter(|&&g| i64::from(g) > OVERFLOW_EXPONENT)
-        .max()
-    {
+    if let Some(&degree) = graph.degrees.iter().filter(|&&g| g > MAX_DEGREE).max() {
         return Err(Error::at(file, position, overflow_message(degree)));
+    }
+    if coefficient_bits(graph) > MAX_COEFFICIENT_BITS {
+        return Err(Error::at(
+            file,
+            position,
+            format!(
+                "the expression is too large for the error bound of the filter: its exact \
+                 coefficients would take more than 2^{} bits in all; a long sum written as \
+                 one chain is the usual cause, and the same terms summed in a balanced \
+                 tree with `let` need far fewer",
+                MAX_COEFFICIENT_BITS.ilog2()
+            ),
+        ));
     }
     let u = Dyadic::pow2(-53);
     let one = Dyadic::integer(1);
@@ -160,6 +179,8 @@ pub fn filter_bound(
         .count();
     let root = &nodes[graph.root];
     let degree = root.degree;
+    // Every node takes at least 55 bits, so the budget allows fewer than
+    // 2^19 nodes.
     let products = u32::try_from(products).expect("fewer than 2^32 products");
     let d_max_exponent = d_max_exponent(&nodes)
         .map_err(|degree| Error::at(file, position, overflow_message(degree)))?;
@@ -183,6 +204,30 @@ pub fn filter_bound(
         d_min_exponent,
         d_max_exponent,
     })
+}
+
+/// An upper bound on the bits of all the exact coefficients of `graph`
+/// together, found without computing them, saturated at `u64::MAX`.
+///
+/// Every coefficient of a node is `P(u)` for a polynomial `P` with
+/// nonnegative integer coefficients, so it is an integer times `2^(-53 d)`,
+/// with `d` the degree of `P`, of magnitude at most `P(1)`: its mantissa
+/// has at most `53 d + log2 P(1) + 1` bits. Following the rules of
+/// [`filter_bound`], that is at most 55 bits for a leaf, the operand's
+/// for a negation, 55 more than the larger operand's for a sum or
+/// difference, and 55 more than the two operands' together for a product.
+/// The result is the sum over the nodes.
+fn coefficient_bits(graph: &DiffGraph) -> u64 {
+    let mut bits: Vec<u64> = Vec::with_capacity(graph.nodes.len());
+    for node in &graph.nodes {
+        bits.push(match *node {
+            DiffNode::Leaf { .. } => 55,
+            DiffNode::Neg(x) => bits[x],
+            DiffNode::Add(x, y) | DiffNode::Sub(x, y) => bits[x].max(bits[y]).saturating_add(55),
+            DiffNode::Mul(x, y) => bits[x].saturating_add(bits[y]).saturating_add(55),
+        });
+    }
+    bits.iter().fold(0u64, |total, &b| total.saturating_add(b))
 }
 
 fn overflow_message(degree: u32) -> String {

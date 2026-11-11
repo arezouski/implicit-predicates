@@ -1,9 +1,16 @@
 //! Tests for canonical polynomials.
 
-use indirect_predicates_gen::{Predicate, canonical, check_same_polynomial, parse};
+use indirect_predicates_gen::{
+    Graph, Polynomial, Position, Predicate, canonical, check_same_polynomial, parse,
+};
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
+
+/// The canonical polynomial of `graph`, which must be small enough to expand.
+fn expand(graph: &Graph) -> Polynomial {
+    canonical(graph, "t.pred", Position { line: 1, column: 1 }).unwrap()
+}
 
 fn first(source: &str) -> Predicate {
     parse(source, "t.pred").unwrap().remove(0)
@@ -11,7 +18,7 @@ fn first(source: &str) -> Predicate {
 
 #[test]
 fn orient3d_has_24_terms_of_degree_3() {
-    let p = canonical(&first(ORIENT3D).main);
+    let p = expand(&first(ORIENT3D).main);
     assert_eq!(p.terms(), 24);
     assert_eq!(p.degree(), Some(3));
     assert!(p.is_homogeneous());
@@ -21,7 +28,7 @@ fn orient3d_has_24_terms_of_degree_3() {
 fn the_two_forms_of_orient3d_are_the_same_polynomial() {
     let p = first(ORIENT3D);
     let exact = p.exact.as_ref().expect("the fixture has an exact form");
-    assert_eq!(canonical(&p.main), canonical(exact));
+    assert_eq!(expand(&p.main), expand(exact));
     assert_eq!(check_same_polynomial(&p, "orient3d.pred"), Ok(()));
 }
 
@@ -42,23 +49,23 @@ fn a_sign_error_in_the_exact_form_is_rejected() {
 fn x_times_y_equals_y_times_x() {
     let a = first("fn p(a: Point3) -> Sign { a.x * a.y }");
     let b = first("fn p(a: Point3) -> Sign { a.y * a.x }");
-    assert_eq!(canonical(&a.main), canonical(&b.main));
+    assert_eq!(expand(&a.main), expand(&b.main));
     let c = first("fn p(a: Point3) -> Sign { a.x * a.x }");
-    assert_ne!(canonical(&a.main), canonical(&c.main));
+    assert_ne!(expand(&a.main), expand(&c.main));
 }
 
 #[test]
 fn constants_are_coefficients() {
     let a = first("fn p(a: Point3) -> Sign { 2 * a.x + a.x }");
     let b = first("fn p(a: Point3) -> Sign { 3 * a.x }");
-    assert_eq!(canonical(&a.main), canonical(&b.main));
-    assert_eq!(canonical(&a.main).terms(), 1);
+    assert_eq!(expand(&a.main), expand(&b.main));
+    assert_eq!(expand(&a.main).terms(), 1);
 }
 
 #[test]
 fn a_difference_of_equal_terms_is_the_zero_polynomial() {
     let p = first("fn p(a: Point3, b: Point3) -> Sign { (a.x + b.x) - (b.x + a.x) }");
-    let zero = canonical(&p.main);
+    let zero = expand(&p.main);
     assert_eq!(zero.terms(), 0);
     assert_eq!(zero.degree(), None);
     let e = check_same_polynomial(&p, "t.pred").expect_err("a zero predicate is rejected");
@@ -68,7 +75,7 @@ fn a_difference_of_equal_terms_is_the_zero_polynomial() {
 
 #[test]
 fn insphere_has_degree_5() {
-    let p = canonical(&first(INSPHERE).main);
+    let p = expand(&first(INSPHERE).main);
     assert_eq!(p.degree(), Some(5));
     assert!(p.is_homogeneous());
     assert!(p.terms() > 0);
@@ -76,7 +83,7 @@ fn insphere_has_degree_5() {
 
 #[test]
 fn mixed_degrees_are_not_homogeneous() {
-    let p = canonical(&first("fn p(a: Point3) -> Sign { a.x * a.y + a.z }").main);
+    let p = expand(&first("fn p(a: Point3) -> Sign { a.x * a.y + a.z }").main);
     assert!(!p.is_homogeneous());
     assert_eq!(p.degree(), Some(2));
 }
@@ -92,7 +99,7 @@ fn a_long_sum_does_not_overflow_the_stack() {
     }
     src.push_str(" }");
     let p = first(&src);
-    let poly = canonical(&p.main);
+    let poly = expand(&p.main);
     assert_eq!(poly.terms(), 1);
     assert_eq!(check_same_polynomial(&p, "t.pred"), Ok(()));
 }

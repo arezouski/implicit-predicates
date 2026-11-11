@@ -75,12 +75,16 @@ struct Form {
 ///
 /// No input makes this function panic or overflow the stack of the calling
 /// thread, whatever its size or shape; a debug build with a 1 MiB stack is
-/// enough. The only limit is the nesting of brackets: at most 32 deep, counting
-/// the braces of the function body, so a parenthesized expression may nest 31
-/// deep. Comments and literals do not count toward it. Sums, products and runs
-/// of unary minus are read in loops and have no limit beyond memory. An error
-/// for brackets that are nested too deeply names the limit and suggests
-/// splitting the expression with `let`.
+/// enough. The only limit is the nesting of brackets: at most 32 deep,
+/// counting the braces of the function body, so a parenthesized expression
+/// may nest 31 deep. Comments and literals do not count toward it. Sums,
+/// products and runs of unary minus are read in loops, so this function
+/// accepts them at any length; the later steps of [`crate::generate`] have
+/// budgets of their own: a sum of 100,000 terms in one chain, for instance,
+/// is rejected by [`crate::filter_bound`] with "the expression is too large
+/// for the error bound of the filter". An error for brackets that are
+/// nested too deeply names the limit and suggests splitting the expression
+/// with `let`.
 ///
 /// # Errors
 ///

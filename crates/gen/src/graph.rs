@@ -38,6 +38,26 @@ pub struct Graph {
     pub root: NodeId,
 }
 
+impl Graph {
+    /// An upper bound on the total degree of the polynomial, found in one
+    /// pass without expanding it: a coordinate has degree 1, a constant 0, a
+    /// sum the larger degree of its operands and a product their sum,
+    /// saturated at `u64::MAX`. Terms that cancel can make the true degree
+    /// lower.
+    pub(crate) fn degree_bound(&self) -> u64 {
+        let mut degrees: Vec<u64> = Vec::with_capacity(self.nodes.len());
+        for node in &self.nodes {
+            degrees.push(match *node {
+                Node::Coord { .. } => 1,
+                Node::Int(_) => 0,
+                Node::Add(x, y) | Node::Sub(x, y) => degrees[x].max(degrees[y]),
+                Node::Mul(x, y) => degrees[x].saturating_add(degrees[y]),
+            });
+        }
+        degrees[self.root]
+    }
+}
+
 /// Builds a graph, giving equal nodes the same id.
 #[derive(Default)]
 pub(crate) struct Builder {

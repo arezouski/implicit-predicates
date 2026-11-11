@@ -16,8 +16,8 @@ use crate::bound::filter_bound;
 use crate::differences::{DiffGraph, DiffNode, difference_graph};
 use crate::dyadic::Dyadic;
 use crate::graph::{Graph, Node, NodeId};
-use crate::parse::{Predicate, parse};
-use crate::polynomial::canonical;
+use crate::parse::{Position, Predicate, parse};
+use crate::polynomial::{Polynomial, canonical};
 use crate::range::{Leaves, exact_plan_differences, exact_plan_raw};
 use readback::{Symbolic, interpret_statements};
 
@@ -44,6 +44,11 @@ fn linear(a: Point3, b: Point3) -> Sign {
     -(a.y - b.y)
 }
 ";
+
+/// The canonical polynomial of `graph`, which must be small enough to expand.
+fn expand(graph: &Graph) -> Polynomial {
+    canonical(graph, "t.pred", Position { line: 1, column: 1 }).unwrap()
+}
 
 fn predicates() -> Vec<Predicate> {
     [ORIENT3D, INSPHERE, NEGATIONS]
@@ -149,14 +154,9 @@ fn interpret(program: &Program) -> Graph {
 fn every_exact_stage_has_the_value_of_the_source_polynomial() {
     let mut checked = 0;
     for p in predicates() {
-        let expected = canonical(&p.main);
+        let expected = expand(&p.main);
         for (stage, program, _) in programs(&p) {
-            assert_eq!(
-                canonical(&interpret(&program)),
-                expected,
-                "{} {stage}",
-                p.name
-            );
+            assert_eq!(expand(&interpret(&program)), expected, "{} {stage}", p.name);
             checked += 1;
         }
     }
@@ -224,8 +224,8 @@ fn the_filter_has_the_value_of_the_source_polynomial() {
         let mut code = String::new();
         write_filter(&mut code, &diff, p.params.len(), diff.degrees[diff.root]);
         assert_eq!(
-            canonical(&interpret_statements(&code, "p")),
-            canonical(&p.main),
+            expand(&interpret_statements(&code, "p")),
+            expand(&p.main),
             "{}",
             p.name
         );
@@ -254,7 +254,7 @@ fn the_filter_bound_takes_at_most_2k_plus_8_operations() {
 
 /// The emitted exact stages of every test predicate, with their names, and
 /// the expected polynomial.
-fn emitted_stages() -> Vec<(String, String, crate::Polynomial)> {
+fn emitted_stages() -> Vec<(String, String, Polynomial)> {
     let mut out = Vec::new();
     for source in [ORIENT3D, INSPHERE, NEGATIONS] {
         for (p, g) in parse(source, "t.pred")
@@ -272,7 +272,7 @@ fn emitted_stages() -> Vec<(String, String, crate::Polynomial)> {
                     continue;
                 }
                 let code = readback::function(&g.stages, stage).to_string();
-                out.push((format!("{} {stage}", p.name), code, canonical(&p.main)));
+                out.push((format!("{} {stage}", p.name), code, expand(&p.main)));
             }
         }
     }
@@ -284,7 +284,7 @@ fn the_text_of_every_exact_stage_has_the_value_of_the_source_polynomial() {
     let stages = emitted_stages();
     for (name, code, expected) in &stages {
         assert_eq!(
-            &canonical(&readback::interpret_stage(code)),
+            &expand(&readback::interpret_stage(code)),
             expected,
             "{name}"
         );
@@ -303,8 +303,8 @@ fn the_exact_evaluator_of_the_checks_has_the_value_of_the_source_polynomial() {
         {
             let code = readback::function(&g.checks, "exact");
             assert_eq!(
-                canonical(&interpret_statements(code, "c")),
-                canonical(&p.main),
+                expand(&interpret_statements(code, "c")),
+                expand(&p.main),
                 "{}",
                 p.name
             );

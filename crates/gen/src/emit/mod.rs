@@ -21,7 +21,7 @@ use std::fmt::Write;
 
 use indirect_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 
-use crate::bound::{FilterConstants, filter_bound};
+use crate::bound::{FilterConstants, MAX_DEGREE, filter_bound};
 use crate::differences::difference_graph;
 use crate::error::Error;
 use crate::parse::{Predicate, parse};
@@ -70,9 +70,14 @@ pub struct Generated {
 /// # Errors
 ///
 /// Returns the first problem found in the definitions: a syntax error, a
-/// main form that is not homogeneous in differences of coordinates, an
-/// `#[exact]` form that is a different polynomial, or a predicate that the
-/// filter or the exact stages cannot support.
+/// main form that is not homogeneous in differences of coordinates, a
+/// degree above the 1022 that the filter accepts, a definition too large to
+/// derive the filter bound for or to expand, an `#[exact]` form that is a
+/// different polynomial, or a predicate that the exact stages cannot
+/// support. The checks run from the cheapest to the most expensive, and
+/// every expensive one has a budget that it checks before doing the work,
+/// so a definition that is too large fails quickly; see [`crate::canonical`]
+/// and [`crate::filter_bound`] for the limits.
 pub fn generate(source: &str, file: &str) -> Result<Vec<Generated>, Error> {
     parse(source, file)?
         .iter()
@@ -89,10 +94,28 @@ struct Forms {
 }
 
 fn generate_one(predicate: &Predicate, file: &str) -> Result<Generated, Error> {
-    check_same_polynomial(predicate, file)?;
+    // The cheap checks come first: the difference form gives the degree of
+    // the main form, one pass bounds the degree of the exact form, and the
+    // filter bound checks its own size, all before any polynomial is
+    // expanded.
     let position = predicate.position;
     let graph = difference_graph(&predicate.main, file, position)?;
+    if let Some(exact) = &predicate.exact {
+        let degree = exact.degree_bound();
+        if degree > u64::from(MAX_DEGREE) {
+            return Err(Error::at(
+                file,
+                predicate.exact_position.unwrap_or(position),
+                format!(
+                    "the exact form of `{}` has a degree of up to {degree}, above {MAX_DEGREE}, \
+                     the highest degree the filter accepts",
+                    predicate.name
+                ),
+            ));
+        }
+    }
     let constants = filter_bound(&graph, file, position)?.constants();
+    check_same_polynomial(predicate, file)?;
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
     let plan = |leaves| {
         exact_plan_differences(&graph, leaves, file, position, min, max).map(|plan| {

@@ -201,10 +201,10 @@ fn plan(shape: &Shape, low: i64, high: i64) -> Result<ExactPlan, String> {
         .lengths
         .iter()
         .try_fold(0u64, |sum, &n| sum.checked_add(n as u64))
-        .filter(|&total| total <= MAX_LENGTH)
+        .filter(|&total| total < MAX_LENGTH)
         .ok_or_else(|| {
             "the expression is too large for exact evaluation: its temporaries \
-             would need more than 2^32 components in all"
+             would need 2^32 components or more in all"
                 .to_string()
         })?;
     Ok(ExactPlan {
@@ -213,7 +213,7 @@ fn plan(shape: &Shape, low: i64, high: i64) -> Result<ExactPlan, String> {
             max: Dyadic::pow2(max).round_up(),
         },
         lengths: shape.lengths.clone(),
-        total: usize::try_from(total).expect("at most 2^32"),
+        total: usize::try_from(total).expect("below 2^32"),
     })
 }
 
