@@ -1,0 +1,35 @@
+// orient3d(a, b, c, d): the orientation of the point d with respect to the
+// plane through a, b and c.
+//
+// The predicate is the sign of the determinant
+//
+//     | a.x - d.x   a.y - d.y   a.z - d.z |
+//     | b.x - d.x   b.y - d.y   b.z - d.z |
+//     | c.x - d.x   c.y - d.y   c.z - d.z |
+//
+// which is positive when d lies below the plane, taking "above" to be the
+// side from which a, b and c appear in counter-clockwise order; negative
+// when d lies above it; and zero when the four points are coplanar. This is
+// the convention of Shewchuk's orient3d.
+//
+// The main form is written on the differences against d and expanded along
+// the first row.
+fn orient3d(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {
+    let ax = a.x - d.x;  let ay = a.y - d.y;  let az = a.z - d.z;
+    let bx = b.x - d.x;  let by = b.y - d.y;  let bz = b.z - d.z;
+    let cx = c.x - d.x;  let cy = c.y - d.y;  let cz = c.z - d.z;
+    ax*(by*cz - bz*cy) - ay*(bx*cz - bz*cx) + az*(bx*cy - by*cx)
+}
+
+// The same polynomial on the raw coordinates: the 4x4 determinant with rows
+// (p.x, p.y, p.z, 1) for p in a, b, c, d, expanded along the column of ones.
+// Each 3x3 minor is expanded along its first row, so that the 2x2 minors of
+// the rows of c and d are shared.
+#[exact]
+fn orient3d(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {
+    let mbcd = b.x*(c.y*d.z - c.z*d.y) - b.y*(c.x*d.z - c.z*d.x) + b.z*(c.x*d.y - c.y*d.x);
+    let macd = a.x*(c.y*d.z - c.z*d.y) - a.y*(c.x*d.z - c.z*d.x) + a.z*(c.x*d.y - c.y*d.x);
+    let mabd = a.x*(b.y*d.z - b.z*d.y) - a.y*(b.x*d.z - b.z*d.x) + a.z*(b.x*d.y - b.y*d.x);
+    let mabc = a.x*(b.y*c.z - b.z*c.y) - a.y*(b.x*c.z - b.z*c.x) + a.z*(b.x*c.y - b.y*c.x);
+    -mbcd + macd - mabd + mabc
+}

@@ -3,8 +3,17 @@
 //! Turns the definition of a predicate or of a point type into specialized
 //! Rust code for the `indirect-predicates` crates.
 //!
-//! **Status: early development.** Today the crate reads predicate definitions:
-//! [`parse`] takes a `.pred` file, written in a small subset of Rust, and
+//! **Status: early development.** [`generate`] takes the definitions of a
+//! `.pred` file and returns, for each predicate, the Rust module of its
+//! stages: a floating-point filter, exact stages on floating-point
+//! expansions, and the chain that runs them (see [`generate`] for the
+//! items of the module). The `indirect-predicates-gen` command line tool
+//! writes those modules for a directory of definitions, formatted with
+//! `rustfmt`, or checks with `--check` that the files are up to date; its
+//! README gives the command that regenerates the code of the
+//! `indirect-predicates` crate.
+//!
+//! The steps of the generation are public as well. [`parse`] takes a `.pred` file, written in a small subset of Rust, and
 //! returns each [`Predicate`] as an expression [`Graph`] in which equal
 //! subexpressions share a node. Mistakes in the file are reported as an
 //! [`Error`] that carries the position of the offending token.
@@ -38,6 +47,12 @@
 //! [`FilterBound::constants`] gives `epsilon` and `kappa` rounded up to `f64`,
 //! and the range of `D`, between two powers of two, in which overflow and
 //! underflow cannot invalidate the bound.
+//!
+//! [`exact_plan_raw`] and [`exact_plan_differences`] derive, for each exact
+//! stage, the range of input magnitudes for which every exact product of the
+//! arithmetic core stays in its domain and no value overflows, and the
+//! worst-case length of every temporary; [`generate`] sizes the stack
+//! buffers of the emitted stages from them.
 
 #![forbid(unsafe_code)]
 
@@ -45,6 +60,7 @@ mod bound;
 mod cursor;
 mod differences;
 mod dyadic;
+mod emit;
 mod error;
 mod expr;
 mod graph;
@@ -55,6 +71,7 @@ mod range;
 
 pub use bound::{FilterBound, FilterConstants, filter_bound};
 pub use differences::{DiffGraph, DiffNode, difference_graph};
+pub use emit::{Generated, generate};
 pub use error::Error;
 pub use graph::{Graph, Node, NodeId};
 pub use parse::{Position, Predicate, parse};

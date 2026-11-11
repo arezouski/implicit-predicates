@@ -12,7 +12,12 @@ categories = ["mathematics", "algorithms", "development-tools"]
 [lints]
 workspace = true
 
+[[bin]]
+name = "indirect-predicates-gen"
+path = "src/main.rs"
+
 [dependencies]
+indirect-predicates-core.workspace = true
 num-bigint = "0.5"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 quote = "1"

@@ -4,8 +4,8 @@ Exact geometric predicates in Rust for explicit points and for *implicit*
 points: points defined by an unevaluated construction, such as a point on an
 edge or inside a triangle.
 
-> **Status: early development.** This crate is a placeholder and has no usable
-> API yet.
+> **Status: early development.** Today the crate provides `orient3d` for
+> explicit points; the API may change.
 
 ## Goals
 

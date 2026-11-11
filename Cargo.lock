@@ -251,6 +251,9 @@ name = "indirect-predicates"
 version = "0.0.0"
 dependencies = [
  "indirect-predicates-core",
+ "indirect-predicates-oracle",
+ "indirect-predicates-test-support",
+ "proptest",
 ]
 
 [[package]]
@@ -286,6 +289,7 @@ dependencies = [
 name = "indirect-predicates-gen"
 version = "0.0.0"
 dependencies = [
+ "indirect-predicates-core",
  "num-bigint",
  "proc-macro2",
  "quote",
