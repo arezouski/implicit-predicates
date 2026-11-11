@@ -1,0 +1,29 @@
+// In-sphere test of e against the sphere through a, b, c and d, on raw
+// coordinates. The predicate is the 5x5 determinant with rows
+// (p.x, p.y, p.z, p.x^2 + p.y^2 + p.z^2, 1) for p in a, b, c, d, e, expanded
+// along the column of ones; each 4x4 minor is expanded along its column of
+// squared norms, and each 3x3 minor along its first row, so that the 2x2 and
+// 3x3 minors are shared.
+fn insphere(a: Point3, b: Point3, c: Point3, d: Point3, e: Point3) -> Sign {
+    let al = a.x*a.x + a.y*a.y + a.z*a.z;
+    let bl = b.x*b.x + b.y*b.y + b.z*b.z;
+    let cl = c.x*c.x + c.y*c.y + c.z*c.z;
+    let dl = d.x*d.x + d.y*d.y + d.z*d.z;
+    let el = e.x*e.x + e.y*e.y + e.z*e.z;
+    let abc = a.x*(b.y*c.z - b.z*c.y) - a.y*(b.x*c.z - b.z*c.x) + a.z*(b.x*c.y - b.y*c.x);
+    let abd = a.x*(b.y*d.z - b.z*d.y) - a.y*(b.x*d.z - b.z*d.x) + a.z*(b.x*d.y - b.y*d.x);
+    let abe = a.x*(b.y*e.z - b.z*e.y) - a.y*(b.x*e.z - b.z*e.x) + a.z*(b.x*e.y - b.y*e.x);
+    let acd = a.x*(c.y*d.z - c.z*d.y) - a.y*(c.x*d.z - c.z*d.x) + a.z*(c.x*d.y - c.y*d.x);
+    let ace = a.x*(c.y*e.z - c.z*e.y) - a.y*(c.x*e.z - c.z*e.x) + a.z*(c.x*e.y - c.y*e.x);
+    let ade = a.x*(d.y*e.z - d.z*e.y) - a.y*(d.x*e.z - d.z*e.x) + a.z*(d.x*e.y - d.y*e.x);
+    let bcd = b.x*(c.y*d.z - c.z*d.y) - b.y*(c.x*d.z - c.z*d.x) + b.z*(c.x*d.y - c.y*d.x);
+    let bce = b.x*(c.y*e.z - c.z*e.y) - b.y*(c.x*e.z - c.z*e.x) + b.z*(c.x*e.y - c.y*e.x);
+    let bde = b.x*(d.y*e.z - d.z*e.y) - b.y*(d.x*e.z - d.z*e.x) + b.z*(d.x*e.y - d.y*e.x);
+    let cde = c.x*(d.y*e.z - d.z*e.y) - c.y*(d.x*e.z - d.z*e.x) + c.z*(d.x*e.y - d.y*e.x);
+    let bcde = -bl*cde + cl*bde - dl*bce + el*bcd;
+    let acde = -al*cde + cl*ade - dl*ace + el*acd;
+    let abde = -al*bde + bl*ade - dl*abe + el*abd;
+    let abce = -al*bce + bl*ace - cl*abe + el*abc;
+    let abcd = -al*bcd + bl*acd - cl*abd + dl*abc;
+    bcde - acde + abde - abce + abcd
+}

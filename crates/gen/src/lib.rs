@@ -51,6 +51,7 @@ mod graph;
 mod limits;
 mod parse;
 mod polynomial;
+mod range;
 
 pub use bound::{FilterBound, FilterConstants, filter_bound};
 pub use differences::{DiffGraph, DiffNode, difference_graph};
@@ -58,3 +59,4 @@ pub use error::Error;
 pub use graph::{Graph, Node, NodeId};
 pub use parse::{Position, Predicate, parse};
 pub use polynomial::{Polynomial, canonical, canonical_of_differences, check_same_polynomial};
+pub use range::{ExactPlan, ExactRange, Leaves, exact_plan_differences, exact_plan_raw};

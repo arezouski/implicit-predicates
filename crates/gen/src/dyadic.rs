@@ -66,6 +66,12 @@ impl Dyadic {
         Dyadic::new(mantissa, exponent)
     }
 
+    /// Whether the value is an integer multiple of `2^exponent`.
+    #[cfg(test)]
+    pub(crate) fn is_multiple_of_pow2(&self, exponent: i64) -> bool {
+        self.mantissa.sign() == Sign::NoSign || self.exponent >= exponent
+    }
+
     /// The exact value as an integer or as `numerator/denominator` in lowest
     /// terms.
     pub(crate) fn fraction(&self) -> String {
