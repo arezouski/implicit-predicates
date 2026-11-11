@@ -95,6 +95,11 @@ covers the rounding of the computation itself. A coordinate that is exact,
 such as one shared by the parents of a point on a line, gets an error of
 exactly zero.
 
+The name of a point type must start with an uppercase letter and cannot
+be a name that the generated module uses, such as `Point` or `Result`; a
+parameter cannot be named like a field or a function of the generated type,
+such as `approx` or `new`.
+
 For now a `where` comparison must reduce, once the parameters on both sides
 cancel, to one parameter against an integer of magnitude at most `2^53`, so
 that it is checked exactly; a comparison that names no parameter is an

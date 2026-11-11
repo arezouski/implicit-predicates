@@ -35,8 +35,11 @@ const RESERVED_PARAMS: [&str; 9] = [
     "ERR_SLACK",
 ];
 
-/// Names a point type cannot have: the generated modules use them.
-const RESERVED_TYPES: [&str; 25] = [
+/// Names a point type cannot have: the generated modules use them, as
+/// their own items, items of the core and of the oracle, or names of the
+/// prelude. Every other item they use, primitive types and modules among
+/// them, starts with a lowercase letter, which a point type cannot.
+const RESERVED_TYPES: [&str; 21] = [
     "AnyPoint",
     "PointError",
     "Point",
@@ -48,20 +51,16 @@ const RESERVED_TYPES: [&str; 25] = [
     "Mark",
     "Span",
     "Dyadic",
-    "fmt",
-    "eft",
-    "expansion",
     "UNIT",
     "TINY",
     "SUM_OPERAND_LIMIT",
-    "covered_product",
-    "sum_rounding",
-    "product_rounding",
-    "finish",
-    "summable",
-    "multipliable",
-    "product",
-    "written",
+    "Result",
+    "Ok",
+    "Err",
+    "Option",
+    "Some",
+    "None",
+    "From",
 ];
 
 /// The largest graph whose coordinates the documentation spells out.
@@ -90,8 +89,9 @@ pub(crate) const MAX_RENDERED_NODES: usize = 64;
 ///
 /// # Errors
 ///
-/// A syntax error in a declaration; a parameter or type with a name that
-/// the generated code uses; an integer that is not exactly an `f64`; an
+/// A syntax error in a declaration; a point type whose name does not start
+/// with an uppercase letter; a parameter or type with a name that the
+/// generated code uses; an integer that is not exactly an `f64`; an
 /// error bound with more roundings than [`crate::MAX_ROUNDS`]; exact
 /// coordinates whose temporaries take more than 4,096 `f64`; or a `where`
 /// comparison that, after cancelling the parameters on both sides, is not
@@ -132,8 +132,8 @@ pub(crate) struct TypeInfo<'a> {
     pub(crate) scalars: usize,
     /// The name of its function in the checks.
     pub(crate) check_name: String,
-    /// For a type that is not explicit, its error program, slack factor and
-    /// exact plan; and its constraints as `(parameter, at least, at most)`.
+    /// For a type that is not explicit, its error program, slack factor,
+    /// exact plan and the comparisons of its `where` clause.
     pub(crate) implicit: Option<Implicit>,
 }
 
@@ -142,6 +142,8 @@ pub(crate) struct Implicit {
     pub(crate) rounds: u32,
     pub(crate) slack: f64,
     pub(crate) exact: ExactPlan,
+    /// Each comparison of the `where` clause, as the parameter it bounds
+    /// and the bound.
     pub(crate) bounds: Vec<(usize, Bound)>,
 }
 
@@ -199,6 +201,18 @@ fn prepare<'a>(
     file: &str,
     earlier: &[TypeInfo<'_>],
 ) -> Result<TypeInfo<'a>, Error> {
+    if !point.name.starts_with(|c: char| c.is_ascii_uppercase()) {
+        return Err(Error::at(
+            file,
+            point.position,
+            format!(
+                "`{}` cannot name a point type: the name of a point type must start with an \
+                 uppercase letter, so that it cannot be a primitive type, a module or a \
+                 function that the generated code uses",
+                point.name
+            ),
+        ));
+    }
     if RESERVED_TYPES.contains(&point.name.as_str()) {
         return Err(Error::at(
             file,

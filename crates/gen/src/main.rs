@@ -20,7 +20,7 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
-use implicit_predicates_gen::{Generated, generate, generate_points};
+use implicit_predicates_gen::{Position, generate, generate_points, parse, parse_points};
 
 const USAGE: &str =
     "usage: implicit-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]";
@@ -131,7 +131,9 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
     // so that it does not depend on where the tool runs.
     let label_dir = dir.file_name().map(Path::new).unwrap_or(Path::new(""));
     let regenerate = regeneration_command(options);
-    let mut names: Vec<(String, PathBuf)> = Vec::new();
+    // The name of each module, the file it comes from, and whether it is
+    // the module of the point types.
+    let mut names: Vec<(String, PathBuf, bool)> = Vec::new();
     let mut outputs = Vec::new();
     for path in files {
         let source = fs::read_to_string(&path)
@@ -145,12 +147,22 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
         let mut generated = generate(&source, &label, &regenerate).map_err(in_file)?;
         // The point types of a file are one module, `points`, so only one
         // file may declare them; the check on names below reports a second.
+        let predicates = generated.len();
         generated.extend(generate_points(&source, &label, &regenerate).map_err(in_file)?);
-        for g in generated {
-            if let Some((_, other)) = names.iter().find(|(name, _)| *name == g.name) {
-                return Err(duplicate(&path, &g, other));
+        for (i, g) in generated.into_iter().enumerate() {
+            let points = i >= predicates;
+            if let Some((_, other, other_points)) = names.iter().find(|(name, ..)| *name == g.name)
+            {
+                return Err(duplicate(
+                    &path,
+                    &source,
+                    &g.name,
+                    points,
+                    other,
+                    *other_points,
+                ));
             }
-            names.push((g.name.clone(), path.clone()));
+            names.push((g.name.clone(), path.clone(), points));
             let file = format!("{}.rs", g.name);
             outputs.push(Output {
                 path: options.stages.join(&file),
@@ -168,24 +180,49 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
     Ok(outputs)
 }
 
-/// The message for `g`, generated from `path`, whose module is also
-/// generated from `other`.
-fn duplicate(path: &Path, g: &Generated, other: &Path) -> String {
-    if g.name == POINTS {
-        format!(
-            "{}: point types are declared here and in {}, or a predicate is named `{POINTS}`; \
-             the point types of a directory are declared in one file",
-            path.display(),
-            other.display()
-        )
+/// The message for the module `name`, generated from `source` at `path`,
+/// whose name is also that of a module generated from `other`; `points` and
+/// `other_points` tell which of the two is the module of the point types.
+/// It is given at the first declaration of the second module, as the errors
+/// of a definition are.
+fn duplicate(
+    path: &Path,
+    source: &str,
+    name: &str,
+    points: bool,
+    other: &Path,
+    other_points: bool,
+) -> String {
+    let label = path.display().to_string();
+    let position = if points {
+        parse_points(source, &label)
+            .ok()
+            .and_then(|p| p.first().map(|p| p.position))
     } else {
-        format!(
-            "{}: the predicate `{}` is also defined in {}",
-            path.display(),
-            g.name,
-            other.display()
-        )
-    }
+        (parse(source, &label).ok())
+            .and_then(|p| p.into_iter().find(|p| p.name == name).map(|p| p.position))
+    };
+    let at = match position {
+        Some(Position { line, column }) => format!("{label}:{line}:{column}"),
+        None => label,
+    };
+    let other = other.display();
+    let message = match (points, other_points) {
+        (true, true) => format!(
+            "point types are also declared in {other}: the point types of a directory are \
+             declared in one file"
+        ),
+        (true, false) => format!(
+            "the module of the point types, `{POINTS}`, has the name of the predicate \
+             `{POINTS}` of {other}"
+        ),
+        (false, true) => format!(
+            "the predicate `{name}` has the name of the module of the point types, declared \
+             in {other}"
+        ),
+        (false, false) => format!("the predicate `{name}` is also defined in {other}"),
+    };
+    format!("{at}: {message}")
 }
 
 /// The name of the module of the point types.

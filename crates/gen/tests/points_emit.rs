@@ -257,10 +257,26 @@ fn declarations_that_cannot_be_emitted_are_rejected_with_their_position() {
         "cannot name a point type",
     );
     rejected(
-        "point summable(p: F64x3) = p;",
+        "point UNIT(p: F64x3) = p;",
         (1, 7),
         "cannot name a point type",
     );
+    // Names of the prelude that the module uses.
+    for name in ["Result", "Ok", "Err", "Option", "Some", "None", "From"] {
+        rejected(
+            &format!("point {name}(p: F64x3, t: f64) = t * p;"),
+            (1, 7),
+            "cannot name a point type",
+        );
+    }
+    // Primitive types, modules and functions start with a lowercase letter.
+    for name in ["f64", "bool", "usize", "core", "summable", "lnc"] {
+        rejected(
+            &format!("point {name}(p: F64x3, t: f64) = t * p;"),
+            (1, 7),
+            "must start with an uppercase letter",
+        );
+    }
     rejected(
         "point A(p: F64x3, u: f64, v: f64) = p * u * v\n    where u + v <= 1;",
         (2, 11),

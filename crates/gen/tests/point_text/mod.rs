@@ -89,18 +89,85 @@ pub fn push(graph: &mut Graph, node: Node) -> usize {
     graph.nodes.len() - 1
 }
 
-/// The parameter of the slot `c[i]` or `s[i]` of `point`.
-pub fn param_of(point: &PointType, ty: ParamType, slot: usize) -> usize {
-    (point.params.iter().enumerate())
-        .filter(|(_, p)| p.ty == ty)
-        .nth(slot)
-        .map(|(i, _)| i)
-        .expect("a parameter in that slot")
+/// Which parameter each slot `c[i]` and `s[i]` of an emitted function
+/// holds, by index into the parameters of the point.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Binding {
+    pub vectors: Vec<usize>,
+    pub scalars: Vec<usize>,
+}
+
+impl Binding {
+    /// The slots in the order of the declaration, as the checks take them.
+    pub fn declared(point: &PointType) -> Binding {
+        let of = |ty: ParamType| {
+            (point.params.iter().enumerate())
+                .filter(|(_, p)| p.ty == ty)
+                .map(|(i, _)| i)
+                .collect()
+        };
+        Binding {
+            vectors: of(ParamType::F64x3),
+            scalars: of(ParamType::F64),
+        }
+    }
+
+    /// The slots that the call `{callee}({before}[a, b], [c])` in `body`
+    /// fills, each argument being `{prefix}{name}` for a parameter of
+    /// `point`, of the type of its slot. A point without `f64` parameters
+    /// has no second array.
+    pub fn from_call(
+        point: &PointType,
+        body: &str,
+        callee: &str,
+        before: &str,
+        prefix: &str,
+    ) -> Binding {
+        let start = body
+            .find(&format!("{callee}({before}"))
+            .unwrap_or_else(|| panic!("no call of {callee} in {body}"));
+        let rest = &body[start + callee.len() + 1 + before.len()..];
+        let end = [");", ")\n"]
+            .iter()
+            .filter_map(|e| rest.find(e))
+            .min()
+            .expect("the end of the call");
+        let args = &rest[..end];
+        let arrays: Vec<&str> = args
+            .split("], ")
+            .map(|a| a.trim_start_matches('[').trim_end_matches(']'))
+            .collect();
+        let slots = |text: &str, ty: ParamType| -> Vec<usize> {
+            if text.is_empty() {
+                return Vec::new();
+            }
+            text.split(", ")
+                .map(|arg| {
+                    let name = arg.strip_prefix(prefix).unwrap_or_else(|| panic!("{arg}"));
+                    let i = (point.params.iter())
+                        .position(|p| p.name == name)
+                        .unwrap_or_else(|| panic!("{name} is not a parameter"));
+                    assert_eq!(point.params[i].ty, ty, "{name} in a slot of another type");
+                    i
+                })
+                .collect()
+        };
+        let binding = Binding {
+            vectors: slots(arrays[0], ParamType::F64x3),
+            scalars: arrays
+                .get(1)
+                .map_or(Vec::new(), |a| slots(a, ParamType::F64)),
+        };
+        let declared = Binding::declared(point);
+        assert_eq!(binding.vectors.len(), declared.vectors.len(), "{args}");
+        assert_eq!(binding.scalars.len(), declared.scalars.len(), "{args}");
+        binding
+    }
 }
 
 /// The node of a leaf written `c[i][k]`, `s[i]` or as an integer literal,
 /// with or without `.clone()` or `Dyadic::from_f64(..)` around it.
-pub fn leaf(g: &mut Graph, point: &PointType, text: &str) -> Option<usize> {
+pub fn leaf(g: &mut Graph, binding: &Binding, text: &str) -> Option<usize> {
     let text = text.strip_suffix(".clone()").unwrap_or(text);
     let text = (text.strip_prefix("Dyadic::from_f64("))
         .and_then(|t| t.strip_suffix(')'))
@@ -108,11 +175,11 @@ pub fn leaf(g: &mut Graph, point: &PointType, text: &str) -> Option<usize> {
     if let Some(rest) = text.strip_prefix("c[") {
         let (slot, rest) = rest.split_once("][")?;
         let axis = rest.strip_suffix(']')?.parse().ok()?;
-        let param = param_of(point, ParamType::F64x3, slot.parse().ok()?);
+        let param = binding.vectors[slot.parse::<usize>().ok()?];
         return Some(push(g, Node::Coord { point: param, axis }));
     }
     if let Some(rest) = text.strip_prefix("s[") {
-        let param = param_of(point, ParamType::F64, rest.strip_suffix(']')?.parse().ok()?);
+        let param = binding.scalars[rest.strip_suffix(']')?.parse::<usize>().ok()?];
         return Some(push(
             g,
             Node::Coord {
@@ -131,11 +198,20 @@ pub fn negate(g: &mut Graph, x: usize) -> usize {
     push(g, Node::Sub(zero, x))
 }
 
+/// The body of the function `fn {name}(` of the implementation of `Point`
+/// for `ty`.
+pub fn point_method<'a>(code: &'a str, ty: &str, name: &str) -> &'a str {
+    method_in(code, &format!("impl Point for {ty} {{\n"), name)
+}
+
 /// The body of the function `fn {name}(` that follows `impl {ty} {`.
 pub fn method<'a>(code: &'a str, ty: &str, name: &str) -> &'a str {
-    let start = code
-        .find(&format!("impl {ty} {{\n"))
-        .expect("the impl block");
+    method_in(code, &format!("impl {ty} {{\n"), name)
+}
+
+/// The body of the function `fn {name}(` after the first `block`.
+fn method_in<'a>(code: &'a str, block: &str, name: &str) -> &'a str {
+    let start = code.find(block).expect("the impl block");
     let rest = &code[start..];
     let start = rest.find(&format!("fn {name}(")).expect("the function");
     let rest = &rest[start..];
@@ -144,7 +220,7 @@ pub fn method<'a>(code: &'a str, ty: &str, name: &str) -> &'a str {
 
 /// The value statements `let v{n} = ...;` of `evaluate`, read back, and the
 /// graph whose node `v{n}` is at `values[n]`.
-pub fn read_values(point: &PointType, body: &str) -> (Graph, BTreeMap<usize, usize>) {
+pub fn read_values(binding: &Binding, body: &str) -> (Graph, BTreeMap<usize, usize>) {
     let mut g = Graph {
         nodes: Vec::new(),
         root: 0,
@@ -163,7 +239,7 @@ pub fn read_values(point: &PointType, body: &str) -> (Graph, BTreeMap<usize, usi
                 let x = operand(&x[1..]);
                 negate(&mut g, x)
             }
-            [x] => leaf(&mut g, point, x).unwrap_or_else(|| panic!("{line}")),
+            [x] => leaf(&mut g, binding, x).unwrap_or_else(|| panic!("{line}")),
             [x, op, y] => {
                 let (x, y) = (operand(x), operand(y));
                 push(

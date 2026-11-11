@@ -7,9 +7,10 @@ mod point_text;
 
 use std::collections::BTreeMap;
 
-use implicit_predicates_gen::{Graph, Node, PointType};
+use implicit_predicates_gen::{Graph, Node};
 use point_text::{
-    approx_roots, declarations, declared, expand, leaf, method, negate, push, read_values,
+    Binding, approx_roots, declarations, declared, expand, leaf, method, negate, point_method,
+    push, read_values,
 };
 
 #[test]
@@ -18,13 +19,38 @@ fn evaluate_computes_the_declared_polynomial_of_each_coordinate() {
         if point.is_explicit() {
             continue;
         }
+        // The constructors take the parameters in the order of the
+        // declaration and pass them on in that order.
+        let names: Vec<&str> = point.params.iter().map(|p| p.name.as_str()).collect();
+        let new = method(&stages, &point.name, "new");
+        let unchecked = method(&stages, &point.name, "new_unchecked");
+        assert_eq!(signature(new), names, "{}", point.name);
+        assert_eq!(signature(unchecked), names, "{}", point.name);
+        assert_eq!(call(new, "Self::new_unchecked("), names, "{}", point.name);
+        // `evaluate` reads its slots as `new_unchecked` fills them.
+        let binding = Binding::from_call(&point, unchecked, "Self::evaluate", "", "");
         let body = method(&stages, &point.name, "evaluate");
-        let (mut g, values) = read_values(&point, body);
+        let (mut g, values) = read_values(&binding, body);
         for (axis, root) in approx_roots(body).into_iter().enumerate() {
             g.root = values[&root];
             assert_eq!(expand(&g), declared(&point, axis), "{} {axis}", point.name);
         }
     }
+}
+
+/// The names of the parameters of the function whose text starts `body`.
+fn signature(body: &str) -> Vec<&str> {
+    let inner = &body[body.find('(').unwrap() + 1..body.find(')').unwrap()];
+    inner
+        .split(", ")
+        .map(|p| p.split_once(": ").unwrap().0)
+        .collect()
+}
+
+/// The arguments of the call `callee(...)` in `body`.
+fn call<'a>(body: &'a str, callee: &str) -> Vec<&'a str> {
+    let rest = &body[body.find(callee).unwrap_or_else(|| panic!("no {callee}")) + callee.len()..];
+    rest[..rest.find(')').unwrap()].split(", ").collect()
 }
 
 /// An operand of an expansion function, by the node it reads.
@@ -78,7 +104,7 @@ fn call_args(text: &str) -> (&str, Vec<&str>) {
 /// One coordinate closure of `write_exact`, read back: its value as a node
 /// of `g`, with every operation checked to be preceded by the check of the
 /// requirements of its operands.
-fn read_closure(g: &mut Graph, point: &PointType, lines: &[&str]) -> usize {
+fn read_closure(g: &mut Graph, binding: &Binding, lines: &[&str]) -> usize {
     let mut scalars: BTreeMap<usize, usize> = BTreeMap::new();
     let mut expansions: BTreeMap<usize, usize> = BTreeMap::new();
     let mut lifted: BTreeMap<usize, usize> = BTreeMap::new();
@@ -91,7 +117,7 @@ fn read_closure(g: &mut Graph, point: &PointType, lines: &[&str]) -> usize {
                     let x = scalars[&x.parse::<usize>().unwrap()];
                     negate(g, x)
                 }
-                None => leaf(g, point, value).unwrap_or_else(|| panic!("{line}")),
+                None => leaf(g, binding, value).unwrap_or_else(|| panic!("{line}")),
             };
             scalars.insert(name.parse().unwrap(), node);
             continue;
@@ -209,6 +235,9 @@ fn write_exact_computes_the_declared_polynomial_of_each_coordinate_with_its_chec
         if point.is_explicit() {
             continue;
         }
+        // `write_exact` reads its slots as `Point::exact` fills them.
+        let exact = point_method(&stages, &point.name, "exact");
+        let binding = Binding::from_call(&point, exact, "Self::write_exact", "scratch, ", "self.");
         let body = method(&stages, &point.name, "write_exact");
         let lines: Vec<&str> = body.lines().collect();
         for (axis, name) in ["x", "y", "z"].iter().enumerate() {
@@ -221,7 +250,7 @@ fn write_exact_computes_the_declared_polynomial_of_each_coordinate_with_its_chec
                 nodes: Vec::new(),
                 root: 0,
             };
-            g.root = read_closure(&mut g, &point, &lines[start + 1..end]);
+            g.root = read_closure(&mut g, &binding, &lines[start + 1..end]);
             assert_eq!(expand(&g), declared(&point, axis), "{} {name}", point.name);
             assert!(
                 lines[end + 1]
@@ -244,6 +273,8 @@ fn the_checks_compute_the_declared_polynomial_of_each_coordinate() {
             .unwrap_or_else(|| panic!("no check of {}", point.name));
         let body = &checks[start..];
         let body = &body[..body.find("\n}\n").unwrap()];
+        // The checks take the parameters in the order of the declaration.
+        let binding = Binding::declared(&point);
         let mut g = Graph {
             nodes: Vec::new(),
             root: 0,
@@ -259,7 +290,7 @@ fn the_checks_compute_the_declared_polynomial_of_each_coordinate() {
                         let x = operand(&x[1..]);
                         negate(&mut g, x)
                     }
-                    [x] => leaf(&mut g, &point, x).unwrap_or_else(|| panic!("{line}")),
+                    [x] => leaf(&mut g, &binding, x).unwrap_or_else(|| panic!("{line}")),
                     [x, op, y] => {
                         let (x, y) = (operand(x), operand(y));
                         push(

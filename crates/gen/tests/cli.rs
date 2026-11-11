@@ -277,16 +277,67 @@ fn points_and_predicates_are_written_side_by_side_and_checked() {
 }
 
 #[test]
-fn point_types_in_two_files_are_an_error() {
+fn point_types_in_two_files_are_an_error_at_the_second_declaration() {
     let w = Workspace::new(&[
         ("a.pred", "point A(p: F64x3) = p;\n"),
-        ("b.pred", "point B(p: F64x3) = p;\n"),
+        ("b.pred", "\npoint B(p: F64x3) = p;\n"),
     ]);
     let output = w.run(false);
     assert!(!output.status.success());
     let message = stderr(&output);
+    let at = format!("{}:2:7: ", Path::new("predicates").join("b.pred").display());
+    assert!(message.starts_with(&at), "{message}");
     assert!(
-        message.contains("point types are declared here and in"),
+        message.contains("point types are also declared in"),
+        "{message}"
+    );
+    assert!(message.contains("a.pred"), "{message}");
+    assert!(!w.path("stages").exists());
+}
+
+/// The source of `orient3d` with the predicate renamed `points`.
+fn predicate_named_points() -> String {
+    ORIENT3D.replace("fn orient3d(", "fn points(")
+}
+
+/// The `line:column: ` of the predicate `points` in `source`.
+fn predicate_position(source: &str) -> String {
+    let p = implicit_predicates_gen::parse(source, "t.pred").unwrap();
+    let p = p.iter().find(|p| p.name == "points").unwrap();
+    format!("{}:{}: ", p.position.line, p.position.column)
+}
+
+#[test]
+fn a_predicate_named_points_clashes_with_the_point_types() {
+    let named = predicate_named_points();
+    // The predicate is read first.
+    let w = Workspace::new(&[("a.pred", &named), ("points.pred", POINTS)]);
+    let output = w.run(false);
+    assert!(!output.status.success());
+    let message = stderr(&output);
+    let file = Path::new("predicates").join("points.pred");
+    let first = POINTS
+        .lines()
+        .position(|l| l.starts_with("point "))
+        .unwrap()
+        + 1;
+    assert!(
+        message.starts_with(&format!("{}:{first}:7: ", file.display())),
+        "{message}"
+    );
+    assert!(message.contains("the predicate `points`"), "{message}");
+    assert!(message.contains("a.pred"), "{message}");
+    assert!(!w.path("stages").exists());
+    // The point types are read first.
+    let w = Workspace::new(&[("points.pred", POINTS), ("z.pred", &named)]);
+    let output = w.run(false);
+    assert!(!output.status.success());
+    let message = stderr(&output);
+    let file = Path::new("predicates").join("z.pred");
+    let at = format!("{}:{}", file.display(), predicate_position(&named));
+    assert!(message.starts_with(&at), "{message}");
+    assert!(
+        message.contains("the module of the point types"),
         "{message}"
     );
     assert!(!w.path("stages").exists());

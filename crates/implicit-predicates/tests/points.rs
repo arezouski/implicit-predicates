@@ -252,9 +252,10 @@ fn non_finite_points_have_infinite_error() {
     assert_eq!(point.err(), &[f64::INFINITY; 3]);
     // Its exact coordinates are outside the range of the exact arithmetic.
     assert_eq!(exact_of(&point), Err(ExactError::OutOfRange));
-    // An error bound that overflows on its own: the approximation is finite.
-    // Near the top of the range the approximation stays finite, and so does
-    // its error bound here.
+    // For a point on a line the error bound cannot overflow while the
+    // approximation is finite: every term is about 2^-53 times finite
+    // values. Near the top of the range both stay finite, and the bound
+    // holds.
     let params = ([f64::MAX, 0.0, 0.0], [f64::MAX / 2.0, 0.0, 0.0], 1.0);
     let point = lnc(params);
     assert!(point.approx()[0].is_finite() && point.err()[0].is_finite());
