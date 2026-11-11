@@ -16,19 +16,17 @@
 //! function with the same name and parameters, marked `#[exact]`, gives the
 //! form used for exact evaluation.
 //!
-//! Input is bounded so that no definition can make [`parse`] panic or
-//! overflow the stack of the calling thread, even in a debug build with a
-//! 1 MiB stack: brackets nest at most 16 deep; on the way from a statement to
-//! any leaf there are at most 600 of `+ - * >`, 320 `.` and 4 `=`; at most 2
-//! punctuation tokens come in a row; and Rust keywords other than `fn` and
-//! `let`, and punctuation the language does not use, are refused. Comments
-//! cost nothing. An error names the limit and suggests splitting the
-//! expression with `let`.
+//! The only limit is the nesting of brackets, at most 32 deep, which keeps
+//! the stack small: sums, products and runs of unary minus are read in loops
+//! and have no limit beyond memory, so [`parse`] cannot panic or overflow the
+//! stack of the calling thread, even in a debug build with a 1 MiB stack.
+//! Comments cost nothing.
 
 #![forbid(unsafe_code)]
 
+mod cursor;
 mod error;
-mod eval;
+mod expr;
 mod graph;
 mod limits;
 mod parse;

@@ -1,13 +1,23 @@
-//! Reads `.pred` files with `syn` and builds expression graphs.
+//! Reads `.pred` files and builds expression graphs.
+//!
+//! The grammar is exactly the accepted subset:
+//!
+//! ```text
+//! file   := item*
+//! item   := ('#' '[' 'exact' ']')? 'fn' NAME '(' params? ')' '->' 'Sign' block
+//! params := param (',' param)* ','?        param := NAME ':' 'Point3'
+//! block  := '{' ('let' NAME '=' expr ';')* expr '}'
+//! ```
+//!
+//! Expressions are read by [`crate::expr`].
 
 use std::collections::HashMap;
 
-use proc_macro2::{Span, TokenStream};
-use syn::spanned::Spanned;
-use syn::{FnArg, Item, ItemFn, Meta, Pat, ReturnType, Stmt, Type, Visibility};
+use proc_macro2::{Delimiter, LexError, Span, TokenStream, TokenTree};
 
+use crate::cursor::{Cursor, is_punct};
 use crate::error::{Error, Res, diag};
-use crate::eval::{Binding, eval};
+use crate::expr::{Binding, Scope, parse_expr};
 use crate::graph::{Builder, Graph, Node};
 use crate::limits;
 
@@ -41,31 +51,18 @@ struct Form {
 /// # Limits
 ///
 /// No input makes this function panic or overflow the stack of the calling
-/// thread, whatever its size or shape; the limits are sized so that the worst
-/// input they accept fits in a 1 MiB stack of a debug build. Input is refused
-/// if it breaks one of these limits:
-///
-/// - brackets nest at most 16 deep, counting the body of the function
-///   (brackets inside comments and literals do not count);
-/// - on the way from a statement to any leaf, at most 600 of `+`, `-`, `*`
-///   and `>` (the `->` of the header counts as two), at most 320 `.` and at
-///   most 4 `=` (the counts include the enclosing statements, and comments
-///   cost nothing);
-/// - at most 2 punctuation tokens in a row, so `a - -b` is accepted but
-///   `a - - -b` is not;
-/// - only the tokens of the language of definitions are accepted: Rust
-///   keywords other than `fn` and `let`, and punctuation other than
-///   `+ - * . : , ; = # >` and brackets, are refused (`/` with its own
-///   message, since division is not supported).
-///
-/// Whatever the limit, the message names it and tells the author to split the
-/// expression with `let`. A flat sum of 150 terms and the shape of an in-sphere
-/// determinant are well within them.
+/// thread, whatever its size or shape; a debug build with a 1 MiB stack is
+/// enough. The only limit is the nesting of brackets: at most 32 deep, counting
+/// the braces of the function body, so a parenthesized expression may nest 31
+/// deep. Comments and literals do not count toward it. Sums, products and runs
+/// of unary minus are read in loops and have no limit beyond memory. An error
+/// for brackets that are nested too deeply names the limit and suggests
+/// splitting the expression with `let`.
 ///
 /// # Errors
 ///
-/// Returns the first problem found: a syntax error, a construct outside the
-/// accepted subset, an exceeded limit, an undefined or redefined name, an
+/// Returns the first problem found: a token that the grammar of definitions
+/// does not allow, an undefined or redefined name, an
 /// unused parameter, or a misplaced `#[exact]` form.
 pub fn parse(source: &str, file: &str) -> Result<Vec<Predicate>, Error> {
     parse_source(source).map_err(|d| Error {
@@ -78,21 +75,16 @@ pub fn parse(source: &str, file: &str) -> Result<Vec<Predicate>, Error> {
 
 fn parse_source(source: &str) -> Res<Vec<Predicate>> {
     limits::check_nesting(source)?;
-    let tokens: TokenStream = syn::parse_str(source).map_err(|e| diag(e.span(), e.to_string()))?;
-    limits::check_tokens(tokens.clone())?;
-    let ast: syn::File = syn::parse2(tokens).map_err(|e| diag(e.span(), e.to_string()))?;
-    if let Some(attr) = ast.attrs.first() {
-        return Err(diag(attr.span(), "file attributes are not supported"));
-    }
+    let tokens: TokenStream = source
+        .parse()
+        .map_err(|e: LexError| diag(e.span(), e.to_string()))?;
+    let mut cur = Cursor::new(tokens, None);
     let mut predicates: Vec<Predicate> = Vec::new();
-    let mut exacts = Vec::new();
-    for item in &ast.items {
-        let Item::Fn(function) = item else {
-            return Err(diag(item.span(), "only function definitions are allowed"));
-        };
-        let form = parse_fn(function)?;
+    let mut exacts: Vec<Form> = Vec::new();
+    while !cur.at_end() {
+        let form = parse_item(&mut cur)?;
         if form.exact {
-            if exacts.iter().any(|e: &Form| e.name == form.name) {
+            if exacts.iter().any(|e| e.name == form.name) {
                 return Err(diag(
                     form.name_span,
                     format!("`{}` already has an exact form", form.name),
@@ -137,92 +129,36 @@ fn parse_source(source: &str) -> Res<Vec<Predicate>> {
     Ok(predicates)
 }
 
-fn parse_fn(function: &ItemFn) -> Res<Form> {
-    let sig = &function.sig;
-    let exact = parse_attrs(function)?;
-    let plain = sig.constness.is_none()
-        && sig.asyncness.is_none()
-        && sig.unsafety.is_none()
-        && sig.abi.is_none()
-        && sig.variadic.is_none()
-        && sig.generics.params.is_empty()
-        && sig.generics.where_clause.is_none()
-        && matches!(function.vis, Visibility::Inherited);
-    if !plain {
-        return Err(diag(
-            sig.ident.span(),
-            "only plain `fn name(...) -> Sign` functions are allowed",
-        ));
+/// Reads one function, with its optional `#[exact]` attribute.
+fn parse_item(cur: &mut Cursor) -> Res<Form> {
+    let exact = parse_attr(cur)?;
+    if !cur.peek_word("fn") {
+        return Err(cur.expected("`fn`"));
     }
-    match &sig.output {
-        ReturnType::Type(_, ty) if is_path(ty, "Sign") => {}
-        ReturnType::Type(_, ty) => return Err(diag(ty.span(), "the return type must be `Sign`")),
-        ReturnType::Default => {
-            return Err(diag(sig.ident.span(), "the return type must be `Sign`"));
-        }
+    cur.bump();
+    let (name, name_span) = parse_name(cur, "a function name")?;
+    let (params, spans) = parse_params(cur)?;
+    if !(is_punct(cur.peek(), '-') && is_punct(cur.peek_at(1), '>')) {
+        return Err(cur.expected("`->`"));
     }
-
-    let mut env: HashMap<String, Binding> = HashMap::new();
-    let mut params: Vec<(String, Span)> = Vec::new();
-    for arg in &sig.inputs {
-        let FnArg::Typed(typed) = arg else {
-            return Err(diag(arg.span(), "methods are not supported"));
-        };
-        let Some(ident) = simple_ident(&typed.pat) else {
-            return Err(diag(typed.pat.span(), "a parameter must be a plain name"));
-        };
-        if !is_path(&typed.ty, "Point3") {
-            return Err(diag(typed.ty.span(), "a parameter must have type `Point3`"));
-        }
-        let name = ident.to_string();
-        if env
-            .insert(name.clone(), Binding::Param(params.len()))
-            .is_some()
-        {
-            return Err(diag(ident.span(), format!("`{name}` redefines a name")));
-        }
-        params.push((name, ident.span()));
+    cur.bump();
+    cur.bump();
+    if !cur.peek_word("Sign") {
+        return Err(match cur.peek() {
+            Some(token) => diag(token.span(), "the return type must be `Sign`"),
+            None => cur.expected("`Sign`"),
+        });
     }
-
-    let mut builder = Builder::default();
-    let mut root = None;
-    let count = function.block.stmts.len();
-    for (i, stmt) in function.block.stmts.iter().enumerate() {
-        match stmt {
-            Stmt::Local(local) => {
-                let (Some(ident), Some(init)) = (simple_ident(&local.pat), &local.init) else {
-                    return Err(diag(local.span(), "expected `let name = expression;`"));
-                };
-                if init.diverge.is_some() {
-                    return Err(diag(local.span(), "expected `let name = expression;`"));
-                }
-                let name = ident.to_string();
-                if env.contains_key(&name) {
-                    return Err(diag(ident.span(), format!("`{name}` redefines a name")));
-                }
-                let value = eval(&init.expr, &mut builder, &env)?;
-                env.insert(name, Binding::Let(value));
-            }
-            Stmt::Expr(expr, None) if i + 1 == count => {
-                root = Some(eval(expr, &mut builder, &env)?);
-            }
-            other => {
-                return Err(diag(
-                    other.span(),
-                    "expected `let` bindings followed by a final expression without `;`",
-                ));
-            }
+    cur.bump();
+    let (body, close) = match cur.peek() {
+        Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
+            (g.stream(), g.span_close())
         }
-    }
-    let Some(root) = root else {
-        return Err(diag(
-            function.block.span(),
-            "the body needs a final expression",
-        ));
+        _ => return Err(cur.expected("`{`")),
     };
-    let graph = builder.finish(root);
-
-    for (point, (name, span)) in params.iter().enumerate() {
+    cur.bump();
+    let graph = parse_body(Cursor::new(body, Some(close)), &params)?;
+    for (point, (name, span)) in params.iter().zip(&spans).enumerate() {
         let used = graph
             .nodes
             .iter()
@@ -232,40 +168,145 @@ fn parse_fn(function: &ItemFn) -> Res<Form> {
         }
     }
     Ok(Form {
-        name: sig.ident.to_string(),
-        name_span: sig.ident.span(),
-        params: params.into_iter().map(|(name, _)| name).collect(),
+        name,
+        name_span,
+        params,
         graph,
         exact,
     })
 }
 
-/// Checks the attributes of a function and tells whether it is `#[exact]`.
-fn parse_attrs(function: &ItemFn) -> Res<bool> {
-    let mut exact = false;
-    for attr in &function.attrs {
-        match &attr.meta {
-            Meta::Path(path) if path.is_ident("exact") && !exact => exact = true,
-            _ => {
-                return Err(diag(
-                    attr.span(),
-                    "the only attribute allowed is a single `#[exact]`",
-                ));
+/// Reads `#[exact]` if it is there and tells whether it was.
+fn parse_attr(cur: &mut Cursor) -> Res<bool> {
+    let Some(TokenTree::Punct(hash)) = cur.peek() else {
+        return Ok(false);
+    };
+    if hash.as_char() != '#' {
+        return Ok(false);
+    }
+    let span = hash.span();
+    cur.bump();
+    let is_exact = match cur.peek() {
+        Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Bracket => {
+            let mut inside = Cursor::new(g.stream(), Some(g.span_close()));
+            let found = inside.peek_word("exact");
+            inside.bump();
+            found && inside.at_end()
+        }
+        _ => false,
+    };
+    if !is_exact {
+        return Err(diag(span, "the only attribute allowed is `#[exact]`"));
+    }
+    cur.bump();
+    if is_punct(cur.peek(), '#') {
+        return Err(diag(
+            cur.peek().map_or(span, TokenTree::span),
+            "the only attribute allowed is a single `#[exact]`",
+        ));
+    }
+    Ok(true)
+}
+
+/// Reads a name: any identifier except `fn` and `let`.
+fn parse_name(cur: &mut Cursor, what: &str) -> Res<(String, Span)> {
+    match cur.peek() {
+        Some(TokenTree::Ident(id)) if id != "fn" && id != "let" => {
+            let result = (id.to_string(), id.span());
+            cur.bump();
+            Ok(result)
+        }
+        _ => Err(cur.expected(what)),
+    }
+}
+
+/// Reads the parameter list and returns the names with their positions.
+fn parse_params(cur: &mut Cursor) -> Res<(Vec<String>, Vec<Span>)> {
+    let (stream, close) = match cur.peek() {
+        Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => {
+            (g.stream(), g.span_close())
+        }
+        _ => return Err(cur.expected("`(`")),
+    };
+    cur.bump();
+    let mut inside = Cursor::new(stream, Some(close));
+    let (mut names, mut spans): (Vec<String>, Vec<Span>) = (Vec::new(), Vec::new());
+    while !inside.at_end() {
+        let (name, span) = parse_name(&mut inside, "a parameter name")?;
+        if names.contains(&name) {
+            return Err(diag(span, format!("`{name}` redefines a name")));
+        }
+        if !inside.peek_punct(':') {
+            return Err(inside.expected("`:`"));
+        }
+        inside.bump();
+        match inside.peek() {
+            Some(TokenTree::Ident(id)) if id == "Point3" => inside.bump(),
+            Some(token) => {
+                return Err(diag(token.span(), "a parameter must have type `Point3`"));
             }
+            None => return Err(inside.expected("the type `Point3`")),
+        }
+        names.push(name);
+        spans.push(span);
+        if !inside.at_end() {
+            if !inside.peek_punct(',') {
+                return Err(inside.expected("`,`"));
+            }
+            inside.bump();
         }
     }
-    Ok(exact)
+    Ok((names, spans))
 }
 
-fn simple_ident(pat: &Pat) -> Option<&syn::Ident> {
-    match pat {
-        Pat::Ident(p) if p.by_ref.is_none() && p.mutability.is_none() && p.subpat.is_none() => {
-            Some(&p.ident)
+/// Reads the body of a function: `let` bindings and a final expression.
+fn parse_body(mut body: Cursor, params: &[String]) -> Res<Graph> {
+    let mut env: HashMap<String, Binding> = params
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.clone(), Binding::Param(i)))
+        .collect();
+    let mut builder = Builder::default();
+    loop {
+        if body.at_end() {
+            return Err(diag(body.close(), "the body needs a final expression"));
         }
-        _ => None,
+        if !body.peek_word("let") {
+            let mut scope = Scope {
+                builder: &mut builder,
+                env: &env,
+            };
+            let root = parse_expr(&mut body, &mut scope, 1)?;
+            if let Some(token) = body.peek() {
+                return Err(if is_punct(Some(token), ';') {
+                    diag(
+                        token.span(),
+                        "expected `let` bindings followed by a final expression without `;`",
+                    )
+                } else {
+                    body.expected("an operator or the end of the body")
+                });
+            }
+            return Ok(builder.finish(root));
+        }
+        body.bump();
+        let (name, span) = parse_name(&mut body, "a name")?;
+        if env.contains_key(&name) {
+            return Err(diag(span, format!("`{name}` redefines a name")));
+        }
+        if !body.peek_punct('=') {
+            return Err(body.expected("`=`"));
+        }
+        body.bump();
+        let mut scope = Scope {
+            builder: &mut builder,
+            env: &env,
+        };
+        let value = parse_expr(&mut body, &mut scope, 1)?;
+        if !body.peek_punct(';') {
+            return Err(body.expected("an operator or `;`"));
+        }
+        body.bump();
+        env.insert(name, Binding::Let(value));
     }
-}
-
-fn is_path(ty: &Type, name: &str) -> bool {
-    matches!(ty, Type::Path(p) if p.qself.is_none() && p.path.is_ident(name))
 }

@@ -289,7 +289,6 @@ dependencies = [
  "num-bigint",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
 ]
 
 [[package]]

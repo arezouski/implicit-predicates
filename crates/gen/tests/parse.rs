@@ -269,102 +269,200 @@ fn wrap(body: &str) -> String {
     format!("fn p(a: Point3) -> Sign {{ {body} }}")
 }
 
-fn assert_rejected(body: &str, fragment: &str) {
-    let e = on_small_stack(wrap(body)).expect_err("must be rejected");
+fn assert_rejected(source: String, fragment: &str) {
+    let e = on_small_stack(source).expect_err("must be rejected");
     assert!(e.message.contains(fragment), "{e}");
 }
 
+const N: usize = 100_000;
+
 #[test]
-fn rejected_limits_name_the_limit_and_suggest_a_let() {
-    let n = 100_000;
-    let ops = format!("a.x{}", " + 1".repeat(n));
-    assert_rejected(
-        &ops,
-        "more than 600 operators; split the expression with `let`",
-    );
-    assert_rejected(
-        &format!("a{}", ".x".repeat(n)),
-        "more than 320 field accesses",
-    );
-    assert_rejected(
-        &format!("a.x{}", " = a.x".repeat(5)),
-        "more than 4 equal signs",
-    );
-    assert_rejected(
-        "- - - a.x",
-        "too many operators in a row; split the expression with `let`",
-    );
-    assert_rejected(
-        &format!("{}a.x{}", "(".repeat(16), ")".repeat(16)),
-        "nested more than 16 deep; split the expression with `let`",
-    );
-    // Constructs outside the language are refused before the parser recurses
-    // on them.
-    for chain in [
-        format!("a.x{}", " as i32".repeat(n)),
-        format!("{}a.x", "return ".repeat(n)),
-        format!("{}a.x", "!".repeat(n)),
-        format!("{}a.x", "& ".repeat(n)),
-        format!("a.x{}", "?".repeat(n)),
-        format!("{}a.x", "loop ".repeat(n)),
-        format!("{}a.x", "|| ".repeat(n)),
-    ] {
-        assert_rejected(&chain, "not supported");
+fn constructs_outside_the_grammar_are_rejected_at_any_length() {
+    let cases = [
+        wrap(&format!("a{}", "(1)".repeat(N))),
+        wrap(&format!("a{}", "[1]".repeat(N))),
+        format!("{}fn p(a: Point3) -> Sign {{ a.x }}", "#[x]".repeat(N)),
+        format!("{}fn p(a: Point3) -> Sign {{ a.x }}", "#[exact]".repeat(N)),
+        wrap(&format!("{}a.x", "let ".repeat(N))),
+        wrap(&"{}".repeat(N)),
+        wrap(&format!("a{}", "::b".repeat(N))),
+        wrap(&format!("a.x{}", ".x".repeat(N))),
+        wrap(&format!("a.x{}", " as i32".repeat(N))),
+        wrap(&format!("{}a.x", "return ".repeat(N))),
+        wrap(&format!("{}a.x", "!".repeat(N))),
+        wrap(&format!("a.x{}", "?".repeat(N))),
+        wrap(&format!("a.x{}", ".f()".repeat(N))),
+        wrap(&format!("({})", "(".repeat(N))),
+        format!("{}fn p(a: Point3) -> Sign {{ a.x }}", "fn ".repeat(N)),
+        wrap(&format!("a.x{}", " = a.x".repeat(N))),
+        wrap(&"-> ".repeat(N)),
+        wrap(&format!("a.x{}", ", a.x".repeat(N))),
+        wrap(&format!("a.x{}", "; a.x".repeat(N))),
+        "(".repeat(N),
+        "}".repeat(N),
+        "<".repeat(N),
+    ];
+    for source in cases {
+        assert!(on_small_stack(source).is_err());
     }
+}
+
+#[test]
+fn a_hundred_thousand_minus_signs_and_terms_are_accepted() {
+    let signs = wrap(&format!("{}a.x", "-".repeat(N)));
+    assert_eq!(on_small_stack(signs).unwrap(), 1);
+    let sum = wrap(&format!("a.x{}", " + a.y".repeat(N)));
+    assert_eq!(on_small_stack(sum).unwrap(), 1);
+    let product = wrap(&format!("a.x{}", " * a.y - a.z".repeat(N)));
+    assert_eq!(on_small_stack(product).unwrap(), 1);
+}
+
+#[test]
+fn nesting_is_accepted_up_to_the_limit_and_rejected_beyond_it() {
+    // The braces of the body count: 31 parentheses reach 32 levels.
+    let at_the_limit = wrap(&format!("{}a.x{}", "(".repeat(31), ")".repeat(31)));
+    assert_eq!(on_small_stack(at_the_limit).unwrap(), 1);
+    let worst = wrap(&format!("{}a.x{}", "- -(".repeat(31), ")".repeat(31)));
+    assert_eq!(on_small_stack(worst).unwrap(), 1);
+    let worst = wrap(&format!(
+        "a.x{}{}",
+        " * (-a.x + a.y".repeat(31),
+        ")".repeat(31)
+    ));
+    assert_eq!(on_small_stack(worst).unwrap(), 1);
+    let beyond = wrap(&format!("{}a.x{}", "(".repeat(32), ")".repeat(32)));
     assert_rejected(
-        &format!("{}a.x", "-".repeat(n)),
-        "too many operators in a row",
+        beyond,
+        "nested more than 32 deep; split the expression with `let`",
     );
+    // The same, with the brackets only in the token stream and not in a body.
+    let beyond = format!("{}{}", "(".repeat(33), ")".repeat(33));
+    assert_rejected(beyond, "nested more than 32 deep");
 }
 
 #[test]
-fn the_worst_accepted_inputs_fit_in_a_small_stack() {
-    // Longest chain: all 600 operators, two of them in the header.
-    let sum = format!("a.x{}", " + 1".repeat(598));
-    on_small_stack(wrap(&sum)).unwrap();
-    assert!(on_small_stack(wrap(&format!("a{}", ".x".repeat(320)))).is_err());
-    // Deepest brackets, with a pair of unary minus at every level.
-    let nested = format!("{}a.x{}", "- -(".repeat(14), ")".repeat(14));
-    assert!(on_small_stack(wrap(&nested)).is_ok());
-    let nested = format!("a.x{}{}", " + (a.x".repeat(14), ")".repeat(14));
-    assert!(on_small_stack(wrap(&nested)).is_ok());
-    // All of it at once: right-nested equal signs, then deep brackets with
-    // unary minus, then a long chain of operators at the bottom.
-    let chain = vec!["a.x"; 270].join(" + ");
-    let worst = format!(
-        "a.x = a.x = a.x = a.x = {}{}{}",
-        "- -(".repeat(14),
-        chain,
-        ")".repeat(14)
-    );
-    let _ = on_small_stack(wrap(&worst));
-    // Fields on top of everything else.
-    let worst = format!("{}a{}{}", "(".repeat(14), ".x".repeat(300), ")".repeat(14));
-    let _ = on_small_stack(wrap(&worst));
-    // Right-nested equal signs and expression-level `let`s.
-    let _ = on_small_stack(wrap(&format!("{}a.x", "let a = ".repeat(4))));
-    let _ = on_small_stack(wrap(&format!("a.x{}", " += a.x".repeat(4))));
+fn comments_between_tokens_cost_nothing() {
+    let hidden = ["/*;*/", "/* /* ; */ ; */", "//;\n", "/*(((((*/"];
+    for h in hidden {
+        let source = wrap(&format!("a.x{}", format!(" +{h} a.y").repeat(N)));
+        assert_eq!(on_small_stack(source).unwrap(), 1, "{h}");
+    }
 }
 
 #[test]
-fn a_semicolon_hidden_in_a_comment_or_literal_does_not_reset_the_limits() {
-    let n = 100_000;
+fn literals_with_hidden_punctuation_are_literals() {
     let hidden = [
-        "/*;*/",
-        "/* /* ; */ ; */",
-        "//;\n",
-        "\"a;\"",
-        "'a'",
-        "';'",
-        "'\\''",
-        "r#\";\"#",
-        "br\"x;\"",
+        "\"a;\"", "'a'", "';'", "'\\''", "r#\";\"#", "br\"x;\"", "\"(((\"",
     ];
     for h in hidden {
-        let body = format!("a.x{}", format!(" +{h} 1").repeat(n));
-        let e = on_small_stack(wrap(&body)).expect_err("must be rejected");
-        assert!(e.message.contains("more than"), "{h}: {e}");
+        let source = wrap(&format!("a.x + {h}"));
+        assert_rejected(source, "only integer literals");
     }
+}
+
+/// Small deterministic generator for the token soups.
+struct Lcg(u64);
+
+impl Lcg {
+    fn below(&mut self, n: usize) -> usize {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((self.0 >> 33) as usize) % n
+    }
+}
+
+#[test]
+fn token_soups_never_panic() {
+    const TOKENS: &[&str] = &[
+        "fn",
+        "let",
+        "p",
+        "a",
+        "b",
+        "x",
+        "y",
+        "z",
+        "Point3",
+        "Sign",
+        "exact",
+        "(",
+        ")",
+        "{",
+        "}",
+        "[",
+        "]",
+        "#",
+        ";",
+        ":",
+        ",",
+        "=",
+        "+",
+        "-",
+        "*",
+        "/",
+        ".",
+        "->",
+        "1",
+        "2",
+        "1.5",
+        "1e3",
+        "0x1F",
+        "99999999999999999999",
+        "3u8",
+        "'a",
+        "'",
+        "\"s\"",
+        "r#\"x\"#",
+        "!",
+        "&",
+        "|",
+        "<",
+        ">",
+        "?",
+        "::",
+        "..",
+        "return",
+        "as",
+        "if",
+        "pub",
+        "self",
+        "\u{e9}",
+        "\u{1F600}",
+        "/*",
+        "*/",
+        "//",
+        "\n",
+        "\\",
+        "$",
+        "@",
+        "~",
+        "^",
+        "%",
+    ];
+    let mut rng = Lcg(0x1234_5678_9abc_def0);
+    let mut sources = Vec::new();
+    for _ in 0..6000 {
+        let len = 1 + rng.below(40);
+        let soup: Vec<&str> = (0..len).map(|_| TOKENS[rng.below(TOKENS.len())]).collect();
+        let soup = soup.join(" ");
+        sources.push(match rng.below(3) {
+            0 => soup,
+            1 => format!("fn p(a: Point3, b: Point3) -> Sign {{ {soup} }}"),
+            _ => format!("fn p(a: Point3) -> Sign {{ let m = a.x; {soup} }}"),
+        });
+    }
+    std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(move || {
+            for source in &sources {
+                let _ = parse(source, "t.pred");
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }
 
 #[test]
@@ -396,7 +494,7 @@ fn brackets_hidden_in_comments_and_literals_do_not_count_but_real_ones_do() {
         ")".repeat(n)
     );
     let e = rejected(&source);
-    assert!(e.message.contains("nested more than 16 deep"), "{e}");
+    assert!(e.message.contains("nested more than 32 deep"), "{e}");
     for source in ["(".repeat(n), "[".repeat(n), "{".repeat(n)] {
         assert!(parse(&source, "t.pred").is_err());
     }
@@ -404,12 +502,6 @@ fn brackets_hidden_in_comments_and_literals_do_not_count_but_real_ones_do() {
     for source in ["/* /* */", "\"abc\\", "'\\", "r##\"abc\"#", "fn p() { 'a"] {
         assert!(parse(source, "t.pred").is_err(), "{source}");
     }
-}
-
-#[test]
-fn a_flat_sum_of_150_terms_is_accepted() {
-    let sum = vec!["a.x * a.y"; 150].join(" + ");
-    assert!(on_small_stack(wrap(&sum)).is_ok());
 }
 
 /// A definition with the shape of an in-sphere predicate: five points, rows of
