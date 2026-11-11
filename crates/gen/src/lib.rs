@@ -29,11 +29,22 @@
 //! from differences of one coordinate of two points, combined by sums of terms
 //! of equal degree and by products, and returns it as a [`DiffGraph`] with the
 //! degree of every node.
+//!
+//! [`filter_bound`] derives, in exact arithmetic, the error bound of
+//! evaluating a [`DiffGraph`] in `f64`: with `D` the largest computed
+//! difference plus the two largest errors of the points, and `E` the sum of
+//! those two errors, the computed value differs from the exact one by at most
+//! `(epsilon * D + kappa * E) * D^(k - 1)`, where `k` is the degree.
+//! [`FilterBound::constants`] gives `epsilon` and `kappa` rounded up to `f64`,
+//! and the range of `D`, between two powers of two, in which overflow and
+//! underflow cannot invalidate the bound.
 
 #![forbid(unsafe_code)]
 
+mod bound;
 mod cursor;
 mod differences;
+mod dyadic;
 mod error;
 mod expr;
 mod graph;
@@ -41,6 +52,7 @@ mod limits;
 mod parse;
 mod polynomial;
 
+pub use bound::{FilterBound, FilterConstants, filter_bound};
 pub use differences::{DiffGraph, DiffNode, difference_graph};
 pub use error::Error;
 pub use graph::{Graph, Node, NodeId};
