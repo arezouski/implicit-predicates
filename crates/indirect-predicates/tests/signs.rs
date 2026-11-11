@@ -4,7 +4,7 @@
 mod common;
 
 use common::generated::exact;
-use common::{Points, STAGES, all_finite, all_in_range, edges, orient3d, refs};
+use common::{Points, STAGES, all_finite, all_in_range, edges, first_deciding, orient3d, refs};
 use indirect_predicates::Sign;
 use indirect_predicates::stages::orient3d as stages;
 use indirect_predicates_oracle::Dyadic;
@@ -109,15 +109,29 @@ proptest! {
     #[test]
     fn none_only_outside_the_documented_range(families in families()) {
         for (family, p) in families {
-            // The chain ends with `expansions_untranslated`, which decides
+            // The chain ends with the two expansion stages, which decide
             // exactly when every coordinate is zero or has a magnitude in
-            // `UNTRANSLATED_RANGE`; outside it only the filter and the exact
+            // their range; outside both only the filter and the exact
             // differences can decide.
+            let translated = all_in_range(&p, stages::TRANSLATED_RANGE);
             let inside = all_in_range(&p, stages::UNTRANSLATED_RANGE);
             let earlier = stages::filter(refs(&p), 0.0)
                 .or_else(|| stages::exact_differences(refs(&p)));
             let result = orient3d(&p);
-            prop_assert_eq!(result.is_some(), inside || earlier.is_some(), "{} {:?}", family, p);
+            prop_assert_eq!(
+                result.is_some(),
+                earlier.is_some() || translated || inside,
+                "{} {:?}",
+                family,
+                p
+            );
+            prop_assert_eq!(
+                stages::expansions_translated(refs(&p)).is_some(),
+                translated,
+                "{} {:?}",
+                family,
+                p
+            );
             prop_assert_eq!(
                 stages::expansions_untranslated(refs(&p)).is_some(),
                 inside,
@@ -132,6 +146,19 @@ proptest! {
                 prop_assert!(all_finite(&p));
                 prop_assert!(result.is_some(), "{} {:?}", family, p);
             }
+        }
+    }
+
+    #[test]
+    fn the_first_stage_that_decides_gives_the_result_of_the_chain(families in families()) {
+        for (family, p) in families {
+            prop_assert_eq!(
+                first_deciding(&p).map(|(_, sign)| sign),
+                orient3d(&p),
+                "{} {:?}",
+                family,
+                p
+            );
         }
     }
 
@@ -243,4 +270,12 @@ proptest! {
             }
         }
     }
+}
+
+/// The documented range of `orient3d` is the range of the untranslated
+/// stage because it contains the range of the translated one.
+#[test]
+fn the_untranslated_range_contains_the_translated_range() {
+    let (t, u) = (stages::TRANSLATED_RANGE, stages::UNTRANSLATED_RANGE);
+    assert!(u.0 <= t.0 && t.1 <= u.1, "{t:?} {u:?}");
 }

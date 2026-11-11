@@ -64,8 +64,10 @@ For each predicate the generator writes one module with:
 - `exact_differences`, `expansions_translated` and, when there is an
   `#[exact]` form, `expansions_untranslated`: exact evaluations with
   floating-point expansions on stack buffers;
-- `staged`, which runs the filter, then the exact differences, then the
-  stage of the `#[exact]` form (or of the main form when there is none).
+- `staged`, which runs the filter and then the exact stages in the order:
+  differences that are exact, the translated expansion form, then the
+  `#[exact]` form if one is given. The order is the same for every
+  predicate for now.
 
 Each stage returns `None` when it cannot decide.
 

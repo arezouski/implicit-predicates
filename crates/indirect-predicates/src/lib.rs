@@ -43,11 +43,15 @@ pub use indirect_predicates_core::Sign;
 /// # When the result is `None`
 ///
 /// The result is `Some` whenever every nonzero coordinate has a magnitude
-/// between `2^-188` and `2^239` (about `2.5e-57` and `8.8e71`). Outside that
-/// range the sign is still exact when it is returned, but `None` is returned
-/// when no available stage can decide: always when some coordinate is not
-/// finite, and possibly when some magnitude is outside the range. This is
-/// provisional: a later version will decide every finite input.
+/// between `2^-188` and `2^239` (about `2.5e-57` and `8.8e71`): the last
+/// two stages evaluate with expansions, one on coordinates up to `2^238` and
+/// the other on coordinates up to `2^239`, and together they decide every
+/// such input. Outside that range the sign is still exact when it is
+/// returned, but `None` is returned when no stage can decide: always when
+/// some coordinate is not finite, and otherwise only when the
+/// floating-point filter and the stage on exact differences of coordinates
+/// cannot decide either. This is provisional: a later version will decide
+/// every finite input.
 ///
 /// # Examples
 ///

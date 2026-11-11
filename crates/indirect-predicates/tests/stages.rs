@@ -90,3 +90,38 @@ fn the_bound_edge_cases_are_decided_correctly() {
         "{decided} decided, {declined} declined"
     );
 }
+
+/// Every stage gives the same sign when it decides, so the results of
+/// `staged` cannot show the order of its stages. This reads the order from
+/// the generated source instead, and checks that the `CHAIN` of the tests
+/// lists the same stages in the same order.
+#[test]
+fn the_chain_of_the_tests_is_the_order_of_staged() {
+    let source = include_str!("../src/generated/orient3d.rs");
+    let start = source.find("pub fn staged").expect("a staged function");
+    let body = &source[start..];
+    let body = &body[..body.find("\n}").expect("the end of staged")];
+    let mut calls: Vec<(usize, &str)> = common::CHAIN
+        .iter()
+        .map(|(name, _)| {
+            let call = if *name == "filter" {
+                "filter(p, 0.0)"
+            } else {
+                name
+            };
+            let at = body
+                .find(call)
+                .unwrap_or_else(|| panic!("{name} is not in staged: {body}"));
+            (at, *name)
+        })
+        .collect();
+    let listed: Vec<&str> = calls.iter().map(|(_, name)| *name).collect();
+    calls.sort();
+    let ordered: Vec<&str> = calls.iter().map(|(_, name)| *name).collect();
+    assert_eq!(listed, ordered, "{body}");
+    assert_eq!(
+        body.matches("(p)").count() + 1,
+        common::CHAIN.len(),
+        "{body}"
+    );
+}

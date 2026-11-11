@@ -60,11 +60,12 @@ pub struct Generated {
 /// filter and the ranges of its exact stages, and the functions `filter`,
 /// `exact_differences`, `expansions_translated`, `expansions_untranslated`
 /// (only when the predicate has an `#[exact]` form) and `staged`, which runs
-/// the filter, the exact differences and then the stage of the `#[exact]`
-/// form, or of the main form when there is none. The module of its checks
-/// holds `exact`, the main form evaluated with the exact numbers of
-/// `indirect-predicates-oracle`, and `bound_edge_cases`, pairs of inputs at
-/// the edge of the error bound of the filter.
+/// the filter and then the exact stages in the order: differences that are
+/// exact, the translated expansion form, then the `#[exact]` form if one is
+/// given. The order is the same for every predicate for now. The module of
+/// its checks holds `exact`, the main form evaluated with the exact numbers
+/// of `indirect-predicates-oracle`, and `bound_edge_cases`, pairs of inputs
+/// at the edge of the error bound of the filter.
 ///
 /// # Errors
 ///
@@ -123,12 +124,7 @@ fn generate_one(predicate: &Predicate, file: &str) -> Result<Generated, Error> {
     write_constants(&mut out, &forms);
     let uses_max = filter::write_filter(&mut out, &graph, points, constants.degree);
     write_exact_stages(&mut out, predicate, &forms);
-    let last = if forms.untranslated.is_some() {
-        "expansions_untranslated"
-    } else {
-        "expansions_translated"
-    };
-    chain::write_chain(&mut out, points, last);
+    chain::write_chain(&mut out, points, forms.untranslated.is_some());
     if uses_max {
         filter::write_max(&mut out);
     }

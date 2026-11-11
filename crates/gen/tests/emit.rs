@@ -149,11 +149,25 @@ fn a_predicate_without_an_exact_form_has_no_untranslated_stage_and_chains_the_ma
     let translated = body.find("expansions_translated(p)").unwrap();
     assert!(filter < differences && differences < translated, "{body}");
 
+    assert!(!body.contains("expansions_untranslated(p)"), "{body}");
+}
+
+#[test]
+fn the_chain_tries_the_translated_form_before_the_exact_form() {
     let o = generated(ORIENT3D, "predicates/orient3d.pred");
     let staged = &o.stages[o.stages.find("pub fn staged").unwrap()..];
     let body = &staged[..staged.find("\n}").unwrap()];
-    assert!(body.contains("expansions_untranslated(p)"), "{body}");
-    assert!(!body.contains("expansions_translated(p)"), "{body}");
+    let order = [
+        "filter(p, 0.0)",
+        "exact_differences(p)",
+        "expansions_translated(p)",
+        "expansions_untranslated(p)",
+    ]
+    .map(|stage| {
+        body.find(stage)
+            .unwrap_or_else(|| panic!("{stage}: {body}"))
+    });
+    assert!(order.is_sorted(), "{body}");
 }
 
 #[test]

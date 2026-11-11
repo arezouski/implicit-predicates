@@ -3,7 +3,8 @@
 //! overflows nor underflows, on inputs whose coordinates span many binades.
 //!
 //! The run is ignored by default; run it in release mode with
-//! `cargo test -p indirect-predicates-benches --release -- --ignored`.
+//! `cargo test -p indirect-predicates-benches --release -- --ignored
+//! --nocapture`, which also shows the counts it prints.
 
 use indirect_predicates::stages::orient3d::UNTRANSLATED_RANGE;
 use indirect_predicates_benches::Rng;

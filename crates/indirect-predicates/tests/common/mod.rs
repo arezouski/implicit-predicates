@@ -26,6 +26,26 @@ pub const STAGES: [(&str, Stage); 5] = [
     ("staged", stages::staged),
 ];
 
+/// The stages of the chain for explicit points, in the order `staged`
+/// tries them, by name. The tests check that the first of them that decides
+/// gives the result of `staged`, so this list cannot drift from the
+/// generated chain.
+pub const CHAIN: [(&str, Stage); 4] = [
+    ("filter", |p| stages::filter(p, 0.0)),
+    ("exact_differences", stages::exact_differences),
+    ("expansions_translated", stages::expansions_translated),
+    ("expansions_untranslated", stages::expansions_untranslated),
+];
+
+/// The index in [`CHAIN`] of the first stage that decides, and its result;
+/// `None` when no stage decides.
+pub fn first_deciding(p: &Points) -> Option<(usize, Sign)> {
+    CHAIN
+        .iter()
+        .enumerate()
+        .find_map(|(i, (_, stage))| stage(refs(p)).map(|sign| (i, sign)))
+}
+
 /// The points as the stages take them.
 pub fn refs(p: &Points) -> [&[f64; 3]; 4] {
     [&p[0], &p[1], &p[2], &p[3]]

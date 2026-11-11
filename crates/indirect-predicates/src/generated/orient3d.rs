@@ -360,11 +360,13 @@ pub fn expansions_untranslated(p: [&[f64; 3]; 4]) -> Option<Sign> {
 /// decides.
 ///
 /// Runs [`filter`] with `e = 0.0`, then [`exact_differences`], then
-/// [`expansions_untranslated`]. `None` means that no stage can decide.
+/// [`expansions_translated`], then [`expansions_untranslated`]. `None` means
+/// that no stage can decide.
 #[inline]
 pub fn staged(p: [&[f64; 3]; 4]) -> Option<Sign> {
     filter(p, 0.0)
         .or_else(|| exact_differences(p))
+        .or_else(|| expansions_translated(p))
         .or_else(|| expansions_untranslated(p))
 }
 

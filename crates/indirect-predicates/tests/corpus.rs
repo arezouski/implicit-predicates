@@ -10,7 +10,7 @@
 //! The versioned samples are checked by default. The generated corpus is
 //! large and not versioned; its tests are ignored, and are meant to be run
 //! in release mode with `cargo test -p indirect-predicates --release --
-//! --ignored`.
+//! --ignored --nocapture`, which also shows the counts they print.
 
 mod common;
 
@@ -18,7 +18,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use common::{Points, all_in_range, refs};
+use common::{CHAIN, Points, all_in_range, first_deciding};
 use indirect_predicates::Sign;
 use indirect_predicates::stages::orient3d as stages;
 use indirect_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
@@ -137,6 +137,25 @@ fn orient3d_matches_the_recorded_sign_on_the_samples() {
 }
 
 #[test]
+fn the_first_stage_that_decides_gives_the_result_of_the_chain_on_the_samples() {
+    for path in corpus_files(&samples_dir()) {
+        let corpus = read(&path);
+        for (index, call) in corpus.calls.iter().enumerate() {
+            let Some(p) = explicit_orient3d(&corpus, call) else {
+                continue;
+            };
+            assert_eq!(
+                first_deciding(&p).map(|(_, sign)| sign),
+                common::orient3d(&p),
+                "{} call {index}: bits {:x?}",
+                corpus.model,
+                bits(&p)
+            );
+        }
+    }
+}
+
+#[test]
 #[ignore = "needs the generated corpus; run in release mode"]
 fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
     let found = sweep(&generated_dir());
@@ -144,15 +163,8 @@ fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
     assert!(found.checked > 0, "no explicit orient3d call in the corpus");
 }
 
-/// The stages of the chain for explicit points, in order, by name.
-const CHAIN: [(&str, common::Stage); 3] = [
-    ("filter", |p| stages::filter(p, 0.0)),
-    ("exact_differences", stages::exact_differences),
-    ("expansions_untranslated", stages::expansions_untranslated),
-];
-
 /// The weight of the explicit `orient3d` calls of the files in `dir` that
-/// each stage of [`CHAIN`] decides, and last of those no stage decides; each
+/// each stage of `CHAIN` decides first, and last of those no stage decides; each
 /// stored call weighs as many calls of the recording run as it stands for.
 fn stage_weights(dir: &Path) -> [f64; CHAIN.len() + 1] {
     let mut decided = [0.0; CHAIN.len() + 1];
@@ -162,10 +174,7 @@ fn stage_weights(dir: &Path) -> [f64; CHAIN.len() + 1] {
             let Some(p) = explicit_orient3d(&corpus, call) else {
                 continue;
             };
-            let stage = CHAIN
-                .iter()
-                .position(|(_, stage)| stage(refs(&p)).is_some())
-                .unwrap_or(CHAIN.len());
+            let stage = first_deciding(&p).map_or(CHAIN.len(), |(i, _)| i);
             decided[stage] += weight;
         }
     }
