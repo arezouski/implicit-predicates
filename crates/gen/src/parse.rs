@@ -86,11 +86,19 @@ struct Form {
 /// nested too deeply names the limit and suggests splitting the expression
 /// with `let`.
 ///
+/// Ordinary comments are skipped. Doc comments (`///`, `//!`, `/** */` and
+/// `/*! */`) are rejected at their position with "doc comments are not
+/// supported in definitions; use `//`", since Rust would read them as
+/// attributes. A predicate is named after a generated module, so its name
+/// must be usable as one: Rust keywords, strict and reserved, `_` and raw
+/// identifiers are rejected.
+///
 /// # Errors
 ///
 /// Returns the first problem found: a token that the grammar of definitions
-/// does not allow, an undefined or redefined name, an
-/// unused parameter, or a misplaced `#[exact]` form.
+/// does not allow, a doc comment, a predicate name that cannot name a
+/// module, an undefined or redefined name, an unused parameter, or a
+/// misplaced `#[exact]` form.
 pub fn parse(source: &str, file: &str) -> Result<Vec<Predicate>, Error> {
     parse_source(source).map_err(|d| Error {
         file: file.to_string(),
@@ -101,7 +109,7 @@ pub fn parse(source: &str, file: &str) -> Result<Vec<Predicate>, Error> {
 }
 
 fn parse_source(source: &str) -> Res<Vec<Predicate>> {
-    limits::check_nesting(source)?;
+    limits::check_text(source)?;
     let tokens: TokenStream = source
         .parse()
         .map_err(|e: LexError| diag(e.span(), e.to_string()))?;
@@ -166,6 +174,18 @@ fn parse_item(cur: &mut Cursor) -> Res<Form> {
         return Err(cur.expected("`fn`"));
     }
     cur.bump();
+    if let Some(TokenTree::Ident(id)) = cur.peek() {
+        let name = id.to_string();
+        if !can_name_a_module(&name) {
+            return Err(diag(
+                id.span(),
+                format!(
+                    "`{name}` cannot be used as the name of a generated module: \
+                     a predicate needs a name that is not a Rust keyword nor a raw identifier"
+                ),
+            ));
+        }
+    }
     let (name, name_span) = parse_name(cur, "a function name")?;
     let (params, spans) = parse_params(cur)?;
     if !(is_punct(cur.peek(), '-') && is_punct(cur.peek_at(1), '>')) {
@@ -204,6 +224,23 @@ fn parse_item(cur: &mut Cursor) -> Res<Form> {
         graph,
         exact,
     })
+}
+
+/// The keywords of Rust, strict and reserved, in every edition up to 2024,
+/// and `_`: none of them can be the name of a module.
+const KEYWORDS: [&str; 53] = [
+    "_", "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+    "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
+    "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true",
+    "type", "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final", "gen",
+    "macro", "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
+];
+
+/// Whether `name` can be the name of the module, and of the file, that the
+/// generator writes for a predicate: an identifier that is not a keyword and
+/// not a raw identifier.
+fn can_name_a_module(name: &str) -> bool {
+    !name.starts_with("r#") && !KEYWORDS.contains(&name)
 }
 
 /// Reads `#[exact]` if it is there and tells whether it was.

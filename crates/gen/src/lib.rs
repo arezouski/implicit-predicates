@@ -25,7 +25,9 @@
 //! and unary), `*`, parentheses, integer literals, the coordinates `p.x`,
 //! `p.y`, `p.z` of a parameter and the names of earlier bindings. A second
 //! function with the same name and parameters, marked `#[exact]`, gives the
-//! form used for exact evaluation. Comments cost nothing.
+//! form used for exact evaluation. Comments cost nothing; doc comments
+//! (`///`, `//!`, `/** */`, `/*! */`) are rejected, and so are predicate
+//! names that cannot name a module, such as keywords.
 //!
 //! The only limit of [`parse`] is the nesting of brackets, at most 32 deep,
 //! which keeps the stack small: sums, products and runs of unary minus are

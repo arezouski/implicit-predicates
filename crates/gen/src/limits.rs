@@ -1,11 +1,16 @@
-//! The one limit on a definition: how deeply brackets may nest.
+//! The checks on the text of a definition before it is lexed: how deeply
+//! brackets may nest, and that it has no doc comments.
 //!
 //! Parenthesized expressions are the only construct the parser recurses on, so
 //! the depth of brackets bounds its stack. The lexer of `proc_macro2` builds
 //! nested token trees, and so does its destructor, so the depth is also
 //! checked on the characters of the source before lexing, with comments and
 //! literals skipped. Every other chain (sums, products, unary minus) is read in
-//! a loop and has no limit apart from memory.
+//! a loop and has no limit in the parser.
+//!
+//! Doc comments are found on the same pass: the lexer turns them into
+//! `#[doc]` attributes, which would otherwise be reported as attributes that
+//! are not allowed, without saying that a comment is the cause.
 
 use crate::error::{Diag, Res};
 
@@ -17,11 +22,15 @@ pub(crate) fn too_deep() -> String {
     format!("brackets are nested more than {MAX_NESTING} deep; split the expression with `let`")
 }
 
-/// Checks that brackets nest at most [`MAX_NESTING`] deep.
+/// The message of the error for a doc comment.
+pub(crate) const DOC_COMMENT: &str = "doc comments are not supported in definitions; use `//`";
+
+/// Checks that brackets nest at most [`MAX_NESTING`] deep and that there is
+/// no doc comment (`///`, `//!`, `/** */` or `/*! */`).
 ///
 /// Comments (including nested block comments), string and character literals
 /// and raw strings are skipped, so brackets inside them do not count.
-pub(crate) fn check_nesting(source: &str) -> Res<()> {
+pub(crate) fn check_text(source: &str) -> Res<()> {
     let chars: Vec<char> = source.chars().collect();
     let (mut i, mut depth) = (0, 0usize);
     let (mut line, mut column) = (1usize, 1usize);
@@ -44,6 +53,13 @@ pub(crate) fn check_nesting(source: &str) -> Res<()> {
             ')' | ']' | '}' => {
                 depth = depth.saturating_sub(1);
                 i += 1;
+            }
+            '/' if matches!(next, Some('/' | '*')) && is_doc_comment(&chars[i..]) => {
+                return Err(Diag {
+                    line,
+                    column,
+                    message: DOC_COMMENT.to_string(),
+                });
             }
             '/' if next == Some('/') => {
                 while i < chars.len() && chars[i] != '\n' {
@@ -72,6 +88,18 @@ pub(crate) fn check_nesting(source: &str) -> Res<()> {
         }
     }
     Ok(())
+}
+
+/// Whether `text`, which starts with `//` or `/*`, starts with a doc
+/// comment, as Rust lexes them: `//!`, `///` but not `////`, `/*!`, and
+/// `/**` but not `/***` or `/**/`.
+fn is_doc_comment(text: &[char]) -> bool {
+    match (text.get(1), text.get(2), text.get(3)) {
+        (_, Some('!'), _) => true,
+        (Some('/'), Some('/'), next) => next != Some(&'/'),
+        (Some('*'), Some('*'), next) => !matches!(next, Some('*' | '/')),
+        _ => false,
+    }
 }
 
 fn is_word(c: char) -> bool {
