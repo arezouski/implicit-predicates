@@ -5,9 +5,10 @@
 //! the versioned sample corpora whose points are all explicit, weighted by
 //! how many calls of the recording run each stored call stands for.
 //!
-//! The contenders are the `robust` and `geometry-predicates` crates and an
-//! unprotected `f64` determinant ([`naive_orient3d`], [`naive_insphere`]),
-//! the cost of the arithmetic a floating-point filter cannot avoid. The
+//! The contenders are `indirect-predicates` (`orient3d` only, so far), the
+//! `robust` and `geometry-predicates` crates and an unprotected `f64`
+//! determinant ([`naive_orient3d`], [`naive_insphere`]), the cost of the
+//! arithmetic a floating-point filter cannot avoid. The
 //! benchmarks call every contender through a function pointer, so the time
 //! of the naive determinant (about 2 ns for orient3d) is mostly the cost of
 //! that call, which is the same for every contender.
@@ -31,8 +32,9 @@ use crate::Rng;
 mod contenders;
 
 pub use contenders::{
-    geometry_insphere_sign, geometry_orient3d_sign, naive_insphere, naive_insphere_sign,
-    naive_orient3d, naive_orient3d_sign, robust_insphere_sign, robust_orient3d_sign,
+    geometry_insphere_sign, geometry_orient3d_sign, indirect_predicates_orient3d_sign,
+    naive_insphere, naive_insphere_sign, naive_orient3d, naive_orient3d_sign, robust_insphere_sign,
+    robust_orient3d_sign,
 };
 
 /// Four points of `orient3d`.

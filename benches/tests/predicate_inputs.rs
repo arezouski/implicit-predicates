@@ -1,10 +1,11 @@
 //! Checks that the predicate benchmark inputs are what the benchmarks claim,
-//! and that the baseline libraries agree with the exact signs on them.
+//! and that the baseline libraries and `indirect-predicates` agree with the
+//! exact signs on them.
 
 use indirect_predicates_benches::predicates::{
     InSphereInput, InputSet, Orient3dInput, SET_SIZE, geometry_insphere_sign,
-    geometry_orient3d_sign, insphere_sets, naive_insphere, naive_orient3d, orient3d_sets,
-    robust_insphere_sign, robust_orient3d_sign,
+    geometry_orient3d_sign, indirect_predicates_orient3d_sign, insphere_sets, naive_insphere,
+    naive_orient3d, orient3d_sets, robust_insphere_sign, robust_orient3d_sign,
 };
 use indirect_predicates_corpus::exact;
 
@@ -104,6 +105,20 @@ fn robust_and_geometry_predicates_match_the_exact_sign_on_every_set() {
     for s in orient3d_sets() {
         for case in &s.cases {
             let exact = exact_orient3d(case);
+            let [a, b, c, d] = case;
+            // The benchmark wrapper expects a decided sign: every case of
+            // every set must be inside the range where the chain decides.
+            assert!(
+                indirect_predicates::orient3d(a, b, c, d).is_some(),
+                "indirect-predicates undecided {}: {case:?}",
+                s.name
+            );
+            assert_eq!(
+                indirect_predicates_orient3d_sign(case),
+                exact,
+                "indirect-predicates {}: {case:?}",
+                s.name
+            );
             assert_eq!(
                 robust_orient3d_sign(case),
                 exact,
@@ -156,4 +171,37 @@ fn naive_determinants_have_the_exact_sign_on_random_inputs() {
             "{case:?}"
         );
     }
+}
+
+#[test]
+fn the_stages_of_orient3d_decide_the_sets_they_are_benchmarked_on() {
+    use indirect_predicates::stages::orient3d as stages;
+    let sets = orient3d_sets();
+    let decided = |name: &str, stage: fn([&[f64; 3]; 4]) -> bool| {
+        let cases = &set(&sets, name).cases;
+        let count = cases
+            .iter()
+            .filter(|c| stage([&c[0], &c[1], &c[2], &c[3]]))
+            .count();
+        (count, cases.len())
+    };
+    let all = |(count, len): (usize, usize)| count == len;
+    assert!(all(decided("random", |p| stages::filter(p, 0.0).is_some())));
+    for name in ["near_degenerate", "degenerate"] {
+        assert!(all(
+            decided(name, |p| stages::expansions_translated(p).is_some())
+        ));
+        assert!(all(
+            decided(name, |p| stages::expansions_untranslated(p).is_some())
+        ));
+    }
+    assert!(all(
+        decided("degenerate", |p| stages::exact_differences(p).is_some())
+    ));
+    // The moved coordinate of `near_degenerate` makes most differences
+    // inexact, so `exact_differences` declines on most of that set.
+    let (count, len) = decided("near_degenerate", |p| {
+        stages::exact_differences(p).is_some()
+    });
+    assert!(10 * count < len, "{count} of {len}");
 }

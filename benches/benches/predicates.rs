@@ -1,5 +1,6 @@
-//! `orient3d` and `insphere` on explicit points: the `robust` and
-//! `geometry-predicates` crates and an unprotected `f64` determinant, over
+//! `orient3d` and `insphere` on explicit points: `indirect-predicates`
+//! (`orient3d` only, so far), the `robust` and `geometry-predicates` crates
+//! and an unprotected `f64` determinant, over
 //! random, nearly degenerate, exactly degenerate and recorded inputs.
 //!
 //! Each measurement is one pass over a whole set; the throughput in elements
@@ -15,8 +16,8 @@ use std::hint::black_box;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use indirect_predicates_benches::predicates::{
     InSphereInput, InputSet, Orient3dInput, geometry_insphere_sign, geometry_orient3d_sign,
-    insphere_sets, naive_insphere_sign, naive_orient3d_sign, orient3d_sets, robust_insphere_sign,
-    robust_orient3d_sign,
+    indirect_predicates_orient3d_sign, insphere_sets, naive_insphere_sign, naive_orient3d_sign,
+    orient3d_sets, robust_insphere_sign, robust_orient3d_sign,
 };
 
 /// A contender: a name and a function from the points of a call to the sign.
@@ -24,6 +25,7 @@ type Contender<T> = (&'static str, fn(&T) -> i8);
 
 /// The `orient3d` contenders.
 const ORIENT3D: &[Contender<Orient3dInput>] = &[
+    ("indirect-predicates", indirect_predicates_orient3d_sign),
     ("robust", robust_orient3d_sign),
     ("geometry-predicates", geometry_orient3d_sign),
     ("naive", naive_orient3d_sign),

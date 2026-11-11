@@ -11,6 +11,7 @@ publish = false
 workspace = true
 
 [dependencies]
+indirect-predicates = { path = "../crates/indirect-predicates" }
 indirect-predicates-core = { path = "../crates/core" }
 indirect-predicates-corpus = { path = "../corpus" }
 geometry-predicates = "0.3.0"
@@ -35,4 +36,8 @@ harness = false
 
 [[bench]]
 name = "predicates"
+harness = false
+
+[[bench]]
+name = "orient3d_stages"
 harness = false

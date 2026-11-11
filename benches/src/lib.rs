@@ -9,11 +9,14 @@
 //! - `det3`: an exact 3x3 determinant built on the arena, over random,
 //!   nearly singular and exactly singular matrices, which shows what the
 //!   fused multiply-add changes in a realistic workload;
-//! - `predicates`: `orient3d` and `insphere` on explicit points, for the
-//!   `robust` and `geometry-predicates` crates and an unprotected `f64`
-//!   determinant, over random, nearly degenerate, exactly degenerate and
-//!   recorded inputs. Adding a contender is adding a row to the table in that
-//!   file.
+//! - `predicates`: `orient3d` and `insphere` on explicit points, for
+//!   `indirect-predicates`, the `robust` and `geometry-predicates` crates and
+//!   an unprotected `f64` determinant, over random, nearly degenerate,
+//!   exactly degenerate and recorded inputs. Adding a contender is adding a
+//!   row to the table in that file;
+//! - `orient3d_stages`: each stage of the generated `orient3d` alone, the
+//!   filter on the random set and the exact stages on the nearly degenerate
+//!   and exactly degenerate sets.
 //!
 //! This library holds the deterministic input builders and the seeds they
 //! use, and the determinant routine, shared by the benchmarks and by the
