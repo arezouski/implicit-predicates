@@ -24,7 +24,7 @@ type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;
 
 /// The measured stages, each with the sets it is measured on.
 const STAGES: &[(&str, Stage, &[&str])] = &[
-    ("filter", |p| orient3d::filter(p, 0.0), &["random"]),
+    ("filter", |p| orient3d::filter(p, [0.0; 3]), &["random"]),
     (
         "exact_differences",
         orient3d::exact_differences,

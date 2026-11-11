@@ -21,7 +21,7 @@ pub type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;
 /// Every stage of the chain with its name, the filter for explicit points;
 /// then the chain itself.
 pub const STAGES: [(&str, Stage); 5] = [
-    ("filter", |p| stages::filter(p, 0.0)),
+    ("filter", |p| stages::filter(p, [0.0; 3])),
     ("exact_differences", stages::exact_differences),
     ("expansions_translated", stages::expansions_translated),
     ("expansions_untranslated", stages::expansions_untranslated),
@@ -33,7 +33,7 @@ pub const STAGES: [(&str, Stage); 5] = [
 /// gives the result of `staged`, so this list cannot drift from the
 /// generated chain.
 pub const CHAIN: [(&str, Stage); 4] = [
-    ("filter", |p| stages::filter(p, 0.0)),
+    ("filter", |p| stages::filter(p, [0.0; 3])),
     ("exact_differences", stages::exact_differences),
     ("expansions_translated", stages::expansions_translated),
     ("expansions_untranslated", stages::expansions_untranslated),

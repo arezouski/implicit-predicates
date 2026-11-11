@@ -2,8 +2,8 @@
 
 use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 use implicit_predicates_gen::{
-    ExactRange, Generated, Leaves, difference_graph, exact_plan_differences, exact_plan_raw,
-    filter_bound, generate, parse,
+    ExactRange, FilterForm, Generated, Leaves, difference_graph, exact_plan_differences,
+    exact_plan_raw, filter_bound, filter_form, generate, parse,
 };
 use proc_macro2::TokenStream;
 
@@ -81,23 +81,50 @@ fn the_output_parses_as_rust() {
     }
 }
 
+/// The literals of an array constant `[a, b, c]`.
+fn array(text: &str) -> Vec<&str> {
+    let inner = text.strip_prefix('[').unwrap().strip_suffix(']').unwrap();
+    inner.split(',').map(str::trim).collect()
+}
+
 #[test]
 fn the_constants_in_the_output_are_the_derived_ones() {
     let g = generated(ORIENT3D, "predicates/orient3d.pred");
     let code = &g.stages;
     let p = parse(ORIENT3D, "t.pred").unwrap().remove(0);
     let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();
-    let constants = filter_bound(&diff, "t.pred", p.position)
+    let FilterForm::PerAxis(bound) = filter_form(&diff, "t.pred", p.position).unwrap() else {
+        panic!("orient3d is multihomogeneous");
+    };
+    let constants = bound.constants();
+    assert_eq!(constant(code, "DEGREES", "[u32; 3]"), "[1, 1, 1]");
+    assert_eq!(constants.degrees, [1, 1, 1]);
+    assert_literal(constant(code, "EPSILON", "f64"), constants.epsilon);
+    let kappa = array(constant(code, "KAPPA", "[f64; 3]"));
+    assert_eq!(kappa.len(), 3);
+    for (text, &value) in kappa.iter().zip(&constants.kappa) {
+        assert_literal(text, value);
+    }
+    assert_literal(constant(code, "D_MIN", "f64"), constants.d_min);
+    assert_literal(constant(code, "D_MAX", "f64"), constants.d_max);
+    // The exact derived values: no numeric test can tell a `KAPPA` of 6
+    // from one of 3, the largest error reachable on one axis.
+    assert!(bound.epsilon_is_u_times(46));
+    for axis in 0..3 {
+        assert!(bound.kappa_is(axis, 6), "axis {axis}");
+        assert!(!bound.kappa_is(axis, 5) && !bound.kappa_is(axis, 7));
+    }
+    assert_eq!(constants.d_min, 2f64.powi(-324));
+    assert_eq!(constants.d_max, 2f64.powi(339));
+    // The same range and epsilon as the global form of the same graph.
+    let global = filter_bound(&diff, "t.pred", p.position)
         .unwrap()
         .constants();
     assert_eq!(
-        constant(code, "DEGREE", "u32"),
-        constants.degree.to_string()
+        (global.d_min, global.d_max),
+        (constants.d_min, constants.d_max)
     );
-    assert_literal(constant(code, "EPSILON", "f64"), constants.epsilon);
-    assert_literal(constant(code, "KAPPA", "f64"), constants.kappa);
-    assert_literal(constant(code, "D_MIN", "f64"), constants.d_min);
-    assert_literal(constant(code, "D_MAX", "f64"), constants.d_max);
+    assert_eq!(global.epsilon, constants.epsilon);
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
     let one = exact_plan_differences(&diff, Leaves::One, "t.pred", p.position, min, max).unwrap();
     let two = exact_plan_differences(&diff, Leaves::Two, "t.pred", p.position, min, max).unwrap();
@@ -113,11 +140,29 @@ fn the_constants_in_the_output_are_the_derived_ones() {
     assert_range(code, "TRANSLATED_RANGE", two.range);
     assert_range(code, "UNTRANSLATED_RANGE", raw.range);
     // The values themselves, as derived for orient3d.
-    assert_eq!(constants.degree, 3);
     assert_eq!(one.range.min, 2f64.powi(-188));
     assert_eq!(one.range.max, 2f64.powi(239));
     assert_eq!(two.range.max, 2f64.powi(238));
     assert_eq!(raw.range.max, 2f64.powi(239));
+}
+
+#[test]
+fn the_constants_of_a_global_filter_are_the_derived_ones() {
+    let g = generated(INSPHERE, "predicates/insphere.pred");
+    let code = &g.stages;
+    let p = parse(INSPHERE, "t.pred").unwrap().remove(0);
+    let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();
+    let FilterForm::Global(bound) = filter_form(&diff, "t.pred", p.position).unwrap() else {
+        panic!("in-sphere is not multihomogeneous");
+    };
+    let constants = bound.constants();
+    assert_eq!(constant(code, "DEGREE", "u32"), "5");
+    assert_literal(constant(code, "EPSILON", "f64"), constants.epsilon);
+    assert_literal(constant(code, "KAPPA", "f64"), constants.kappa);
+    assert_literal(constant(code, "D_MIN", "f64"), constants.d_min);
+    assert_literal(constant(code, "D_MAX", "f64"), constants.d_max);
+    assert!(bound.kappa_is(360));
+    assert!(!code.contains("DEGREES"));
 }
 
 #[test]
@@ -155,7 +200,7 @@ fn the_chain_tries_the_translated_form_before_the_exact_form() {
     let staged = &o.stages[o.stages.find("pub fn staged").unwrap()..];
     let body = &staged[..staged.find("\n}").unwrap()];
     let order = [
-        "filter(p, 0.0)",
+        "filter(p, [0.0; 3])",
         "exact_differences(p)",
         "expansions_translated(p)",
         "expansions_untranslated(p)",

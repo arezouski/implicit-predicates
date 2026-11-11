@@ -2,21 +2,25 @@
 //! decides with the uncertainty `e` of the approximations, its sign is the
 //! exact sign at the true points.
 //!
-//! These tests guard the term `KAPPA * E` of the error bound. Random offsets
-//! rarely come close to the worst case, so the approximations are also
-//! pushed to the corner of their error boxes that moves the determinant
-//! furthest from its true value, following the signs of its exact partial
-//! derivatives.
+//! These tests guard the terms `KAPPA[k] * e[k]` of the error bound, with
+//! the same uncertainty `E` on every axis, the sum of the two largest
+//! errors of the points, each an upper bound on the error of every
+//! coordinate of its point. Random offsets rarely come close to the worst
+//! case, so the approximations are also pushed to the corner of their error
+//! boxes that moves the determinant furthest from its true value, following
+//! the signs of its exact partial derivatives.
 //!
 //! To first order, an approximation within errors whose two largest add up
 //! to `E` moves the determinant by at most `c * E * D^2`, where `D` is the
 //! scale of the differences. The largest coefficient `c` attainable for this
 //! predicate is 9, reached by the extremal coplanar configuration of
 //! `the_extremal_coplanar_configuration_is_not_decided` (a search over
-//! 400,000 variants of it found none larger), while the derived constant
-//! `KAPPA` is 18. Tests can catch a `KAPPA` below 9, but no test can tell
-//! apart values between 9 and 18: that interval is the slack of the
-//! derivation, which bounds every cofactor separately.
+//! 400,000 variants of it found none larger), 3 on each axis, while the
+//! derived constants `KAPPA[k]` are 6 on each axis, 18 together. Tests can
+//! catch a `KAPPA` below 9 in total, but no test can tell apart values
+//! between 9 and 18: that interval is the slack of the derivation, which
+//! bounds every cofactor separately. The constants themselves are compared
+//! with their exact derived values in `filter.rs`.
 
 mod common;
 
@@ -91,7 +95,7 @@ fn errors(error: f64, spread: Spread) -> [f64; 4] {
 /// exact sign at `truth`.
 fn check(truth: &Points, approximation: &Points, e: f64) -> Result<(), TestCaseError> {
     let expected = exact(truth);
-    let result = stages::filter(refs(approximation), e);
+    let result = stages::filter(refs(approximation), [e; 3]);
     if let Some(sign) = result {
         prop_assert_eq!(
             sign,
@@ -102,8 +106,9 @@ fn check(truth: &Points, approximation: &Points, e: f64) -> Result<(), TestCaseE
             truth
         );
     }
-    if expected == Sign::Zero {
-        prop_assert_eq!(result, None, "{:?} e = {:e}", approximation, e);
+    // A zero is decided only on a flat axis, which needs `e = 0`.
+    if result == Some(Sign::Zero) {
+        prop_assert_eq!(e, 0.0, "{:?}", approximation);
     }
     Ok(())
 }
@@ -202,7 +207,7 @@ proptest! {
         let approximation = approximation.unwrap();
         prop_assert_eq!(exact(&approximation), -sign, "{:?}", approximation);
         prop_assert_eq!(
-            stages::filter(refs(&approximation), e),
+            stages::filter(refs(&approximation), [e; 3]),
             None,
             "{:?} e = {:e}, truth {:?}",
             approximation,
@@ -241,7 +246,8 @@ fn the_partial_derivatives_are_exact() {
 fn the_coplanar_truth_pushed_to_its_box_corners_is_not_decided() {
     // Exactly coplanar points; every coordinate moved by 2^-30 towards the
     // corner of its box that follows the partial derivative, and `e` the
-    // sum of two such errors. A `KAPPA` of 4 decides this case, wrongly.
+    // sum of two such errors. `KAPPA[k]` adding up to 4 decide this case,
+    // wrongly.
     let truth = [
         [-2.0, 3.0, 0.0],
         [-2.0, -4.0, 5.0],
@@ -254,7 +260,7 @@ fn the_coplanar_truth_pushed_to_its_box_corners_is_not_decided() {
         let approximation = pushed(&truth, [error; 4], direction).unwrap();
         assert_ne!(exact(&approximation), Sign::Zero);
         assert_eq!(
-            stages::filter(refs(&approximation), 2.0 * error),
+            stages::filter(refs(&approximation), [2.0 * error; 3]),
             None,
             "{approximation:?}"
         );
@@ -276,7 +282,7 @@ fn the_filter_decides_clear_cases_with_small_uncertainty() {
         let expected = exact(truth);
         for direction in [1, -1] {
             let approximation = pushed(truth, [error; 4], direction).unwrap();
-            if let Some(sign) = stages::filter(refs(&approximation), 2.0 * error) {
+            if let Some(sign) = stages::filter(refs(&approximation), [2.0 * error; 3]) {
                 assert_eq!(sign, expected, "{approximation:?}");
                 decided += 1;
             }
@@ -290,12 +296,13 @@ fn the_filter_decides_clear_cases_with_small_uncertainty() {
 }
 
 /// The extremal coplanar configuration, pushed to the corners of equal error
-/// boxes, must never be decided: with `KAPPA` below 9 the filter would give
-/// it a sign, which is wrong since the true points are coplanar.
+/// boxes, must never be decided: with the `KAPPA[k]` adding up to less than
+/// 9 the filter would give it a sign, which is wrong since the true points
+/// are coplanar.
 ///
 /// The attainable first-order coefficient for this predicate is 9, reached
-/// here; the derived `KAPPA` is 18, and no test can distinguish values
-/// between 9 and 18, the slack of the derivation. The variants cover scales
+/// here; the derived `KAPPA[k]` add up to 18, and no test can distinguish
+/// values between 9 and 18, the slack of the derivation. The variants cover scales
 /// over the whole range of the filter, with and without a power-of-two
 /// scale, translations, the negation of any subset of the axes, every
 /// permutation of the roles of `a`, `b` and `c` and of the axes, both push
@@ -328,7 +335,7 @@ fn the_extremal_coplanar_configuration_is_not_decided() {
                                 assert!(approximation.is_some(), "an inexact move of {truth:?}");
                                 let approximation = approximation.unwrap();
                                 assert_eq!(
-                                    stages::filter(refs(&approximation), e),
+                                    stages::filter(refs(&approximation), [e; 3]),
                                     None,
                                     "{approximation:?} e = {e:e}, truth {truth:?}"
                                 );
@@ -382,12 +389,12 @@ fn a_subnormal_uncertainty_is_handled() {
             for errors in error_sets {
                 let e = uncertainty(errors);
                 assert!(e > 0.0 && e < f64::MIN_POSITIVE, "{e:e}");
-                let Some(sign) = stages::filter(refs(&approximation), e) else {
+                let Some(sign) = stages::filter(refs(&approximation), [e; 3]) else {
                     continue;
                 };
                 decided += 1;
                 clear += usize::from(exponent == 0 && index < random.len());
-                for truth in exact_corners(&approximation, errors) {
+                for truth in exact_corners(&approximation, errors.map(|error| [error; 3])) {
                     let expected = match determinant_at(&truth).sign() {
                         -1 => Sign::Negative,
                         0 => Sign::Zero,

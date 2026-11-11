@@ -1,10 +1,13 @@
 //! Every stage of `orient3d`, alone, against the exact sign, and the cases
-//! at the edge of the error bound of the filter.
+//! at the edge of the error bound of the filter, without and with an
+//! uncertainty.
 
 mod common;
 
+use common::boxes::{determinant_at, exact_corners};
 use common::generated::exact;
 use common::{Points, STAGES, all_in_range, edges, generated, orient3d, refs};
+use implicit_predicates::Sign;
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates_test_support::{
     config, coplanar4, extreme4, grid4, near_coplanar4, random4, repeated4, signed_zeros4,
@@ -68,7 +71,7 @@ fn the_bound_edge_cases_are_decided_correctly() {
     let (mut decided, mut declined) = (0, 0);
     for p in &cases {
         let expected = exact(p);
-        match stages::filter(refs(p), 0.0) {
+        match stages::filter(refs(p), [0.0; 3]) {
             Some(sign) => {
                 assert_eq!(sign, expected, "filter on {p:?}");
                 decided += 1;
@@ -91,6 +94,51 @@ fn the_bound_edge_cases_are_decided_correctly() {
     );
 }
 
+#[test]
+fn the_uncertainty_edge_cases_are_decided_correctly() {
+    let cases = generated::uncertainty_edge_cases();
+    // Counted by where `e` is not zero: on x, y or z alone, or on all three;
+    // then decided or declined.
+    let mut counts = [[0usize; 2]; 4];
+    for (p, e) in &cases {
+        let kind = match e.map(|x| x > 0.0) {
+            [true, false, false] => 0,
+            [false, true, false] => 1,
+            [false, false, true] => 2,
+            [true, true, true] => 3,
+            _ => panic!("e = {e:?}"),
+        };
+        match stages::filter(refs(p), *e) {
+            Some(sign) => {
+                assert_ne!(sign, Sign::Zero, "{p:?} e = {e:?}");
+                assert_eq!(sign, exact(p), "{p:?} e = {e:?}");
+                // `e[k]` bounds the sum of the two largest errors on axis
+                // `k`, so each point may be off by half of it: the sign holds
+                // at the corners of those boxes.
+                let half = [[e[0] / 2.0, e[1] / 2.0, e[2] / 2.0]; 4];
+                for truth in exact_corners(p, half) {
+                    let expected = match determinant_at(&truth).sign() {
+                        -1 => Sign::Negative,
+                        0 => Sign::Zero,
+                        _ => Sign::Positive,
+                    };
+                    assert_eq!(sign, expected, "{p:?} e = {e:?}");
+                }
+                counts[kind][0] += 1;
+            }
+            None => counts[kind][1] += 1,
+        }
+    }
+    // The cases straddle the bound in every kind: the filter decides some,
+    // not all.
+    for (kind, [decided, declined]) in counts.iter().enumerate() {
+        assert!(
+            *decided > 0 && *declined > 0,
+            "kind {kind}: {decided} decided, {declined} declined"
+        );
+    }
+}
+
 /// Every stage gives the same sign when it decides, so the results of
 /// `staged` cannot show the order of its stages. This reads the order from
 /// the generated source instead, and checks that the `CHAIN` of the tests
@@ -105,7 +153,7 @@ fn the_chain_of_the_tests_is_the_order_of_staged() {
         .iter()
         .map(|(name, _)| {
             let call = if *name == "filter" {
-                "filter(p, 0.0)"
+                "filter(p, [0.0; 3])"
             } else {
                 name
             };

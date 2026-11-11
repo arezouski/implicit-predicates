@@ -155,11 +155,12 @@ pub fn scale_of(p: &ExactPoints, e: f64) -> Dyadic {
     &delta + &Dyadic::from_f64(e)
 }
 
-/// The true points to try for an approximation `p` within `errors`: `p`
-/// itself and the two corners of the boxes that move the determinant
-/// furthest each way, with exact coordinates, since a subnormal move of a
-/// normal coordinate is not an `f64`.
-pub fn exact_corners(p: &Points, errors: [f64; 4]) -> Vec<ExactPoints> {
+/// The true points to try for an approximation `p` within `errors`, the
+/// error of each coordinate of each point: `p` itself and the two corners
+/// of the boxes that move the determinant furthest each way, with exact
+/// coordinates, since a subnormal move of a normal coordinate is not an
+/// `f64`.
+pub fn exact_corners(p: &Points, errors: [[f64; 3]; 4]) -> Vec<ExactPoints> {
     let center = exact_points(p);
     let d = partials_at(&center);
     let mut truths = vec![center.clone()];
@@ -167,7 +168,7 @@ pub fn exact_corners(p: &Points, errors: [f64; 4]) -> Vec<ExactPoints> {
         let mut corner = center.clone();
         for i in 0..4 {
             for axis in 0..3 {
-                let offset = &Dyadic::from_f64(errors[i])
+                let offset = &Dyadic::from_f64(errors[i][axis])
                     * &Dyadic::from_f64(f64::from(push_sign(&d[i][axis], direction)));
                 corner[i][axis] = &center[i][axis] + &offset;
             }

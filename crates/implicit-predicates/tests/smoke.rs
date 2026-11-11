@@ -7,7 +7,7 @@ type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;
 
 /// Every stage of the chain, with its name; the filter for explicit points.
 const STAGES: [(&str, Stage); 5] = [
-    ("filter", |p| stages::filter(p, 0.0)),
+    ("filter", |p| stages::filter(p, [0.0; 3])),
     ("exact_differences", stages::exact_differences),
     ("expansions_translated", stages::expansions_translated),
     ("expansions_untranslated", stages::expansions_untranslated),
@@ -42,7 +42,8 @@ fn swapping_two_points_negates() {
 
 #[test]
 fn coplanar_points_are_zero() {
-    // All four on the plane x + y + z = 1; the filter cannot decide a zero.
+    // All four on the plane x + y + z = 1; with no flat axis, the filter
+    // cannot decide the zero.
     let a = [0.125, 0.375, 0.5];
     let b = [0.5, 0.25, 0.25];
     let c = [1.0, -0.5, 0.5];
@@ -76,7 +77,7 @@ fn each_stage_agrees_on_a_grid_case() {
     // d = b + c - a lies on the plane through a, b and c: every exact stage
     // gives zero, and the filter abstains.
     let d = [0.0, -2.0, 3.0];
-    assert_eq!(stages::filter([&a, &b, &c, &d], 0.0), None);
+    assert_eq!(stages::filter([&a, &b, &c, &d], [0.0; 3]), None);
     for (name, stage) in STAGES.into_iter().skip(1) {
         assert_eq!(stage([&a, &b, &c, &d]), Some(Sign::Zero), "{name}");
     }
@@ -109,7 +110,7 @@ fn non_finite_input_is_none() {
     // A non-finite error bound makes the filter abstain.
     let [a, b, c, d] = &points;
     for e in [f64::NAN, f64::INFINITY] {
-        assert_eq!(stages::filter([a, b, c, d], e), None);
+        assert_eq!(stages::filter([a, b, c, d], [e; 3]), None);
     }
 }
 

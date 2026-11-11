@@ -3,6 +3,8 @@
 //! operation count its constants allow for; the checks have the value of the
 //! source polynomial too, and their cases straddle the bound of the filter.
 
+mod axis;
+mod axis_edges;
 mod readback;
 
 use std::collections::BTreeMap;
@@ -10,7 +12,7 @@ use std::collections::BTreeMap;
 use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 
 use super::edges::bound_edge_cases;
-use super::filter::{bound_operations, bound_rounding_factors, bound_statements, write_filter};
+use super::filter::{FilterKind, bound_operations, bound_rounding_factors, bound_statements};
 use super::program::{Program, Scalar, Step};
 use crate::bound::filter_bound;
 use crate::differences::{DiffGraph, DiffNode, difference_graph};
@@ -218,21 +220,6 @@ fn a_product_of_two_short_expansions_is_a_sum_of_scalings() {
 }
 
 #[test]
-fn the_filter_has_the_value_of_the_source_polynomial() {
-    for p in predicates() {
-        let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();
-        let mut code = String::new();
-        write_filter(&mut code, &diff, p.params.len(), diff.degrees[diff.root]);
-        assert_eq!(
-            expand(&interpret_statements(&code, "p")),
-            expand(&p.main),
-            "{}",
-            p.name
-        );
-    }
-}
-
-#[test]
 fn the_filter_bound_has_at_most_2k_plus_8_rounding_factors() {
     for degree in [1, 2, 3, 5, 9, 1022] {
         let statements = bound_statements(degree);
@@ -336,13 +323,14 @@ fn value_at(graph: &Graph, p: &[[f64; 3]]) -> Dyadic {
 
 #[test]
 fn the_bound_edge_cases_straddle_the_bound() {
-    for source in [ORIENT3D, INSPHERE] {
+    // The global form; the per-axis one is checked in `axis`.
+    for source in [INSPHERE] {
         let p = parse(source, "t.pred").unwrap().remove(0);
         let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();
         let constants = filter_bound(&diff, "t.pred", p.position)
             .unwrap()
             .constants();
-        let cases = bound_edge_cases(&diff, p.params.len(), &constants);
+        let cases = bound_edge_cases(&diff, p.params.len(), &FilterKind::Global(constants));
         assert!(cases.len() >= 32, "{}: {} pairs", p.name, cases.len());
         // `|value| > EPSILON * delta^k`, with `delta` the largest difference
         // of coordinates of the form, computed in `f64` as the filter does.

@@ -186,7 +186,9 @@ fn the_stages_of_orient3d_decide_the_sets_they_are_benchmarked_on() {
         (count, cases.len())
     };
     let all = |(count, len): (usize, usize)| count == len;
-    assert!(all(decided("random", |p| stages::filter(p, 0.0).is_some())));
+    assert!(all(
+        decided("random", |p| stages::filter(p, [0.0; 3]).is_some())
+    ));
     for name in ["near_degenerate", "degenerate"] {
         assert!(all(
             decided(name, |p| stages::expansions_translated(p).is_some())

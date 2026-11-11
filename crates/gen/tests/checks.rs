@@ -23,9 +23,12 @@ fn generated(source: &str, file: &str) -> Generated {
 
 /// The hexadecimal literals of the table of bound-edge cases.
 fn case_literals(checks: &str) -> Vec<&str> {
-    let start = checks
-        .find("const BOUND_EDGE_CASES")
-        .expect("a table of cases");
+    table_literals(checks, "const BOUND_EDGE_CASES")
+}
+
+/// The hexadecimal literals of the table that starts with `name`.
+fn table_literals<'a>(checks: &'a str, name: &str) -> Vec<&'a str> {
+    let start = checks.find(name).expect("a table of cases");
     let table = &checks[start..];
     let table = &table[table.find('=').unwrap()..table.find(";\n").unwrap()];
     table
@@ -82,4 +85,28 @@ fn generation_of_checks_is_deterministic() {
         let second = generated(source, file);
         assert_eq!(first.checks, second.checks, "{file}");
     }
+}
+
+#[test]
+fn edge_cases_with_uncertainty_are_emitted_for_a_per_axis_filter_only() {
+    let g = generated(ORIENT3D, "predicates/orient3d.pred");
+    assert!(
+        g.checks
+            .contains("pub fn uncertainty_edge_cases() -> Vec<([[f64; 3]; 4], [f64; 3])> {"),
+        "{}",
+        g.checks
+    );
+    let literals = table_literals(&g.checks, "const UNCERTAINTY_EDGE_CASES");
+    // Four points and the uncertainty of each axis per case.
+    assert_eq!(literals.len() % (3 * 4 + 3), 0);
+    let cases = literals.len() / (3 * 4 + 3);
+    assert!(cases >= 64, "{cases} cases");
+    assert_eq!(cases % 2, 0);
+    for literal in literals {
+        let digits = literal.strip_prefix("0x").unwrap().replace('_', "");
+        let x = f64::from_bits(u64::from_str_radix(&digits, 16).unwrap());
+        assert!(x.is_finite(), "{literal}");
+    }
+    let s = generated(INSPHERE, "predicates/insphere.pred");
+    assert!(!s.checks.contains("uncertainty_edge_cases"));
 }

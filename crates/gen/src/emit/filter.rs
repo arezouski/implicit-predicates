@@ -1,4 +1,6 @@
-//! The floating-point filter of a predicate.
+//! The floating-point filter of a predicate in its global form, with one
+//! size and one uncertainty for all the axes, for a form that is not
+//! multihomogeneous; [`super::filter_axis`] writes the per-axis form.
 //!
 //! The emitted `filter` evaluates the difference form in `f64` and returns
 //! its sign when the error bound derived by [`crate::filter_bound`] proves
@@ -71,10 +73,76 @@
 
 use std::fmt::Write;
 
-use super::comment;
 use super::statements::{node_name, node_statements};
+use super::{comment, literal, power_of_two};
+use crate::bound::{AxisConstants, FilterConstants};
 use crate::differences::{DiffGraph, DiffNode};
 use crate::graph::NodeId;
+
+/// The form of the filter of a predicate, with the constants it emits.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum FilterKind {
+    /// One size and one uncertainty for all the axes, written by this
+    /// module.
+    Global(FilterConstants),
+    /// One size and one uncertainty per axis, written by
+    /// [`super::filter_axis`], and whether the certain zero applies.
+    PerAxis(AxisConstants, bool),
+}
+
+/// Writes the constants of the global filter.
+pub(crate) fn write_constants(out: &mut String, c: &FilterConstants) {
+    let constant = |out: &mut String, doc: &str, name: &str, ty: &str, value: String| {
+        comment(out, "///", 0, doc);
+        writeln!(out, "pub const {name}: {ty} = {value};\n").unwrap();
+    };
+    constant(
+        out,
+        "The degree `k` of the predicate in the differences of coordinates.",
+        "DEGREE",
+        "u32",
+        c.degree.to_string(),
+    );
+    constant(
+        out,
+        "The coefficient of `D^k` in the error bound of [`filter`], \
+         `(EPSILON * D + KAPPA * E) * D^(k - 1)`, rounded up. `E` is the `e` given to \
+         the filter and `D` is `E` plus the largest magnitude of a difference of \
+         coordinates.",
+        "EPSILON",
+        "f64",
+        literal(c.epsilon),
+    );
+    constant(
+        out,
+        "The coefficient of `E * D^(k - 1)` in the error bound of [`filter`], rounded up.",
+        "KAPPA",
+        "f64",
+        literal(c.kappa),
+    );
+    constant(
+        out,
+        &format!(
+            "The smallest `D` for which [`filter`] decides, `2^{}`: below it, underflow \
+             could exceed the error bound.",
+            power_of_two(c.d_min)
+        ),
+        "D_MIN",
+        "f64",
+        literal(c.d_min),
+    );
+    constant(
+        out,
+        &format!(
+            "The largest `D` for which [`filter`] decides, `2^{}`: above it, a computed \
+             value could overflow.",
+            power_of_two(c.d_max)
+        ),
+        "D_MAX",
+        "f64",
+        literal(c.d_max),
+    );
+}
 
 /// The number of `f64` operations in [`bound_statements`] for a filter of
 /// degree `degree`: `d`, `EPSILON * d`, `KAPPA * e`, their sum, and the

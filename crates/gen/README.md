@@ -90,10 +90,17 @@ message`.
 
 For each predicate the generator writes one module with:
 
-- the constants of the filter (`DEGREE`, `EPSILON`, `KAPPA`, `D_MIN`,
-  `D_MAX`) and the ranges of the exact stages (`DIFFERENCES_RANGE`,
-  `TRANSLATED_RANGE`, `UNTRANSLATED_RANGE`);
-- `filter`, the main form evaluated in `f64` with its error bound;
+- the constants of the filter and the ranges of the exact stages
+  (`DIFFERENCES_RANGE`, `TRANSLATED_RANGE`, `UNTRANSLATED_RANGE`);
+- `filter`, the main form evaluated in `f64` with its error bound. When
+  every term of the main form has the same degree in the differences of
+  each axis, as for an orientation, the bound has one size and one
+  uncertainty per axis: the constants are `DEGREES`, `EPSILON`, `KAPPA` (one
+  per axis), `D_MIN` and `D_MAX`, the filter takes `e: [f64; 3]`, and it
+  returns `Some(Sign::Zero)` when some axis is flat and every term has
+  positive degree in it. Otherwise the bound is global: the constants are
+  `DEGREE`, `EPSILON`, `KAPPA`, `D_MIN` and `D_MAX`, and the filter takes
+  `e: f64`;
 - `exact_differences`, `expansions_translated` and, when there is an
   `#[exact]` form, `expansions_untranslated`: exact evaluations with
   floating-point expansions on stack buffers;
@@ -109,9 +116,14 @@ For the tests of each predicate it writes a second module, of checks, with:
 - `exact`, the main form evaluated with the exact dyadic numbers of
   `implicit-predicates-oracle`, the reference the stages are tested against;
 - `bound_edge_cases`, pairs of inputs on either side of the error bound of
-  the filter, one representable value apart in one coordinate, built with
-  exact arithmetic from points on a grid at scales from just above `D_MIN`
-  to just below `D_MAX`, and written as bit patterns.
+  the filter for explicit points, one representable value apart in one
+  coordinate, built with exact arithmetic from points on a grid at scales
+  from just above `D_MIN` to just below `D_MAX`, and written as bit
+  patterns;
+- for a filter with one uncertainty per axis, `uncertainty_edge_cases`,
+  pairs built in the same way on either side of its bound with an
+  uncertainty that is not zero on one axis, for each axis, or on all of
+  them, given with each pair.
 
 Generated files start with a header saying that they must not be edited
 and giving the command that regenerates them.

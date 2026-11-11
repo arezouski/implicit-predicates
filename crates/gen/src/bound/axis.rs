@@ -80,7 +80,9 @@
 //!   on each axis `delta_k + E_k <= D_k <= d_max / (1 - u)`, so it is at most
 //!   `c_x * 2^(j_max |g_x|) * (1 - u)^-|g_x| <= 2^1022 * (1 - u)^-1022`, below
 //!   `2^1023`: no node overflows. An overflow in the evaluation of the bound
-//!   gives an infinite bound, which only makes the filter abstain.
+//!   gives an infinite bound, or a NaN one when an infinite partial product
+//!   is then multiplied by an `E_k` of zero; either only makes the filter
+//!   abstain, since it decides on `|value| > bound`, false for both.
 //! - Underflow of the form. A sum or difference whose result is subnormal is
 //!   exact; a product that underflows errs by at most `2^-1075` in absolute
 //!   terms; allow `2^-1074`. As in the global form, that error reaches the
@@ -197,8 +199,9 @@ pub(crate) struct AxisNode {
 /// proof), the `f64` value of the form differs from the exact value at the
 /// exact points by at most
 /// `epsilon * D^G + sum over k of kappa_k * E_k * D^(G - e_k)`, where `G` is
-/// [`AxisBound::degrees`], while every `D_k` of an axis of positive degree is
-/// in the range of [`AxisBound::constants`].
+/// [`AxisBound::degrees`], while on every axis of positive degree the size
+/// computed in `f64`, `d_k = delta_k + E_k`, is in the range of
+/// [`AxisBound::constants`].
 #[derive(Clone, Debug)]
 pub struct AxisBound {
     /// The degree `G_k` of the form in the differences of each axis.
@@ -216,10 +219,11 @@ pub struct AxisBound {
 
 /// The constants of the per-axis filter of a predicate, as `f64`.
 ///
-/// The filter decides when `d_min <= D_k <= d_max` on every axis `k` with
-/// `degrees[k] >= 1` and `|value| > epsilon * D^G + sum over k of
-/// kappa[k] * E_k * D^(G - e_k)`, evaluated as a sum of chains of products,
-/// each starting with its constant.
+/// The filter decides when `d_min <= d_k <= d_max` on every axis `k` with
+/// `degrees[k] >= 1`, where `d_k = delta_k + E_k` is computed in `f64`, and
+/// `|value| > epsilon * d^G + sum over k of kappa[k] * E_k * d^(G - e_k)`,
+/// evaluated as a sum of chains of products, each starting with its
+/// constant.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AxisConstants {
     /// The degree `G_k` of the form in each axis.
@@ -229,11 +233,13 @@ pub struct AxisConstants {
     /// The coefficient of `E_k * D^(G - e_k)` of each axis, rounded up; zero
     /// on an axis of degree zero.
     pub kappa: [f64; 3],
-    /// The smallest `D_k`, on each axis of positive degree, for which the
-    /// bound covers underflow: a power of two below 1.
+    /// The smallest `d_k`, computed in `f64` as `delta_k + E_k`, on each axis
+    /// of positive degree, for which the bound covers underflow: a power of
+    /// two below 1.
     pub d_min: f64,
-    /// The largest `D_k`, on each axis of positive degree, for which no node
-    /// overflows: a power of two above 1.
+    /// The largest `d_k`, computed in `f64` as `delta_k + E_k`, on each axis
+    /// of positive degree, for which no node overflows: a power of two above
+    /// 1.
     pub d_max: f64,
 }
 

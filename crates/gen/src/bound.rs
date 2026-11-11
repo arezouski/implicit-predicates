@@ -293,7 +293,9 @@ impl FilterBound {
 /// `c_x * D^(g_x) <= 2^1022` (for `D < 1`, `D^(g_x) <= 1 < d_max^(g_x)`),
 /// a quarter of the overflow threshold `2^1024`, so no intermediate value
 /// and not the result overflows. An overflow in the evaluation of the bound
-/// itself gives an infinite bound, which only makes the filter abstain.
+/// itself gives an infinite bound, or a NaN one when an infinite partial
+/// product is then multiplied by an uncertainty of zero; either only makes
+/// the filter abstain, since it decides on `|value| > bound`, false for both.
 ///
 /// The nodes are given as their `c` and their degree `g`. Returns the degree
 /// of a node that overflows for every `j >= 1` if there is no such `j`.

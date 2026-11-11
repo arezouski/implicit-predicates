@@ -10,24 +10,28 @@
 
 use implicit_predicates_core::{Sign, eft, expansion};
 
-/// The degree `k` of the predicate in the differences of coordinates.
-pub const DEGREE: u32 = 3;
+/// The degree `G_k` of the predicate in the differences of coordinates of each
+/// axis `k`, for x, y and z.
+pub const DEGREES: [u32; 3] = [1, 1, 1];
 
-/// The coefficient of `D^k` in the error bound of [`filter`], `(EPSILON * D +
-/// KAPPA * E) * D^(k - 1)`, rounded up. `E` is the `e` given to the filter and
-/// `D` is `E` plus the largest magnitude of a difference of coordinates.
+/// The coefficient of `d^G`, the product of `d_k^G_k` over the axes, in the
+/// error bound of [`filter`], rounded up. On each axis `k`, `d_k` is the
+/// largest magnitude of a difference of coordinates on that axis plus `e[k]`,
+/// the uncertainty given to the filter, and the bound is `EPSILON*d^G` plus
+/// `KAPPA[k]*e[k]*d^G/d_k` for each axis of positive degree, computed without
+/// divisions.
 pub const EPSILON: f64 = 5.10702591803201e-15;
 
-/// The coefficient of `E * D^(k - 1)` in the error bound of [`filter`], rounded
-/// up.
-pub const KAPPA: f64 = 18.00000001676381;
+/// The coefficient of `e[k]*d^G/d_k` in the error bound of [`filter`], for each
+/// axis `k`, rounded up; zero on an axis of degree zero.
+pub const KAPPA: [f64; 3] = [6.000000005587936, 6.000000005587936, 6.000000005587936];
 
-/// The smallest `D` for which [`filter`] decides, `2^-324`: below it, underflow
-/// could exceed the error bound.
+/// The smallest `d_k`, on each axis of positive degree, for which [`filter`]
+/// decides, `2^-324`: below it, underflow could exceed the error bound.
 pub const D_MIN: f64 = 2.926047721682624e-98;
 
-/// The largest `D` for which [`filter`] decides, `2^339`: above it, a computed
-/// value could overflow.
+/// The largest `d_k`, on each axis of positive degree, for which [`filter`]
+/// decides, `2^339`: above it, a computed value could overflow.
 pub const D_MAX: f64 = 1.1198723710889021e102;
 
 /// `(min, max)`, `(2^-188, 2^239)`: [`exact_differences`] decides when every
@@ -46,18 +50,22 @@ pub const UNTRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 8.8342353238
 /// The sign of the predicate from an evaluation of its main form in `f64`, when
 /// the rounding error cannot change it.
 ///
-/// The points given are approximations of exact points. `e` is the sum of the
-/// two largest per-point errors, where the error of a point is an upper bound
-/// on the absolute error of each coordinate of its approximation; `e` must be
-/// finite, non-negative and rounded upward, and it is `0.0` for explicit
-/// points. A NaN or negative `e` never decides.
+/// The points given are approximations of exact points. `e[k]` is the sum of
+/// the two largest errors of the points on axis `k` (0, 1 and 2 for x, y and
+/// z), where the error of a point on an axis is an upper bound on the absolute
+/// error of its coordinate on that axis; each `e[k]` must be finite,
+/// non-negative and rounded upward, and they are `0.0` for explicit points. A
+/// NaN or negative `e[k]` never decides.
 ///
-/// `None` means that this stage cannot decide: the value is too close to zero
-/// for its error bound, the scale of the differences is outside
-/// `D_MIN..=D_MAX`, `e` is negative or NaN, or an input is not finite. The
-/// result is never `Some(Sign::Zero)`.
-#[inline]
-pub fn filter(p: [&[f64; 3]; 4], e: f64) -> Option<Sign> {
+/// `Some(Sign::Zero)` means that some axis is flat: every difference of
+/// coordinates on it is zero and so is its `e[k]`, so the predicate is exactly
+/// zero. `None` means that this stage cannot decide: the value is too close to
+/// zero for its error bound, the scale `d_k` of the differences of some axis is
+/// outside `D_MIN..=D_MAX`, some `e[k]` is negative or NaN, or an input is not
+/// finite.
+#[allow(clippy::manual_range_contains)]
+#[inline(always)]
+pub fn filter(p: [&[f64; 3]; 4], e: [f64; 3]) -> Option<Sign> {
     let t0 = p[0][0] - p[3][0];
     let t1 = p[0][1] - p[3][1];
     let t2 = p[0][2] - p[3][2];
@@ -81,27 +89,69 @@ pub fn filter(p: [&[f64; 3]; 4], e: f64) -> Option<Sign> {
     let t20 = t18 - t19;
     let t21 = t2 * t20;
     let det = t17 + t21;
-    // A NaN leaf can be skipped by the comparisons, but it makes `det` NaN.
-    let delta = t0.abs();
-    let delta = max(delta, t1.abs());
-    let delta = max(delta, t2.abs());
-    let delta = max(delta, t3.abs());
-    let delta = max(delta, t4.abs());
-    let delta = max(delta, t5.abs());
-    let delta = max(delta, t6.abs());
-    let delta = max(delta, t7.abs());
-    let delta = max(delta, t8.abs());
-    // The bound takes 6 f64 operations; with the rounding of `d` counted at
-    // each of its 3 uses, at most 8 roundings reach it.
-    let d = delta + e;
-    let bound = (EPSILON * d + KAPPA * e) * d * d;
-    let decided = (e >= 0.0) & (D_MIN..=D_MAX).contains(&d) & (det.abs() > bound);
+    // The largest magnitude of the leaves of each axis. A NaN leaf can be
+    // skipped by the comparisons, but it makes `det` NaN.
+    let delta_x = t0.abs();
+    let delta_x = max(delta_x, t3.abs());
+    let delta_x = max(delta_x, t6.abs());
+    let delta_y = t1.abs();
+    let delta_y = max(delta_y, t4.abs());
+    let delta_y = max(delta_y, t7.abs());
+    let delta_z = t2.abs();
+    let delta_z = max(delta_z, t5.abs());
+    let delta_z = max(delta_z, t8.abs());
+    let dx = delta_x + e[0];
+    let dy = delta_y + e[1];
+    let dz = delta_z + e[2];
+    // Each term is a chain of products that starts with its constant. A term
+    // with `e[k] == 0` is zero whenever the filter can decide, and is left out,
+    // so that it costs nothing when `e` is a constant zero.
+    let bound = EPSILON * dx * dy * dz;
+    let bound = if e[0] > 0.0 {
+        bound + KAPPA[0] * e[0] * dy * dz
+    } else {
+        bound
+    };
+    let bound = if e[1] > 0.0 {
+        bound + KAPPA[1] * e[1] * dx * dz
+    } else {
+        bound
+    };
+    let bound = if e[2] > 0.0 {
+        bound + KAPPA[2] * e[2] * dx * dy
+    } else {
+        bound
+    };
+    let decided = (e[0] >= 0.0)
+        & (e[1] >= 0.0)
+        & (e[2] >= 0.0)
+        & (D_MIN <= dx)
+        & (dx <= D_MAX)
+        & (D_MIN <= dy)
+        & (dy <= D_MAX)
+        & (D_MIN <= dz)
+        & (dz <= D_MAX)
+        & (det.abs() > bound);
     let sign = if det > 0.0 {
         Sign::Positive
     } else {
         Sign::Negative
     };
-    decided.then_some(sign)
+    // A flat axis, with every leaf and its `e[k]` zero, makes the predicate
+    // exactly zero; a NaN leaf skipped by the maxima makes `det` NaN, and each
+    // `e[k]` must be finite. A flat axis is below `D_MIN`, so `decided` is
+    // false then.
+    let flat = (dx == 0.0) | (dy == 0.0) | (dz == 0.0);
+    let zero = (e[0] >= 0.0)
+        & (e[1] >= 0.0)
+        & (e[2] >= 0.0)
+        & (e[0] <= f64::MAX)
+        & (e[1] <= f64::MAX)
+        & (e[2] <= f64::MAX)
+        & flat
+        & (det == 0.0);
+    let sign = if zero { Sign::Zero } else { sign };
+    (decided | zero).then_some(sign)
 }
 
 /// The exact sign of the predicate: its main form evaluated with expansions on
@@ -364,12 +414,12 @@ pub fn expansions_untranslated(p: [&[f64; 3]; 4]) -> Option<Sign> {
 /// The sign of the predicate for explicit points, from the first stage that
 /// decides.
 ///
-/// Runs [`filter`] with `e = 0.0`, then [`exact_differences`], then
+/// Runs [`filter`] with `e = [0.0; 3]`, then [`exact_differences`], then
 /// [`expansions_translated`], then [`expansions_untranslated`]. `None` means
 /// that no stage can decide.
 #[inline]
 pub fn staged(p: [&[f64; 3]; 4]) -> Option<Sign> {
-    filter(p, 0.0)
+    filter(p, [0.0; 3])
         .or_else(|| exact_differences(p))
         .or_else(|| expansions_translated(p))
         .or_else(|| expansions_untranslated(p))

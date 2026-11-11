@@ -115,7 +115,7 @@ proptest! {
             // differences can decide.
             let translated = all_in_range(&p, stages::TRANSLATED_RANGE);
             let inside = all_in_range(&p, stages::UNTRANSLATED_RANGE);
-            let earlier = stages::filter(refs(&p), 0.0)
+            let earlier = stages::filter(refs(&p), [0.0; 3])
                 .or_else(|| stages::exact_differences(refs(&p)));
             let result = orient3d(&p);
             prop_assert_eq!(
@@ -249,7 +249,12 @@ proptest! {
             let mut q = p;
             q[to] = q[from];
             prop_assert_eq!(orient3d(&q), Some(Sign::Zero), "{:?}", q);
-            prop_assert_eq!(stages::filter(refs(&q), 0.0), None);
+            // The filter gives no sign; it gives the zero only on a flat
+            // axis.
+            let filter = stages::filter(refs(&q), [0.0; 3]);
+            let flat = all_finite(&q)
+                && (0..3).any(|axis| q.iter().all(|point| point[axis] == q[3][axis]));
+            prop_assert_eq!(filter, flat.then_some(Sign::Zero), "{:?}", q);
         }
     }
 

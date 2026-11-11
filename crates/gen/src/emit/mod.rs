@@ -11,6 +11,8 @@ mod checks;
 mod edges;
 mod exact;
 mod filter;
+mod filter_axis;
+mod grid;
 mod program;
 mod statements;
 
@@ -21,13 +23,14 @@ use std::fmt::Write;
 
 use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 
-use crate::bound::{FilterConstants, MAX_DEGREE, filter_bound};
+use crate::bound::{FilterForm, MAX_DEGREE, filter_form};
 use crate::differences::difference_graph;
 use crate::error::Error;
 use crate::parse::{Predicate, parse};
 use crate::polynomial::check_same_polynomial;
 use crate::range::{ExactRange, Leaves, exact_plan_differences, exact_plan_raw};
 use exact::{Check, Stage, write_in_range, write_product, write_stage};
+use filter::FilterKind;
 use program::{Program, Step};
 
 /// The code generated for one predicate.
@@ -38,9 +41,10 @@ pub struct Generated {
     /// The module of its stages, unformatted.
     pub stages: String,
     /// The module of its checks, for its tests, unformatted: `exact`, the
-    /// exact sign of the predicate, and `bound_edge_cases`, inputs on either
-    /// side of the error bound of the filter. Empty when there are none, in
-    /// which case no file is written.
+    /// exact sign of the predicate, `bound_edge_cases`, inputs on either
+    /// side of the error bound of the filter, and for a per-axis filter
+    /// `uncertainty_edge_cases`, the same with an uncertainty. Empty when
+    /// there are none, in which case no file is written.
     pub checks: String,
 }
 
@@ -54,15 +58,18 @@ pub struct Generated {
 /// command it was run with.
 ///
 /// For each predicate the module of its stages holds the constants of its
-/// filter and the ranges of its exact stages, and the functions `filter`,
+/// filter and the ranges of its exact stages, and the functions `filter`
+/// (with one size and one uncertainty per axis when every term of the main
+/// form has the same degree in each axis, see [`crate::filter_form`]),
 /// `exact_differences`, `expansions_translated`, `expansions_untranslated`
 /// (only when the predicate has an `#[exact]` form) and `staged`, which runs
 /// the filter and then the exact stages in the order: differences that are
 /// exact, the translated expansion form, then the `#[exact]` form if one is
 /// given. The order is the same for every predicate for now. The module of
 /// its checks holds `exact`, the main form evaluated with the exact numbers
-/// of `implicit-predicates-oracle`, and `bound_edge_cases`, pairs of inputs
-/// at the edge of the error bound of the filter.
+/// of `implicit-predicates-oracle`, `bound_edge_cases`, pairs of inputs at
+/// the edge of the error bound of the filter for explicit points, and, for a
+/// per-axis filter, `uncertainty_edge_cases`, the same with an uncertainty.
 ///
 /// # Errors
 ///
@@ -107,7 +114,7 @@ pub fn generate(source: &str, file: &str, regenerate: &str) -> Result<Vec<Genera
 
 /// The forms of a predicate, with the plans of their exact stages.
 struct Forms {
-    constants: FilterConstants,
+    filter: FilterKind,
     differences: (Program, ExactRange),
     translated: (Program, ExactRange),
     untranslated: Option<(Program, ExactRange)>,
@@ -135,7 +142,10 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
             ));
         }
     }
-    let constants = filter_bound(&graph, file, position)?.constants();
+    let filter = match filter_form(&graph, file, position)? {
+        FilterForm::PerAxis(bound) => FilterKind::PerAxis(bound.constants(), bound.certain_zero()),
+        FilterForm::Global(bound) => FilterKind::Global(bound.constants()),
+    };
     check_same_polynomial(predicate, file)?;
     if graph.nodes.len() > edges::MAX_NODES {
         return Err(Error::at(
@@ -171,7 +181,7 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         None => None,
     };
     let forms = Forms {
-        constants,
+        filter,
         differences,
         translated,
         untranslated,
@@ -180,9 +190,18 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
     let mut out = String::new();
     write_header(&mut out, predicate, notice);
     write_constants(&mut out, &forms);
-    let uses_max = filter::write_filter(&mut out, &graph, points, constants.degree);
+    let (uses_max, explicit) = match &filter {
+        FilterKind::Global(c) => (
+            filter::write_filter(&mut out, &graph, points, c.degree),
+            "0.0",
+        ),
+        FilterKind::PerAxis(c, zero) => (
+            filter_axis::write_filter(&mut out, &graph, points, c, *zero),
+            "[0.0; 3]",
+        ),
+    };
     write_exact_stages(&mut out, predicate, &forms);
-    chain::write_chain(&mut out, points, forms.untranslated.is_some());
+    chain::write_chain(&mut out, points, forms.untranslated.is_some(), explicit);
     if uses_max {
         filter::write_max(&mut out);
     }
@@ -197,7 +216,7 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         write_product(&mut out);
     }
     let mut checks = String::new();
-    checks::write_checks(&mut checks, predicate, &graph, &constants, notice);
+    checks::write_checks(&mut checks, predicate, &graph, &filter, notice);
     Ok(Generated {
         name: predicate.name.clone(),
         stages: out,
@@ -250,57 +269,14 @@ fn list(names: &[String]) -> String {
 }
 
 fn write_constants(out: &mut String, forms: &Forms) {
-    let c = &forms.constants;
     let constant = |out: &mut String, doc: &str, name: &str, ty: &str, value: String| {
         comment(out, "///", 0, doc);
         writeln!(out, "pub const {name}: {ty} = {value};\n").unwrap();
     };
-    constant(
-        out,
-        "The degree `k` of the predicate in the differences of coordinates.",
-        "DEGREE",
-        "u32",
-        c.degree.to_string(),
-    );
-    constant(
-        out,
-        "The coefficient of `D^k` in the error bound of [`filter`], \
-         `(EPSILON * D + KAPPA * E) * D^(k - 1)`, rounded up. `E` is the `e` given to \
-         the filter and `D` is `E` plus the largest magnitude of a difference of \
-         coordinates.",
-        "EPSILON",
-        "f64",
-        literal(c.epsilon),
-    );
-    constant(
-        out,
-        "The coefficient of `E * D^(k - 1)` in the error bound of [`filter`], rounded up.",
-        "KAPPA",
-        "f64",
-        literal(c.kappa),
-    );
-    constant(
-        out,
-        &format!(
-            "The smallest `D` for which [`filter`] decides, `2^{}`: below it, underflow \
-             could exceed the error bound.",
-            power_of_two(c.d_min)
-        ),
-        "D_MIN",
-        "f64",
-        literal(c.d_min),
-    );
-    constant(
-        out,
-        &format!(
-            "The largest `D` for which [`filter`] decides, `2^{}`: above it, a computed \
-             value could overflow.",
-            power_of_two(c.d_max)
-        ),
-        "D_MAX",
-        "f64",
-        literal(c.d_max),
-    );
+    match &forms.filter {
+        FilterKind::Global(c) => filter::write_constants(out, c),
+        FilterKind::PerAxis(c, _) => filter_axis::write_constants(out, c),
+    }
     let range = |out: &mut String, name: &str, what: &str, range: ExactRange| {
         constant(
             out,
@@ -414,7 +390,7 @@ pub(crate) fn comment(out: &mut String, marker: &str, indent: usize, text: &str)
 }
 
 /// The exponent of a normal power of two.
-fn power_of_two(x: f64) -> i64 {
+pub(crate) fn power_of_two(x: f64) -> i64 {
     debug_assert!(x.is_normal() && x.to_bits() & ((1 << 52) - 1) == 0);
     i64::try_from(x.to_bits() >> 52).expect("11 bits") - 1023
 }

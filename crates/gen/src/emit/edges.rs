@@ -8,17 +8,27 @@
 //! first walked, by bisection over the ordered `f64`s, to where the exact
 //! value changes sign. That coordinate is then moved one representable
 //! value at a time, in the order of the `f64`s, until the exact magnitude
-//! of the form exceeds the bound `EPSILON * delta^k` of the filter for
-//! explicit points, computed with the emitted constant and with `delta` the
-//! largest difference of coordinates as the filter computes it in `f64`.
-//! The last input on each side of the bound is kept. The search doubles the
-//! step and then bisects, so it takes a few dozen exact evaluations.
+//! of the form exceeds the bound of the filter, computed exactly with the
+//! emitted constants and with the sizes as the filter computes them in
+//! `f64`: `EPSILON * delta^k` for the global form with `e = 0`, and for the
+//! per-axis form `EPSILON * d^G` plus `KAPPA[k] * e[k] * d^G / d_k` on each
+//! axis, with `d_k = delta_k + e[k]`. The last input on each side of the
+//! bound is kept. The search doubles the step and then bisects, so it takes
+//! a few dozen exact evaluations.
+//!
+//! [`bound_edge_cases`] takes `e = 0`, as for explicit points;
+//! [`uncertainty_edge_cases`], for a per-axis filter, takes an `e` that is
+//! not zero on one axis only, for each axis, or on the three: a power of
+//! two between `2^-40` and `2^-8` times the scale of the grid on each axis
+//! where it is not zero.
 //!
 //! The scales of the grids range from just above `D_MIN` to just below
 //! `D_MAX`. Every choice comes from a fixed pseudo-random sequence, so the
 //! cases are the same on every run.
 
-use crate::bound::FilterConstants;
+use super::filter::FilterKind;
+use super::grid::{FINITE_KEYS, GRID, SplitMix64, exponent, from_key, grid_points, key, pow2};
+use crate::bound::AxisConstants;
 use crate::differences::{DiffGraph, DiffNode};
 use crate::dyadic::Dyadic;
 
@@ -27,44 +37,135 @@ pub(crate) type Case = Vec<[f64; 3]>;
 
 /// The most nodes of a difference form for which edge cases are searched.
 ///
-/// The search makes at most `8 * 64` attempts, each with at most about 330
-/// exact evaluations of the whole form, so its work is proportional to the
-/// number of nodes; at 256 nodes the slowest form found, a long sum of one
-/// difference, takes a few seconds in a debug build.
+/// The search makes at most `8 * 64` attempts with `e = 0`, and for a
+/// per-axis filter `8 * 4 * 16` more with uncertainty, each with at most
+/// about 330 exact evaluations of the whole form, so its work is
+/// proportional to the number of nodes; at 256 nodes the slowest form
+/// found, a long sum of one difference, takes a few seconds in a debug
+/// build.
 pub(crate) const MAX_NODES: usize = 256;
 
-/// The cases built at each scale, and the attempts allowed for them.
+/// The cases built at each scale with `e = 0`, and the attempts allowed for
+/// them.
 const PER_SCALE: usize = 6;
 const ATTEMPTS_PER_SCALE: usize = 64;
 
-/// The grid integers are in `-GRID..=GRID`; with the affine combination,
-/// every coordinate is below `2^8` in magnitude, and so is every
-/// difference of two of them, before scaling.
-const GRID: i64 = 16;
+/// The cases built at each scale for each choice of the axes of `e`, and
+/// the attempts allowed for them.
+const UNCERTAIN_PER_SCALE: usize = 2;
+const UNCERTAIN_ATTEMPTS_PER_SCALE: usize = 16;
 
-/// Pairs of inputs on either side of the bound of the filter of `graph`,
-/// with `points` points and the emitted `constants`: the first of each
-/// pair at or below it, the second above it, one representable value apart
-/// in one coordinate.
+/// Pairs of inputs on either side of the bound of the `filter` of `graph`
+/// with `e = 0`, with `points` points: the first of each pair at or below
+/// it, the second above it, one representable value apart in one
+/// coordinate.
 pub(crate) fn bound_edge_cases(
     graph: &DiffGraph,
     points: usize,
-    constants: &FilterConstants,
+    filter: &FilterKind,
 ) -> Vec<(Case, Case)> {
-    let form = Form { graph, constants };
-    let (low, high) = (exponent(constants.d_min), exponent(constants.d_max));
-    // From just above D_MIN to just below D_MAX: the differences are
-    // between 2^scale and 2^(scale + 8).
-    let scales = [low + 1, low + 40, -100, -30, 0, 30, 100, high - 12];
+    let form = Form { graph, filter };
     let mut random = SplitMix64(0x2545_f491_4f6c_dd1d);
     let mut cases = Vec::new();
-    for scale in scales.into_iter().filter(|&s| low < s && s + 8 <= high) {
-        let mut found = 0;
-        for _ in 0..ATTEMPTS_PER_SCALE {
-            if found == PER_SCALE {
+    for scale in form.scales() {
+        let found = form.search(
+            &mut random,
+            points,
+            scale,
+            [0.0; 3],
+            PER_SCALE,
+            ATTEMPTS_PER_SCALE,
+        );
+        cases.extend(found);
+    }
+    cases
+}
+
+/// Pairs of inputs on either side of the bound of the per-axis filter of
+/// `graph`, with the emitted `constants`, each with its `e`: not zero on one
+/// axis of positive degree only, for each such axis, and not zero on all of
+/// them. The pairs are as in [`bound_edge_cases`].
+pub(crate) fn uncertainty_edge_cases(
+    graph: &DiffGraph,
+    points: usize,
+    constants: &AxisConstants,
+) -> Vec<([f64; 3], Case, Case)> {
+    let filter = FilterKind::PerAxis(*constants, false);
+    let form = Form {
+        graph,
+        filter: &filter,
+    };
+    let axes: Vec<usize> = (0..3).filter(|&k| constants.degrees[k] >= 1).collect();
+    let mut choices: Vec<Vec<usize>> = axes.iter().map(|&k| vec![k]).collect();
+    if axes.len() > 1 {
+        choices.push(axes.clone());
+    }
+    let mut random = SplitMix64(0x9fb2_1c65_1e98_df25);
+    let mut cases = Vec::new();
+    for scale in form.scales() {
+        for choice in &choices {
+            let mut e = [0.0; 3];
+            for &k in choice {
+                e[k] = pow2(scale - 8 - random.below(33) as i32);
+            }
+            let found = form.search(
+                &mut random,
+                points,
+                scale,
+                e,
+                UNCERTAIN_PER_SCALE,
+                UNCERTAIN_ATTEMPTS_PER_SCALE,
+            );
+            cases.extend(found.into_iter().map(|(below, above)| (e, below, above)));
+        }
+    }
+    cases
+}
+
+/// A difference form with the constants of its filter.
+struct Form<'a> {
+    graph: &'a DiffGraph,
+    filter: &'a FilterKind,
+}
+
+impl Form<'_> {
+    /// `D_MIN` and `D_MAX`, as exponents.
+    fn range(&self) -> (i32, i32) {
+        let (d_min, d_max) = match self.filter {
+            FilterKind::Global(c) => (c.d_min, c.d_max),
+            FilterKind::PerAxis(c, _) => (c.d_min, c.d_max),
+        };
+        (exponent(d_min), exponent(d_max))
+    }
+
+    /// The scales of the grids, from just above `D_MIN` to just below
+    /// `D_MAX`: the differences are between `2^scale` and `2^(scale + 8)`.
+    fn scales(&self) -> Vec<i32> {
+        let (low, high) = self.range();
+        [low + 1, low + 40, -100, -30, 0, 30, 100, high - 12]
+            .into_iter()
+            .filter(|&s| low < s && s + 8 <= high)
+            .collect()
+    }
+
+    /// Up to `wanted` pairs of inputs on either side of the bound with
+    /// uncertainty `e`, from grids at `scale`, in at most `attempts`
+    /// attempts.
+    fn search(
+        &self,
+        random: &mut SplitMix64,
+        points: usize,
+        scale: i32,
+        e: [f64; 3],
+        wanted: usize,
+        attempts: usize,
+    ) -> Vec<(Case, Case)> {
+        let mut cases = Vec::new();
+        for _ in 0..attempts {
+            if cases.len() == wanted {
                 break;
             }
-            let start = grid_points(&mut random, points, scale);
+            let start = grid_points(random, points, scale);
             let moved: Vec<(usize, usize)> = (0..points)
                 .flat_map(|i| (0..3).map(move |axis| (i, axis)))
                 .filter(|&(i, axis)| start[i][axis] != 0.0)
@@ -75,27 +176,19 @@ pub(crate) fn bound_edge_cases(
             let (point, axis) = moved[random.below(moved.len() as u64) as usize];
             let up = random.below(2) == 0;
             let line = Line {
-                form: &form,
+                form: self,
                 start,
                 point,
                 axis,
+                e,
             };
             if let Some(pair) = line.edge_pair(scale, up) {
                 cases.push(pair);
-                found += 1;
             }
         }
+        cases
     }
-    cases
-}
 
-/// A difference form with the constants of its filter.
-struct Form<'a> {
-    graph: &'a DiffGraph,
-    constants: &'a FilterConstants,
-}
-
-impl Form<'_> {
     /// The exact value of the form at `p`, node by node in the order of the
     /// graph.
     fn value(&self, p: &[[f64; 3]]) -> Dyadic {
@@ -120,11 +213,11 @@ impl Form<'_> {
         values.swap_remove(self.graph.root)
     }
 
-    /// Whether the exact magnitude of the form at `p` exceeds
-    /// `EPSILON * delta^k`, or `None` when `delta`, the largest difference
-    /// computed in `f64`, is outside `D_MIN..=D_MAX`.
-    fn above_bound(&self, p: &[[f64; 3]]) -> Option<bool> {
-        let mut delta = 0.0f64;
+    /// Whether the exact magnitude of the form at `p` exceeds the bound of
+    /// the filter with uncertainty `e`, or `None` when a size computed in
+    /// `f64` as the filter computes it is outside `D_MIN..=D_MAX`.
+    fn above_bound(&self, p: &[[f64; 3]], e: [f64; 3]) -> Option<bool> {
+        let mut delta = [0.0f64; 3];
         for node in &self.graph.nodes {
             if let DiffNode::Leaf {
                 axis,
@@ -132,18 +225,25 @@ impl Form<'_> {
                 subtrahend,
             } = *node
             {
-                let axis = usize::from(axis);
-                delta = delta.max((p[minuend][axis] - p[subtrahend][axis]).abs());
+                let k = usize::from(axis);
+                delta[k] = delta[k].max((p[minuend][k] - p[subtrahend][k]).abs());
             }
         }
-        if !(self.constants.d_min..=self.constants.d_max).contains(&delta) {
-            return None;
-        }
-        let delta = Dyadic::from_f64(delta);
-        let mut bound = Dyadic::from_f64(self.constants.epsilon);
-        for _ in 0..self.constants.degree {
-            bound = &bound * &delta;
-        }
+        let bound = match self.filter {
+            FilterKind::Global(c) => {
+                let delta = delta[0].max(delta[1]).max(delta[2]);
+                if !(c.d_min..=c.d_max).contains(&delta) {
+                    return None;
+                }
+                let delta = Dyadic::from_f64(delta);
+                let mut bound = Dyadic::from_f64(c.epsilon);
+                for _ in 0..c.degree {
+                    bound = &bound * &delta;
+                }
+                bound
+            }
+            FilterKind::PerAxis(c, _) => axis_bound(c, delta, e)?,
+        };
         let value = self.value(p);
         Some(value > bound || value < &Dyadic::integer(0) - &bound)
     }
@@ -164,6 +264,7 @@ struct Line<'a> {
     start: Case,
     point: usize,
     axis: usize,
+    e: [f64; 3],
 }
 
 impl Line<'_> {
@@ -184,7 +285,7 @@ impl Line<'_> {
             if !(-FINITE_KEYS..=FINITE_KEYS).contains(&key) {
                 return None;
             }
-            self.form.above_bound(&self.at(key))
+            self.form.above_bound(&self.at(key), self.e)
         };
         if side(0)? {
             return None;
@@ -238,72 +339,33 @@ impl Line<'_> {
     }
 }
 
-/// `count` points on the grid of integers in `-GRID..=GRID` times
-/// `2^scale`, the last an integer affine combination of the first three
-/// when there are at least four.
-fn grid_points(random: &mut SplitMix64, count: usize, scale: i32) -> Case {
-    let mut integer = || random.below(2 * GRID as u64 + 1) as i64 - GRID;
-    let mut p: Vec<[i64; 3]> = (0..count)
-        .map(|_| [integer(), integer(), integer()])
-        .collect();
-    if count >= 4 {
-        let (s, t) = (random.below(5) as i64 - 2, random.below(5) as i64 - 2);
-        let (a, b, c) = (p[0], p[1], p[2]);
-        p[count - 1] = std::array::from_fn(|i| a[i] + s * (b[i] - a[i]) + t * (c[i] - a[i]));
+/// The exact per-axis bound with the constants `c`, for the largest
+/// magnitudes `delta` of the leaves of each axis and the uncertainty `e`,
+/// with `d_k = delta_k + e[k]` computed in `f64`; `None` when some `d_k` of
+/// an axis of positive degree is outside `D_MIN..=D_MAX`.
+fn axis_bound(c: &AxisConstants, delta: [f64; 3], e: [f64; 3]) -> Option<Dyadic> {
+    let mut d = [Dyadic::integer(0), Dyadic::integer(0), Dyadic::integer(0)];
+    for k in (0..3).filter(|&k| c.degrees[k] >= 1) {
+        let dk = delta[k] + e[k];
+        if !(c.d_min..=c.d_max).contains(&dk) {
+            return None;
+        }
+        d[k] = Dyadic::from_f64(dk);
     }
-    // The integers are below 2^8, so the products are exact.
-    let unit = pow2(scale);
-    p.iter()
-        .map(|point| point.map(|n| n as f64 * unit))
-        .collect()
-}
-
-/// The largest key of a finite `f64`: that of `f64::MAX`.
-const FINITE_KEYS: i128 = 0x7fef_ffff_ffff_ffff;
-
-/// The position of `x` in the order of the finite `f64`s, with both zeros
-/// at 0: consecutive keys are consecutive values.
-fn key(x: f64) -> i128 {
-    let magnitude = i128::from(x.to_bits() & !(1 << 63));
-    if x.is_sign_negative() {
-        -magnitude
-    } else {
-        magnitude
+    // `d^G`, without one factor `d_k` when `skip` is `Some(k)`.
+    let power = |skip: Option<usize>| {
+        let mut x = Dyadic::integer(1);
+        for (k, dk) in d.iter().enumerate() {
+            for _ in 0..c.degrees[k] - u32::from(skip == Some(k)) {
+                x = &x * dk;
+            }
+        }
+        x
+    };
+    let mut bound = &Dyadic::from_f64(c.epsilon) * &power(None);
+    for k in (0..3).filter(|&k| c.degrees[k] >= 1) {
+        let term = &(&Dyadic::from_f64(c.kappa[k]) * &Dyadic::from_f64(e[k])) * &power(Some(k));
+        bound = &bound + &term;
     }
-}
-
-/// The `f64` of key `key`, which must be at most [`FINITE_KEYS`] in
-/// magnitude.
-fn from_key(key: i128) -> f64 {
-    let magnitude = u64::try_from(key.unsigned_abs()).expect("a finite key");
-    let sign = if key < 0 { 1 << 63 } else { 0 };
-    f64::from_bits(sign | magnitude)
-}
-
-/// The exponent of a power of two.
-fn exponent(x: f64) -> i32 {
-    i32::try_from(x.to_bits() >> 52).expect("11 bits") - 1023
-}
-
-/// `2^exponent`, for a normal power of two.
-fn pow2(exponent: i32) -> f64 {
-    f64::from_bits(u64::try_from(exponent + 1023).expect("a normal power of two") << 52)
-}
-
-/// The SplitMix64 sequence of pseudo-random numbers.
-struct SplitMix64(u64);
-
-impl SplitMix64 {
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        z ^ (z >> 31)
-    }
-
-    /// A number in `0..n`, nearly uniform for small `n`.
-    fn below(&mut self, n: u64) -> u64 {
-        self.next() % n
-    }
+    Some(bound)
 }
