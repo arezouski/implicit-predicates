@@ -53,8 +53,17 @@
 //! `2^1022 (1 + u)^k`, still below the overflow threshold `2^1024`, since
 //! `D_MAX` asks for `2^1022`. With `e = 0`, `d = delta` is exact.
 //!
-//! The bound needs `E >= 0`: a negative `e` shrinks it, so the filter only
-//! decides when `e >= 0`, a comparison that is also false for a NaN `e`.
+//! # The contract of `e`
+//!
+//! `e` is the sum of the two largest per-point errors, where the error of a
+//! point is an upper bound on the absolute error of each coordinate of its
+//! approximation, as an approximation of the exact point. It must be
+//! finite, non-negative and rounded upward, so that it is at least the
+//! exact sum `E`; it is `0.0` for explicit points. The bound needs
+//! `E >= 0`: a negative `e` shrinks it, so the filter only decides when
+//! `e >= 0`, a comparison that is also false for a NaN `e`. A NaN or
+//! negative `e` therefore never decides, and an infinite one makes `d`
+//! infinite, which never decides either.
 //! Non-finite inputs never decide: a NaN leaf makes `det` NaN, an infinite
 //! leaf makes `delta` and `d` infinite, an infinite `e` makes `d` infinite,
 //! and every comparison with NaN is false. A decision implies
@@ -92,7 +101,8 @@ pub(crate) fn bound_statements(degree: u32) -> String {
 }
 
 /// Writes the `filter` function of a difference form with `points` points,
-/// and tells whether it uses the helper of [`write_max`].
+/// and tells whether it uses the helper of [`write_max`]. Its documentation
+/// states the contract of `e` given in the module documentation.
 pub(crate) fn write_filter(
     out: &mut String,
     graph: &DiffGraph,
@@ -105,12 +115,15 @@ pub(crate) fn write_filter(
         0,
         "The sign of the predicate from an evaluation of its main form in `f64`, \
          when the rounding error cannot change it.\n\n\
-         `e` is the sum of the two largest errors of the coordinates of the points \
-         given, as approximations of the exact points, rounded up; it is `0.0` for \
-         explicit points. `None` means that this stage cannot decide: the value is too \
-         close to zero for its error bound, the scale of the differences is outside \
-         `D_MIN..=D_MAX`, `e` is negative, or an input is not finite. The result is \
-         never `Some(Sign::Zero)`.",
+         The points given are approximations of exact points. `e` is the sum of the \
+         two largest per-point errors, where the error of a point is an upper bound on \
+         the absolute error of each coordinate of its approximation; `e` must be \
+         finite, non-negative and rounded upward, and it is `0.0` for explicit points. \
+         A NaN or negative `e` never decides.\n\n\
+         `None` means that this stage cannot decide: the value is too close to zero \
+         for its error bound, the scale of the differences is outside \
+         `D_MIN..=D_MAX`, `e` is negative or NaN, or an input is not finite. The \
+         result is never `Some(Sign::Zero)`.",
     );
     out.push_str("#[inline]\n");
     writeln!(

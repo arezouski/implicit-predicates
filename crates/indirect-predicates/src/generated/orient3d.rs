@@ -46,11 +46,15 @@ pub const UNTRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 8.8342353238
 /// The sign of the predicate from an evaluation of its main form in `f64`, when
 /// the rounding error cannot change it.
 ///
-/// `e` is the sum of the two largest errors of the coordinates of the points
-/// given, as approximations of the exact points, rounded up; it is `0.0` for
-/// explicit points. `None` means that this stage cannot decide: the value is
-/// too close to zero for its error bound, the scale of the differences is
-/// outside `D_MIN..=D_MAX`, `e` is negative, or an input is not finite. The
+/// The points given are approximations of exact points. `e` is the sum of the
+/// two largest per-point errors, where the error of a point is an upper bound
+/// on the absolute error of each coordinate of its approximation; `e` must be
+/// finite, non-negative and rounded upward, and it is `0.0` for explicit
+/// points. A NaN or negative `e` never decides.
+///
+/// `None` means that this stage cannot decide: the value is too close to zero
+/// for its error bound, the scale of the differences is outside
+/// `D_MIN..=D_MAX`, `e` is negative or NaN, or an input is not finite. The
 /// result is never `Some(Sign::Zero)`.
 #[inline]
 pub fn filter(p: [&[f64; 3]; 4], e: f64) -> Option<Sign> {

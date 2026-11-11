@@ -7,9 +7,23 @@
 //! pushed to the corner of their error boxes that moves the determinant
 //! furthest from its true value, following the signs of its exact partial
 //! derivatives.
+//!
+//! To first order, an approximation within errors whose two largest add up
+//! to `E` moves the determinant by at most `c * E * D^2`, where `D` is the
+//! scale of the differences. The largest coefficient `c` attainable for this
+//! predicate is 9, reached by the extremal coplanar configuration of
+//! `the_extremal_coplanar_configuration_is_not_decided` (a search over
+//! 400,000 variants of it found none larger), while the derived constant
+//! `KAPPA` is 18. Tests can catch a `KAPPA` below 9, but no test can tell
+//! apart values between 9 and 18: that interval is the slack of the
+//! derivation, which bounds every cofactor separately.
 
 mod common;
 
+use common::boxes::{
+    PERMUTATIONS, abs, at_least, determinant, determinant_at, exact_corners, exact_points,
+    extremal, partials, pushed, pushed_with, scale_of, uncertainty,
+};
 use common::generated::exact;
 use common::{Points, pow2, refs};
 use indirect_predicates::Sign;
@@ -17,32 +31,6 @@ use indirect_predicates::stages::orient3d as stages;
 use indirect_predicates_oracle::Dyadic;
 use indirect_predicates_test_support::{config, coplanar4, grid4, near_coplanar4, random4, sample};
 use proptest::prelude::*;
-
-/// `x` rounded up to an `f64` that is at least the exact value `exact`, of
-/// which `x` is the rounding to nearest.
-fn at_least(x: f64, exact: &Dyadic) -> f64 {
-    if Dyadic::from_f64(x) < *exact {
-        x.next_up()
-    } else {
-        x
-    }
-}
-
-/// `|x|`, exactly.
-fn abs(x: &Dyadic) -> Dyadic {
-    if x.sign() < 0 { -x } else { x.clone() }
-}
-
-/// `e` as a caller computes it: the sum of the two largest errors, rounded
-/// up.
-fn uncertainty(errors: [f64; 4]) -> f64 {
-    let mut errors = errors;
-    errors.sort_by(|a, b| b.total_cmp(a));
-    at_least(
-        errors[0] + errors[1],
-        &(&Dyadic::from_f64(errors[0]) + &Dyadic::from_f64(errors[1])),
-    )
-}
 
 /// The binary exponent of the largest magnitude among the coordinates, or
 /// `None` if they are all zero.
@@ -67,54 +55,6 @@ fn scale() -> impl Strategy<Value = i32> {
         1 => low - 2..=low + 6,
         1 => high - 8..=high - 1,
     ]
-}
-
-/// The exact partial derivatives of det[a - d; b - d; c - d] with respect
-/// to every coordinate of every point, at `p`: the cofactors of the rows
-/// `a - d`, `b - d`, `c - d`, and minus their sum for `d`.
-fn partials(p: &Points) -> [[Dyadic; 3]; 4] {
-    let x = |i: usize, axis: usize| Dyadic::from_f64(p[i][axis]);
-    let m: [[Dyadic; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| &x(i, j) - &x(3, j)));
-    let cofactor = |i: usize, j: usize| {
-        let (i1, i2, j1, j2) = ((i + 1) % 3, (i + 2) % 3, (j + 1) % 3, (j + 2) % 3);
-        &(&m[i1][j1] * &m[i2][j2]) - &(&m[i1][j2] * &m[i2][j1])
-    };
-    let rows: [[Dyadic; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| cofactor(i, j)));
-    let last = std::array::from_fn(|j| -&(&(&rows[0][j] + &rows[1][j]) + &rows[2][j]));
-    [rows[0].clone(), rows[1].clone(), rows[2].clone(), last]
-}
-
-/// The exact determinant det[a - d; b - d; c - d].
-fn determinant(p: &Points) -> Dyadic {
-    // Expanded along the first row with the cofactors of `partials`.
-    let d = partials(p);
-    (0..3)
-        .map(|j| &(&Dyadic::from_f64(p[0][j]) - &Dyadic::from_f64(p[3][j])) * &d[0][j])
-        .fold(Dyadic::from_f64(0.0), |sum, term| &sum + &term)
-}
-
-/// `truth` with every coordinate of point `i` moved by `errors[i]`, up or
-/// down by the sign of the partial derivative there times `direction`: the
-/// corner of the error boxes that moves the determinant furthest in that
-/// direction, to first order. Returns `None` unless every move is exact.
-fn pushed(truth: &Points, errors: [f64; 4], direction: i8) -> Option<Points> {
-    let d = partials(truth);
-    let mut p = *truth;
-    for i in 0..4 {
-        for axis in 0..3 {
-            let s = match d[i][axis].sign() * direction {
-                0 => direction,
-                s => s,
-            };
-            let offset = f64::from(s) * errors[i];
-            p[i][axis] = truth[i][axis] + offset;
-            let moved = &Dyadic::from_f64(truth[i][axis]) + &Dyadic::from_f64(offset);
-            if Dyadic::from_f64(p[i][axis]) != moved {
-                return None;
-            }
-        }
-    }
-    Some(p)
 }
 
 /// How the errors are spread over the four points.
@@ -347,4 +287,118 @@ fn the_filter_decides_clear_cases_with_small_uncertainty() {
         "{decided} of {}",
         2 * cases.len()
     );
+}
+
+/// The extremal coplanar configuration, pushed to the corners of equal error
+/// boxes, must never be decided: with `KAPPA` below 9 the filter would give
+/// it a sign, which is wrong since the true points are coplanar.
+///
+/// The attainable first-order coefficient for this predicate is 9, reached
+/// here; the derived `KAPPA` is 18, and no test can distinguish values
+/// between 9 and 18, the slack of the derivation. The variants cover scales
+/// over the whole range of the filter, with and without a power-of-two
+/// scale, translations, the negation of any subset of the axes, every
+/// permutation of the roles of `a`, `b` and `c` and of the axes, both push
+/// directions, and errors from `2^-8` to `2^-40` of the scale.
+#[test]
+fn the_extremal_coplanar_configuration_is_not_decided() {
+    let mut scales = Vec::new();
+    for exponent in [-320, -100, -1, 0, 7, 150, 330] {
+        for mantissa in [1.0, 3.0] {
+            scales.push(mantissa * pow2(exponent));
+        }
+    }
+    scales.push(5.0);
+    let translations = [[0.0, 0.0, 0.0], [3.0, -5.0, 7.0], [256.0, -128.0, 1.0]];
+    let mut reached = false;
+    let mut cases = 0;
+    for &s in &scales {
+        for t in translations.map(|t| t.map(|x| x * s)) {
+            for roles in PERMUTATIONS {
+                for axes in PERMUTATIONS {
+                    for negated in 0..8 {
+                        let truth = extremal(s, t, roles, axes, negated);
+                        assert_eq!(exact(&truth), Sign::Zero, "{truth:?}");
+                        let d = partials(&truth);
+                        for size in [8, 24, 40] {
+                            let error = s * pow2(-size);
+                            let e = uncertainty([error; 4]);
+                            for direction in [1, -1] {
+                                let approximation = pushed_with(&truth, &d, [error; 4], direction);
+                                assert!(approximation.is_some(), "an inexact move of {truth:?}");
+                                let approximation = approximation.unwrap();
+                                assert_eq!(
+                                    stages::filter(refs(&approximation), e),
+                                    None,
+                                    "{approximation:?} e = {e:e}, truth {truth:?}"
+                                );
+                                // Whether the approximation is more than
+                                // `8.9 e D^2` from the plane.
+                                let x = exact_points(&approximation);
+                                let big_d = scale_of(&x, e);
+                                let unit = &(&Dyadic::from_f64(e) * &big_d) * &big_d;
+                                let far = &abs(&determinant_at(&x)) * &Dyadic::from_f64(10.0);
+                                reached |= far > &unit * &Dyadic::from_f64(89.0);
+                                cases += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(cases, scales.len() * 3 * 36 * 8 * 3 * 2);
+    // The worst case reaches a coefficient above 8.9: these cases would be
+    // decided, wrongly, with any `KAPPA` up to that.
+    assert!(reached);
+}
+
+/// A subnormal `e`, with differences near `D_MIN` and far above it: when
+/// the filter decides, its sign is the exact sign at every true point
+/// tried within the boxes, and the uncertainty does not keep it from
+/// deciding clear cases.
+#[test]
+fn a_subnormal_uncertainty_is_handled() {
+    let low = stages::D_MIN.log2() as i32;
+    // Random points first: at scale 1 they are clear cases.
+    let random = sample(random4(), 40);
+    let bases: Vec<Points> = random
+        .iter()
+        .copied()
+        .chain(sample(near_coplanar4(), 40))
+        .chain(sample(grid4(), 40))
+        .collect();
+    let tiny = pow2(-1074);
+    let error_sets = [
+        [tiny, tiny, 0.0, 0.0],
+        [3.0 * tiny, 0.0, tiny, 0.0],
+        [pow2(-1050); 4],
+        [pow2(-1024); 4],
+    ];
+    let (mut decided, mut clear) = (0, 0);
+    for (index, base) in bases.iter().enumerate() {
+        for exponent in [low - 1, low + 1, low + 4, -300, 0, 100, 300] {
+            let approximation = scaled_to(base, exponent);
+            for errors in error_sets {
+                let e = uncertainty(errors);
+                assert!(e > 0.0 && e < f64::MIN_POSITIVE, "{e:e}");
+                let Some(sign) = stages::filter(refs(&approximation), e) else {
+                    continue;
+                };
+                decided += 1;
+                clear += usize::from(exponent == 0 && index < random.len());
+                for truth in exact_corners(&approximation, errors) {
+                    let expected = match determinant_at(&truth).sign() {
+                        -1 => Sign::Negative,
+                        0 => Sign::Zero,
+                        _ => Sign::Positive,
+                    };
+                    assert_eq!(sign, expected, "{approximation:?} e = {e:e}");
+                }
+            }
+        }
+    }
+    // 40 random cases at scale 1, with four sets of errors each.
+    assert!(clear >= 150, "{clear} of 160 clear cases decided");
+    assert!(decided > clear, "{decided} cases decided");
 }

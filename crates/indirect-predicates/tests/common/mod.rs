@@ -9,6 +9,8 @@
 #[path = "../generated/orient3d.rs"]
 pub mod generated;
 
+pub mod boxes;
+
 use indirect_predicates::Sign;
 use indirect_predicates::stages::orient3d as stages;
 pub use indirect_predicates_test_support::Points4 as Points;
