@@ -10,6 +10,7 @@
 //! expansion can get.
 
 mod shape;
+mod spans;
 
 use crate::differences::DiffGraph;
 use crate::dyadic::Dyadic;
@@ -17,6 +18,7 @@ use crate::error::Error;
 use crate::graph::Graph;
 use crate::parse::Position;
 use shape::{MAX_LENGTH, Shape};
+pub use spans::{MAX_COORD_COMPONENTS, exact_plan_spans_translated, exact_plan_spans_untranslated};
 
 /// The exponent of the overflow limit of the arithmetic core: every
 /// component and scalar operand of its expansion functions has magnitude

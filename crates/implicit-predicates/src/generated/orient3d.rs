@@ -8,7 +8,9 @@
 //! in that order, and returns the sign of the predicate, or `None` when it
 //! cannot decide. [`staged`] runs them in order.
 
-use implicit_predicates_core::{Sign, eft, expansion};
+use implicit_predicates_core::{
+    ExactCoords, Scratch, ScratchExhausted, Sign, Span, Weight, eft, expansion,
+};
 
 /// The degree `G_k` of the predicate in the differences of coordinates of each
 /// axis `k`, for x, y and z.
@@ -46,6 +48,18 @@ pub const TRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 4.417117661945
 /// `(min, max)`, `(2^-188, 2^239)`: [`expansions_untranslated`] decides when
 /// every nonzero coordinate has a magnitude in `min..=max`.
 pub const UNTRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 8.834235323891922e71);
+
+/// The most components of a coordinate that [`expansions_translated_in`] and
+/// [`expansions_untranslated_in`] accept.
+pub const MAX_COORD_COMPONENTS: usize = 16;
+
+/// `(min, max)`, `(2^-188, 2^234)`: [`expansions_translated_in`] decides when
+/// every nonzero component of every coordinate has a magnitude in `min..=max`.
+pub const SPANS_TRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 2.7606985387162255e70);
+
+/// `(min, max)`, `(2^-188, 2^235)`: [`expansions_untranslated_in`] decides when
+/// every nonzero component of every coordinate has a magnitude in `min..=max`.
+pub const SPANS_UNTRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 5.521397077432451e70);
 
 /// The sign of the predicate from an evaluation of its main form in `f64`, when
 /// the rounding error cannot change it.
@@ -411,6 +425,171 @@ pub fn expansions_untranslated(p: [&[f64; 3]; 4]) -> Option<Sign> {
     Some(expansion::sign(&e63[..l63]))
 }
 
+/// The exact sign of the predicate for points given by their exact coordinates:
+/// its main form evaluated with expansions in `scratch`, each difference of
+/// coordinates computed exactly.
+///
+/// `Ok(None)` means that this stage cannot decide: some point has a weight
+/// other than [`Weight::One`], or some coordinate has more than
+/// [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude
+/// outside [`SPANS_TRANSLATED_RANGE`] or not finite.
+///
+/// The arena is left as it was, on success and on error.
+///
+/// # Errors
+///
+/// [`ScratchExhausted`] if `scratch` runs out of room.
+#[cold]
+#[inline(never)]
+pub fn expansions_translated_in(
+    scratch: &mut Scratch<'_>,
+    p: [&ExactCoords; 4],
+) -> Result<Option<Sign>, ScratchExhausted> {
+    fn evaluate(scratch: &mut Scratch<'_>, c: [[Span; 3]; 4]) -> Result<Sign, ScratchExhausted> {
+        let e0 = scratch.diff(c[0][0], c[3][0])?;
+        let e1 = scratch.diff(c[0][1], c[3][1])?;
+        let e2 = scratch.diff(c[0][2], c[3][2])?;
+        let e3 = scratch.diff(c[1][0], c[3][0])?;
+        let e4 = scratch.diff(c[1][1], c[3][1])?;
+        let e5 = scratch.diff(c[1][2], c[3][2])?;
+        let e6 = scratch.diff(c[2][0], c[3][0])?;
+        let e7 = scratch.diff(c[2][1], c[3][1])?;
+        let e8 = scratch.diff(c[2][2], c[3][2])?;
+        let e9 = scratch.product(e4, e8)?;
+        let e10 = scratch.product(e5, e7)?;
+        let e11 = scratch.diff(e9, e10)?;
+        let e12 = scratch.product(e0, e11)?;
+        let e13 = scratch.product(e3, e8)?;
+        let e14 = scratch.product(e5, e6)?;
+        let e15 = scratch.diff(e13, e14)?;
+        let e16 = scratch.product(e1, e15)?;
+        let e17 = scratch.diff(e12, e16)?;
+        let e18 = scratch.product(e3, e7)?;
+        let e19 = scratch.product(e4, e6)?;
+        let e20 = scratch.diff(e18, e19)?;
+        let e21 = scratch.product(e2, e20)?;
+        let e22 = scratch.sum(e17, e21)?;
+        Ok(scratch.sign(e22))
+    }
+    // Every coordinate read must be short enough and within the range; the
+    // arena is reset to its mark whatever the evaluation returns.
+    if !p.iter().all(|q| q.w == Weight::One) {
+        return Ok(None);
+    }
+    let c = p.map(|q| [q.x, q.y, q.z]);
+    let coordinates = [
+        c[0][0], c[0][1], c[0][2], c[1][0], c[1][1], c[1][2], c[2][0], c[2][1], c[2][2], c[3][0],
+        c[3][1], c[3][2],
+    ];
+    if !coordinates
+        .into_iter()
+        .all(|s| span_in_range(scratch.get(s), SPANS_TRANSLATED_RANGE))
+    {
+        return Ok(None);
+    }
+    let mark = scratch.mark();
+    let sign = evaluate(scratch, c);
+    scratch.reset(mark);
+    sign.map(Some)
+}
+
+/// The exact sign of the predicate for points given by their exact coordinates:
+/// its form for exact evaluation, marked `#[exact]` in the definition,
+/// evaluated with expansions in `scratch` on the coordinates.
+///
+/// `Ok(None)` means that this stage cannot decide: some point has a weight
+/// other than [`Weight::One`], or some coordinate has more than
+/// [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude
+/// outside [`SPANS_UNTRANSLATED_RANGE`] or not finite.
+///
+/// The arena is left as it was, on success and on error.
+///
+/// # Errors
+///
+/// [`ScratchExhausted`] if `scratch` runs out of room.
+#[cold]
+#[inline(never)]
+pub fn expansions_untranslated_in(
+    scratch: &mut Scratch<'_>,
+    p: [&ExactCoords; 4],
+) -> Result<Option<Sign>, ScratchExhausted> {
+    fn evaluate(scratch: &mut Scratch<'_>, c: [[Span; 3]; 4]) -> Result<Sign, ScratchExhausted> {
+        let e3 = scratch.product(c[2][1], c[3][2])?;
+        let e6 = scratch.product(c[2][2], c[3][1])?;
+        let e7 = scratch.diff(e3, e6)?;
+        let e8 = scratch.product(c[1][0], e7)?;
+        let e11 = scratch.product(c[2][0], c[3][2])?;
+        let e13 = scratch.product(c[2][2], c[3][0])?;
+        let e14 = scratch.diff(e11, e13)?;
+        let e15 = scratch.product(c[1][1], e14)?;
+        let e16 = scratch.diff(e8, e15)?;
+        let e18 = scratch.product(c[2][0], c[3][1])?;
+        let e19 = scratch.product(c[2][1], c[3][0])?;
+        let e20 = scratch.diff(e18, e19)?;
+        let e21 = scratch.product(c[1][2], e20)?;
+        let e22 = scratch.sum(e16, e21)?;
+        let e24 = scratch.product(c[0][0], e7)?;
+        let e26 = scratch.product(c[0][1], e14)?;
+        let e27 = scratch.diff(e24, e26)?;
+        let e29 = scratch.product(c[0][2], e20)?;
+        let e30 = scratch.sum(e27, e29)?;
+        let e31 = scratch.product(c[1][1], c[3][2])?;
+        let e32 = scratch.product(c[1][2], c[3][1])?;
+        let e33 = scratch.diff(e31, e32)?;
+        let e34 = scratch.product(c[0][0], e33)?;
+        let e35 = scratch.product(c[1][0], c[3][2])?;
+        let e36 = scratch.product(c[1][2], c[3][0])?;
+        let e37 = scratch.diff(e35, e36)?;
+        let e38 = scratch.product(c[0][1], e37)?;
+        let e39 = scratch.diff(e34, e38)?;
+        let e40 = scratch.product(c[1][0], c[3][1])?;
+        let e41 = scratch.product(c[1][1], c[3][0])?;
+        let e42 = scratch.diff(e40, e41)?;
+        let e43 = scratch.product(c[0][2], e42)?;
+        let e44 = scratch.sum(e39, e43)?;
+        let e45 = scratch.product(c[1][1], c[2][2])?;
+        let e46 = scratch.product(c[1][2], c[2][1])?;
+        let e47 = scratch.diff(e45, e46)?;
+        let e48 = scratch.product(c[0][0], e47)?;
+        let e49 = scratch.product(c[1][0], c[2][2])?;
+        let e50 = scratch.product(c[1][2], c[2][0])?;
+        let e51 = scratch.diff(e49, e50)?;
+        let e52 = scratch.product(c[0][1], e51)?;
+        let e53 = scratch.diff(e48, e52)?;
+        let e54 = scratch.product(c[1][0], c[2][1])?;
+        let e55 = scratch.product(c[1][1], c[2][0])?;
+        let e56 = scratch.diff(e54, e55)?;
+        let e57 = scratch.product(c[0][2], e56)?;
+        let e58 = scratch.sum(e53, e57)?;
+        let e59 = scratch.push(&[])?;
+        let e60 = scratch.diff(e59, e22)?;
+        let e61 = scratch.sum(e60, e30)?;
+        let e62 = scratch.diff(e61, e44)?;
+        let e63 = scratch.sum(e62, e58)?;
+        Ok(scratch.sign(e63))
+    }
+    // Every coordinate read must be short enough and within the range; the
+    // arena is reset to its mark whatever the evaluation returns.
+    if !p.iter().all(|q| q.w == Weight::One) {
+        return Ok(None);
+    }
+    let c = p.map(|q| [q.x, q.y, q.z]);
+    let coordinates = [
+        c[0][0], c[0][1], c[0][2], c[1][0], c[1][1], c[1][2], c[2][0], c[2][1], c[2][2], c[3][0],
+        c[3][1], c[3][2],
+    ];
+    if !coordinates
+        .into_iter()
+        .all(|s| span_in_range(scratch.get(s), SPANS_UNTRANSLATED_RANGE))
+    {
+        return Ok(None);
+    }
+    let mark = scratch.mark();
+    let sign = evaluate(scratch, c);
+    scratch.reset(mark);
+    sign.map(Some)
+}
+
 /// The sign of the predicate for explicit points, from the first stage that
 /// decides.
 ///
@@ -435,6 +614,12 @@ fn max(a: f64, b: f64) -> f64 {
 /// infinities.
 fn in_range(x: f64, (min, max): (f64, f64)) -> bool {
     x == 0.0 || (min..=max).contains(&x.abs())
+}
+
+/// Whether the expansion `e` has at most [`MAX_COORD_COMPONENTS`] components,
+/// each zero or of a magnitude in `min..=max`.
+fn span_in_range(e: &[f64], range: (f64, f64)) -> bool {
+    e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| in_range(x, range))
 }
 
 /// Writes the expansion of `x * y` to `out` and returns its length: the sum of

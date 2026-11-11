@@ -2,13 +2,15 @@
 
 use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 use implicit_predicates_gen::{
-    ExactRange, FilterForm, Generated, Leaves, difference_graph, exact_plan_differences,
-    exact_plan_raw, filter_bound, filter_form, generate, parse,
+    ExactRange, FilterForm, Generated, Leaves, MAX_COORD_COMPONENTS, difference_graph,
+    exact_plan_differences, exact_plan_raw, exact_plan_spans_translated,
+    exact_plan_spans_untranslated, filter_bound, filter_form, generate, parse,
 };
 use proc_macro2::TokenStream;
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
+const POINTS: &str = include_str!("fixtures/points.pred");
 
 /// How the tests say to regenerate the code.
 const REGENERATE: &str = "run the tests.";
@@ -183,15 +185,111 @@ fn a_predicate_without_an_exact_form_has_no_untranslated_stage_and_chains_the_ma
     assert_eq!(g.name, "insphere");
     assert!(!g.stages.contains("expansions_untranslated"));
     assert!(!g.stages.contains("UNTRANSLATED_RANGE"));
-    assert!(g.stages.contains("pub fn expansions_translated"));
+    // No stage of in-sphere fits on the stack, so its chain takes an arena
+    // and runs the translated form over spans after the filter.
+    for stage in ["exact_differences", "expansions_translated("] {
+        assert!(!g.stages.contains(stage), "{stage}");
+    }
+    assert!(!g.stages.contains("DIFFERENCES_RANGE"));
+    assert!(!g.stages.contains("pub const TRANSLATED_RANGE"));
+    assert!(g.stages.contains("pub fn expansions_translated_in("));
     let staged = &g.stages[g.stages.find("pub fn staged").unwrap()..];
-    let body = &staged[..staged.find("\n}").unwrap()];
-    let filter = body.find("filter(p, 0.0)").unwrap();
-    let differences = body.find("exact_differences(p)").unwrap();
-    let translated = body.find("expansions_translated(p)").unwrap();
-    assert!(filter < differences && differences < translated, "{body}");
+    let signature = &staged[..staged.find('{').unwrap()];
+    assert_eq!(
+        signature,
+        "pub fn staged(scratch: &mut Scratch<'_>, p: [&[f64; 3]; 5]) \
+         -> Result<Option<Sign>, ScratchExhausted> "
+    );
+    let body = &staged[..staged.find("\n}\n\n").unwrap()];
+    assert!(body.contains("filter(p, 0.0)"), "{body}");
+    assert!(body.contains("staged_in_arena(scratch, p)"), "{body}");
+    let arena = &g.stages[g.stages.find("fn staged_in_arena").unwrap()..];
+    let arena = &arena[..arena.find("\n}\n\n").unwrap()];
+    let order = [
+        "let mark = scratch.mark();",
+        "exact(scratch, p[0])?",
+        "expansions_translated_in(scratch, q)?",
+        "scratch.reset(mark);",
+    ]
+    .map(|text| {
+        arena
+            .rfind(text)
+            .unwrap_or_else(|| panic!("{text}: {arena}"))
+    });
+    // The mark is taken before `run` is called, after it is defined.
+    assert!(
+        order[1] < order[0] && order[2] < order[0] && order[0] < order[3],
+        "{arena}"
+    );
+}
 
-    assert!(!body.contains("expansions_untranslated(p)"), "{body}");
+#[test]
+fn orient3d_keeps_its_three_stages_on_the_stack_and_its_chain() {
+    let g = generated(ORIENT3D, "predicates/orient3d.pred");
+    for stage in [
+        "exact_differences",
+        "expansions_translated",
+        "expansions_untranslated",
+        "expansions_translated_in",
+        "expansions_untranslated_in",
+    ] {
+        assert!(g.stages.contains(&format!("pub fn {stage}(")), "{stage}");
+    }
+    assert!(
+        g.stages
+            .contains("pub fn staged(p: [&[f64; 3]; 4]) -> Option<Sign> {")
+    );
+    assert!(!g.stages.contains("staged_in_arena"));
+}
+
+#[test]
+fn the_ranges_over_spans_in_the_output_are_the_derived_ones() {
+    let g = generated(ORIENT3D, "predicates/orient3d.pred");
+    let code = &g.stages;
+    assert_eq!(constant(code, "MAX_COORD_COMPONENTS", "usize"), "16");
+    assert_eq!(MAX_COORD_COMPONENTS, 16);
+    let p = parse(ORIENT3D, "t.pred").unwrap().remove(0);
+    let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();
+    let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
+    let translated =
+        exact_plan_spans_translated(&diff, 16, "t.pred", p.position, min, max).unwrap();
+    let exact = p.exact.as_ref().unwrap();
+    let untranslated =
+        exact_plan_spans_untranslated(exact, 16, "t.pred", p.position, min, max).unwrap();
+    assert_range(code, "SPANS_TRANSLATED_RANGE", translated.range);
+    assert_range(code, "SPANS_UNTRANSLATED_RANGE", untranslated.range);
+    // The values themselves, as derived for orient3d.
+    assert_eq!(translated.range.min, 2f64.powi(-188));
+    assert_eq!(translated.range.max, 2f64.powi(234));
+    assert_eq!(untranslated.range.min, 2f64.powi(-188));
+    assert_eq!(untranslated.range.max, 2f64.powi(235));
+}
+
+#[test]
+fn the_ranges_over_spans_do_not_depend_on_the_point_types_of_the_file() {
+    // The same predicate, alone and in a file that declares point types.
+    let alone = generated(ORIENT3D, "predicates/orient3d.pred");
+    let with_points = format!("{POINTS}\n{ORIENT3D}");
+    let mut all = generate(&with_points, "predicates/orient3d.pred", REGENERATE).unwrap();
+    assert_eq!(all.len(), 1);
+    let with_points = all.remove(0);
+    for name in [
+        "MAX_COORD_COMPONENTS",
+        "SPANS_TRANSLATED_RANGE",
+        "SPANS_UNTRANSLATED_RANGE",
+    ] {
+        let ty = if name == "MAX_COORD_COMPONENTS" {
+            "usize"
+        } else {
+            "(f64, f64)"
+        };
+        assert_eq!(
+            constant(&alone.stages, name, ty),
+            constant(&with_points.stages, name, ty),
+            "{name}"
+        );
+    }
+    assert_eq!(alone.stages, with_points.stages);
 }
 
 #[test]

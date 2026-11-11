@@ -6,6 +6,7 @@
 mod axis;
 mod axis_edges;
 mod readback;
+mod spans;
 
 use std::collections::BTreeMap;
 
@@ -264,6 +265,12 @@ fn emitted_stages() -> Vec<(String, String, Polynomial)> {
                     assert!(!g.stages.contains(stage));
                     continue;
                 }
+                // A stage whose temporaries do not fit on the stack is not
+                // emitted; in-sphere has none that fits.
+                if p.name == "insphere" {
+                    assert!(!g.stages.contains(&format!("pub fn {stage}(")), "{stage}");
+                    continue;
+                }
                 let code = readback::function(&g.stages, stage).to_string();
                 out.push((format!("{} {stage}", p.name), code, expand(&p.main)));
             }
@@ -282,8 +289,9 @@ fn the_text_of_every_exact_stage_has_the_value_of_the_source_polynomial() {
             "{name}"
         );
     }
-    // orient3d and n have three stages, in-sphere and linear two.
-    assert_eq!(stages.len(), 3 + 2 + 3 + 2);
+    // orient3d and n have three stages on the stack, in-sphere none and
+    // linear two.
+    assert_eq!(stages.len(), 3 + 3 + 2);
 }
 
 #[test]

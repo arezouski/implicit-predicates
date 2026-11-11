@@ -19,6 +19,8 @@ mod point_exact;
 mod point_types;
 mod points;
 mod program;
+mod spans;
+mod stages;
 mod statements;
 mod text;
 
@@ -34,11 +36,17 @@ use crate::differences::difference_graph;
 use crate::error::Error;
 use crate::parse::{Predicate, parse};
 use crate::polynomial::check_same_polynomial;
-use crate::range::{ExactRange, Leaves, exact_plan_differences, exact_plan_raw};
-use exact::{Check, Stage, write_in_range, write_product, write_stage};
+use crate::range::{
+    Leaves, MAX_COORD_COMPONENTS, exact_plan_differences, exact_plan_raw,
+    exact_plan_spans_translated, exact_plan_spans_untranslated,
+};
+use chain::ChainStage;
+use exact::{write_in_range, write_product};
 use filter::FilterKind;
 pub use points::generate_points;
 use program::{Program, Step};
+use spans::write_span_in_range;
+use stages::{Forms, STACK_LIMIT, write_constants, write_exact_stages};
 pub(crate) use text::{comment, literal, power_of_two};
 
 /// The code generated for one predicate.
@@ -70,10 +78,16 @@ pub struct Generated {
 /// (with one size and one uncertainty per axis when every term of the main
 /// form has the same degree in each axis, see [`crate::filter_form`]),
 /// `exact_differences`, `expansions_translated`, `expansions_untranslated`
-/// (only when the predicate has an `#[exact]` form) and `staged`, which runs
-/// the filter and then the exact stages in the order: differences that are
-/// exact, the translated expansion form, then the `#[exact]` form if one is
-/// given. The order is the same for every predicate for now. The module of
+/// (only when the predicate has an `#[exact]` form) on stack buffers, the
+/// same two expansion forms over arena spans, `expansions_translated_in` and
+/// `expansions_untranslated_in`, which take the exact coordinates of any
+/// point type, and `staged`, which runs the filter and then the exact stages
+/// in the order: differences that are exact, the translated expansion form,
+/// then the `#[exact]` form if one is given. The order is the same for every
+/// predicate for now. A stage on the stack is emitted only when its
+/// temporaries take at most 4,096 `f64`; when one does not fit, `staged`
+/// takes an arena and runs the stage over spans of the same form in its
+/// place, on the exact coordinates of the explicit points. The module of
 /// its checks holds `exact`, the main form evaluated with the exact numbers
 /// of `implicit-predicates-oracle`, `bound_edge_cases`, pairs of inputs at
 /// the edge of the error bound of the filter for explicit points, and, for a
@@ -102,7 +116,8 @@ pub struct Generated {
 ///   bits per coefficient and `2^20` units of work;
 /// - the exact plans reject temporaries of `2^32` components or more, or of
 ///   more than `2^51` operations, and take a few passes over the graph for
-///   each power of two they try;
+///   each power of two they try; the plans over spans stop each pass at the
+///   first node whose bound overflows;
 /// - the search for the edge cases of the checks, the most expensive step
 ///   per node, runs only on main forms of at most 256 distinct
 ///   subexpressions, and makes at most a fixed number of exact evaluations
@@ -118,14 +133,6 @@ pub fn generate(source: &str, file: &str, regenerate: &str) -> Result<Vec<Genera
         .iter()
         .map(|predicate| generate_one(predicate, file, &notice))
         .collect()
-}
-
-/// The forms of a predicate, with the plans of their exact stages.
-struct Forms {
-    filter: FilterKind,
-    differences: (Program, ExactRange),
-    translated: (Program, ExactRange),
-    untranslated: Option<(Program, ExactRange)>,
 }
 
 /// Generates the code of `predicate`, whose files start with `notice`.
@@ -170,35 +177,52 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         ));
     }
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
-    let plan = |leaves| {
+    // A stage on the stack is emitted only if its temporaries fit.
+    let stack = |leaves| {
         exact_plan_differences(&graph, leaves, file, position, min, max).map(|plan| {
-            (
-                Program::differences(&graph, leaves, &plan.lengths),
-                plan.range,
-            )
+            (plan.total <= STACK_LIMIT).then(|| {
+                (
+                    Program::differences(&graph, leaves, &plan.lengths),
+                    plan.range,
+                )
+            })
         })
     };
-    let differences = plan(Leaves::One)?;
-    let translated = plan(Leaves::Two)?;
-    let untranslated = match &predicate.exact {
+    let differences = stack(Leaves::One)?;
+    let translated = stack(Leaves::Two)?;
+    let spans =
+        exact_plan_spans_translated(&graph, MAX_COORD_COMPONENTS, file, position, min, max)?;
+    let (untranslated, spans_untranslated) = match &predicate.exact {
         Some(exact) => {
             let position = predicate.exact_position.unwrap_or(position);
             let plan = exact_plan_raw(exact, file, position, min, max)?;
-            Some((Program::raw(exact, &plan.lengths), plan.range))
+            let program = |lengths: &[usize]| Program::raw(exact, lengths);
+            let stack = (plan.total <= STACK_LIMIT).then(|| (program(&plan.lengths), plan.range));
+            let spans = exact_plan_spans_untranslated(
+                exact,
+                MAX_COORD_COMPONENTS,
+                file,
+                position,
+                min,
+                max,
+            )?;
+            (stack, Some((exact, spans.range)))
         }
-        None => None,
+        None => (None, None),
     };
     let forms = Forms {
         filter,
         differences,
         translated,
         untranslated,
+        spans_translated: (&graph, spans.range),
+        spans_untranslated,
     };
     let points = predicate.params.len();
     let mut out = String::new();
-    write_header(&mut out, predicate, notice);
+    write_header(&mut out, predicate, notice, &forms);
     write_constants(&mut out, &forms);
-    let (uses_max, explicit) = match &filter {
+    let (uses_max, explicit) = match &forms.filter {
         FilterKind::Global(c) => (
             filter::write_filter(&mut out, &graph, points, c.degree),
             "0.0",
@@ -208,23 +232,22 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
             "[0.0; 3]",
         ),
     };
-    write_exact_stages(&mut out, predicate, &forms);
-    chain::write_chain(&mut out, points, forms.untranslated.is_some(), explicit);
+    write_exact_stages(&mut out, points, &forms);
+    chain::write_chain(&mut out, points, &chain_stages(&forms), explicit);
     if uses_max {
         filter::write_max(&mut out);
     }
     write_in_range(&mut out);
-    let programs = [&forms.differences, &forms.translated]
-        .into_iter()
-        .chain(&forms.untranslated);
-    if programs
-        .flat_map(|(program, _)| &program.steps)
+    write_span_in_range(&mut out);
+    if forms
+        .stack_stages()
+        .flat_map(|(_, program)| &program.steps)
         .any(|step| matches!(step, Step::Product { .. }))
     {
         write_product(&mut out);
     }
     let mut checks = String::new();
-    checks::write_checks(&mut checks, predicate, &graph, &filter, notice);
+    checks::write_checks(&mut checks, predicate, &graph, &forms.filter, notice);
     Ok(Generated {
         name: predicate.name.clone(),
         stages: out,
@@ -249,7 +272,7 @@ pub(crate) fn notice(file: &str, regenerate: &str) -> String {
     out
 }
 
-fn write_header(out: &mut String, predicate: &Predicate, notice: &str) {
+fn write_header(out: &mut String, predicate: &Predicate, notice: &str, forms: &Forms) {
     out.push_str(notice);
     comment(
         out,
@@ -264,7 +287,48 @@ fn write_header(out: &mut String, predicate: &Predicate, notice: &str) {
             list(&predicate.params)
         ),
     );
-    out.push_str("\nuse implicit_predicates_core::{Sign, eft, expansion};\n\n");
+    // The names the module uses, in the order rustfmt sorts them.
+    let in_arena = chain_stages(forms)
+        .iter()
+        .any(|s| matches!(s, ChainStage::Spans(_)));
+    let mut names = vec!["ExactCoords"];
+    if in_arena {
+        names.extend(["ExactError", "Point"]);
+    }
+    names.extend(["Scratch", "ScratchExhausted", "Sign", "Span", "Weight"]);
+    if forms.differences.is_some() {
+        names.push("eft");
+    }
+    if forms.stack_stages().next().is_some() {
+        names.push("expansion");
+    }
+    writeln!(
+        out,
+        "\nuse implicit_predicates_core::{{{}}};\n",
+        names.join(", ")
+    )
+    .unwrap();
+}
+
+/// The exact stages of the chain for explicit points, in order: each stage
+/// on the stack, or the stage over spans in its place when it is not
+/// emitted. The stage of exact differences has no counterpart over spans.
+fn chain_stages(forms: &Forms) -> Vec<ChainStage> {
+    let mut stages = Vec::new();
+    if forms.differences.is_some() {
+        stages.push(ChainStage::Stack("exact_differences"));
+    }
+    stages.push(match forms.translated {
+        Some(_) => ChainStage::Stack("expansions_translated"),
+        None => ChainStage::Spans("expansions_translated_in"),
+    });
+    if forms.spans_untranslated.is_some() {
+        stages.push(match forms.untranslated {
+            Some(_) => ChainStage::Stack("expansions_untranslated"),
+            None => ChainStage::Spans("expansions_untranslated_in"),
+        });
+    }
+    stages
 }
 
 /// `a`, `b` and `c`.
@@ -273,99 +337,5 @@ pub(crate) fn list(names: &[String]) -> String {
     match quoted.split_last() {
         Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
         _ => quoted.concat(),
-    }
-}
-
-fn write_constants(out: &mut String, forms: &Forms) {
-    let constant = |out: &mut String, doc: &str, name: &str, ty: &str, value: String| {
-        comment(out, "///", 0, doc);
-        writeln!(out, "pub const {name}: {ty} = {value};\n").unwrap();
-    };
-    match &forms.filter {
-        FilterKind::Global(c) => filter::write_constants(out, c),
-        FilterKind::PerAxis(c, _) => filter_axis::write_constants(out, c),
-    }
-    let range = |out: &mut String, name: &str, what: &str, range: ExactRange| {
-        constant(
-            out,
-            &format!(
-                "`(min, max)`, `(2^{}, 2^{})`: {what} has a magnitude in `min..=max`.",
-                power_of_two(range.min),
-                power_of_two(range.max)
-            ),
-            name,
-            "(f64, f64)",
-            format!("({}, {})", literal(range.min), literal(range.max)),
-        );
-    };
-    range(
-        out,
-        "DIFFERENCES_RANGE",
-        "[`exact_differences`] decides when every difference of coordinates is exact \
-         in `f64` and every nonzero one",
-        forms.differences.1,
-    );
-    range(
-        out,
-        "TRANSLATED_RANGE",
-        "[`expansions_translated`] decides when every nonzero coordinate",
-        forms.translated.1,
-    );
-    if let Some((_, r)) = &forms.untranslated {
-        range(
-            out,
-            "UNTRANSLATED_RANGE",
-            "[`expansions_untranslated`] decides when every nonzero coordinate",
-            *r,
-        );
-    }
-}
-
-fn write_exact_stages(out: &mut String, predicate: &Predicate, forms: &Forms) {
-    let points = predicate.params.len();
-    let doc = "The exact sign of the predicate: its main form evaluated with expansions on \
-         the differences of coordinates, each computed in `f64`.\n\n\
-         `None` means that this stage cannot decide: some difference is not exact in \
-         `f64`, or some nonzero difference has a magnitude outside [`DIFFERENCES_RANGE`], \
-         as when a coordinate is not finite.";
-    write_stage(
-        out,
-        &Stage {
-            name: "exact_differences",
-            doc,
-            program: &forms.differences.0,
-            check: Check::Differences("DIFFERENCES_RANGE"),
-        },
-        points,
-    );
-    let doc = "The exact sign of the predicate: its main form evaluated with expansions, \
-         each difference of coordinates as an exact expansion of two components.\n\n\
-         `None` means that this stage cannot decide: some nonzero coordinate has a \
-         magnitude outside [`TRANSLATED_RANGE`] or is not finite.";
-    write_stage(
-        out,
-        &Stage {
-            name: "expansions_translated",
-            doc,
-            program: &forms.translated.0,
-            check: Check::Coordinates("TRANSLATED_RANGE"),
-        },
-        points,
-    );
-    if let Some((program, _)) = &forms.untranslated {
-        let doc = "The exact sign of the predicate: its form for exact evaluation, marked \
-             `#[exact]` in the definition, evaluated with expansions on the coordinates.\n\n\
-             `None` means that this stage cannot decide: some nonzero coordinate has a \
-             magnitude outside [`UNTRANSLATED_RANGE`] or is not finite.";
-        write_stage(
-            out,
-            &Stage {
-                name: "expansions_untranslated",
-                doc,
-                program,
-                check: Check::Coordinates("UNTRANSLATED_RANGE"),
-            },
-            points,
-        );
     }
 }

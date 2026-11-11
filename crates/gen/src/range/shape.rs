@@ -11,7 +11,7 @@ use super::Leaves;
 /// One node of an exact evaluation, as far as sizes and bounds are
 /// concerned: a difference is an exact sum of a negated operand.
 #[derive(Clone, Copy, Debug)]
-enum Op {
+pub(super) enum Op {
     /// An input: a coordinate, or a difference of two coordinates.
     Leaf,
     /// An integer constant of the raw form.
@@ -58,27 +58,7 @@ impl Shape {
     /// Fails, with the message to report, when a constant is not exact in
     /// `f64` or the evaluation is too large (see [`Shape::new`]).
     pub(crate) fn raw(graph: &Graph) -> Result<Self, String> {
-        let ops = graph
-            .nodes
-            .iter()
-            .map(|node| match *node {
-                Node::Coord { .. } => Ok(Op::Leaf),
-                Node::Int(n) => {
-                    let magnitude = n.unsigned_abs();
-                    if magnitude >> magnitude.trailing_zeros().min(63) < 1 << 53 {
-                        Ok(Op::Constant(n))
-                    } else {
-                        Err(format!(
-                            "the constant {n} is not exactly representable in f64, \
-                             so it cannot be used in exact evaluation"
-                        ))
-                    }
-                }
-                Node::Add(x, y) | Node::Sub(x, y) => Ok(Op::Sum(x, y)),
-                Node::Mul(x, y) => Ok(Op::Product(x, y)),
-            })
-            .collect::<Result<_, _>>()?;
-        Shape::new(ops, Leaves::One)
+        Shape::new(raw_ops(graph)?, Leaves::One)
     }
 
     /// A difference form, with leaves of one or two components.
@@ -86,17 +66,7 @@ impl Shape {
     /// Fails, with the message to report, when the evaluation is too large
     /// (see [`Shape::new`]).
     pub(crate) fn differences(graph: &DiffGraph, leaves: Leaves) -> Result<Self, String> {
-        let ops = graph
-            .nodes
-            .iter()
-            .map(|node| match *node {
-                DiffNode::Leaf { .. } => Op::Leaf,
-                DiffNode::Neg(x) => Op::Neg(x),
-                DiffNode::Add(x, y) | DiffNode::Sub(x, y) => Op::Sum(x, y),
-                DiffNode::Mul(x, y) => Op::Product(x, y),
-            })
-            .collect();
-        Shape::new(ops, leaves)
+        Shape::new(difference_ops(graph), leaves)
     }
 
     /// Computes the lengths and operation counts, in the order of the graph.
@@ -251,4 +221,46 @@ impl Shape {
             })
             .collect()
     }
+}
+
+/// The operations of the raw form `graph`, whose leaves are coordinates.
+///
+/// Fails, with the message to report, when a constant is not exact in
+/// `f64`.
+pub(super) fn raw_ops(graph: &Graph) -> Result<Vec<Op>, String> {
+    graph
+        .nodes
+        .iter()
+        .map(|node| match *node {
+            Node::Coord { .. } => Ok(Op::Leaf),
+            Node::Int(n) => {
+                let magnitude = n.unsigned_abs();
+                if magnitude >> magnitude.trailing_zeros().min(63) < 1 << 53 {
+                    Ok(Op::Constant(n))
+                } else {
+                    Err(format!(
+                        "the constant {n} is not exactly representable in f64, \
+                         so it cannot be used in exact evaluation"
+                    ))
+                }
+            }
+            Node::Add(x, y) | Node::Sub(x, y) => Ok(Op::Sum(x, y)),
+            Node::Mul(x, y) => Ok(Op::Product(x, y)),
+        })
+        .collect()
+}
+
+/// The operations of the difference form `graph`, whose leaves are
+/// differences of coordinates.
+pub(super) fn difference_ops(graph: &DiffGraph) -> Vec<Op> {
+    graph
+        .nodes
+        .iter()
+        .map(|node| match *node {
+            DiffNode::Leaf { .. } => Op::Leaf,
+            DiffNode::Neg(x) => Op::Neg(x),
+            DiffNode::Add(x, y) | DiffNode::Sub(x, y) => Op::Sum(x, y),
+            DiffNode::Mul(x, y) => Op::Product(x, y),
+        })
+        .collect()
 }

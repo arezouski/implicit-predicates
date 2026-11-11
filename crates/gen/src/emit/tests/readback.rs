@@ -263,3 +263,96 @@ pub(super) fn interpret_stage(code: &str) -> Graph {
     }
     g.finish(root.expect("the sign of an expansion is returned"))
 }
+
+/// The value of an emitted stage over spans, read back from its text: the
+/// nested `evaluate` may only call operations of the arena, `diff`, `sum`,
+/// `product` and `push`, each read as the operation it performs, and the
+/// result is the expansion whose sign it returns. Also checks that the range
+/// check reads every coordinate that `evaluate` reads, and that the arena is
+/// reset to the mark taken before the evaluation, before the result is
+/// returned.
+pub(super) fn interpret_span_stage(code: &str) -> Graph {
+    let start = code.find("fn evaluate(").expect("a nested evaluate");
+    let body = &code[start..];
+    let end = body.find("\n}\n").expect("the end of evaluate");
+    let (evaluate, rest) = (&body[..end], &body[end..]);
+    let mut g = Symbolic::default();
+    let mut values: BTreeMap<String, NodeId> = BTreeMap::new();
+    let mut read: Vec<String> = Vec::new();
+    let mut operand = |g: &mut Symbolic, values: &BTreeMap<String, NodeId>, text: &str| {
+        if let Some((point, axis)) = coordinate(text, "c") {
+            read.push(text.to_string());
+            g.coordinate(point, axis)
+        } else {
+            values[text]
+        }
+    };
+    let mut root = None;
+    for line in evaluate.lines().skip(1).map(str::trim) {
+        if let Some(text) = line
+            .strip_prefix("Ok(scratch.sign(")
+            .and_then(|t| t.strip_suffix("))"))
+        {
+            root = Some(operand(&mut g, &values, text));
+            continue;
+        }
+        let (name, call) = line
+            .strip_prefix("let ")
+            .and_then(|t| t.strip_suffix("?;"))
+            .and_then(|t| t.split_once(" = scratch."))
+            .unwrap_or_else(|| panic!("not an operation of the arena: {line}"));
+        let value = if let Some(constant) = call
+            .strip_prefix("push(&[")
+            .and_then(|t| t.strip_suffix("])"))
+        {
+            if constant.is_empty() {
+                g.push(Node::Int(0))
+            } else {
+                let c: f64 = constant.parse().unwrap_or_else(|_| panic!("{line}"));
+                assert_eq!(c.fract(), 0.0, "{line}");
+                g.push(Node::Int(c as i64))
+            }
+        } else {
+            let (op, arguments) = call
+                .strip_suffix(')')
+                .and_then(|t| t.split_once('('))
+                .unwrap_or_else(|| panic!("{line}"));
+            let (x, y) = arguments
+                .split_once(", ")
+                .unwrap_or_else(|| panic!("{line}"));
+            let (x, y) = (operand(&mut g, &values, x), operand(&mut g, &values, y));
+            g.push(match op {
+                "sum" => Node::Add(x, y),
+                "diff" => Node::Sub(x, y),
+                "product" => Node::Mul(x, y),
+                _ => panic!("not an operation of the arena: {line}"),
+            })
+        };
+        assert!(
+            values.insert(name.to_string(), value).is_none(),
+            "{name} written twice"
+        );
+    }
+    // The range check covers every coordinate read.
+    let checked = rest
+        .lines()
+        .find_map(|l| l.strip_prefix("let coordinates = [")?.strip_suffix("];"))
+        .expect("the coordinates checked");
+    let checked: Vec<&str> = checked.split(", ").collect();
+    for c in &read {
+        assert!(checked.contains(&c.as_str()), "{c} is not checked");
+    }
+    let order = [
+        "let mark = scratch.mark();",
+        "let sign = evaluate(scratch, c);",
+        "scratch.reset(mark);",
+        "sign.map(Some)",
+    ]
+    .map(|line| {
+        rest.lines()
+            .position(|l| l.trim() == line)
+            .unwrap_or_else(|| panic!("no `{line}`"))
+    });
+    assert!(order.is_sorted(), "{rest}");
+    g.finish(root.expect("the sign of an expansion is returned"))
+}

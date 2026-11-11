@@ -84,7 +84,11 @@
 //! stage, the range of input magnitudes for which every exact product of the
 //! arithmetic core stays in its domain and no value overflows, and the
 //! worst-case length of every temporary; [`generate`] sizes the stack
-//! buffers of the emitted stages from them.
+//! buffers of the emitted stages from them. [`exact_plan_spans_translated`]
+//! and [`exact_plan_spans_untranslated`] derive the same for the stages over
+//! arena spans, whose leaves are expansions of up to
+//! [`MAX_COORD_COMPONENTS`] components: the range bounds every nonzero
+//! component, so it does not depend on the type of the points.
 
 #![forbid(unsafe_code)]
 
@@ -115,4 +119,7 @@ pub use point::{
     PointType, error_bound, parse_points,
 };
 pub use polynomial::{Polynomial, canonical, canonical_of_differences, check_same_polynomial};
-pub use range::{ExactPlan, ExactRange, Leaves, exact_plan_differences, exact_plan_raw};
+pub use range::{
+    ExactPlan, ExactRange, Leaves, MAX_COORD_COMPONENTS, exact_plan_differences, exact_plan_raw,
+    exact_plan_spans_translated, exact_plan_spans_untranslated,
+};
