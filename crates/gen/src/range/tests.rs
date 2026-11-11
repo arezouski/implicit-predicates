@@ -1,5 +1,5 @@
 use super::shape::Shape;
-use super::{ExactPlan, Leaves, OVERFLOW_EXPONENT, plan};
+use super::{ExactPlan, Leaves, grids_fit, magnitudes_fit, plan};
 use crate::differences::{DiffGraph, DiffNode, difference_graph};
 use crate::dyadic::Dyadic;
 use crate::graph::{Graph, Node};
@@ -11,8 +11,8 @@ const INSPHERE_RAW: &str = include_str!("../../tests/fixtures/insphere_raw.pred"
 
 /// The exponents of the product domain of the arithmetic core,
 /// `[2^-480, 2^480]`; the generator passes the core's own constants.
-const LOW: i32 = -480;
-const HIGH: i32 = 480;
+const LOW: i64 = -480;
+const HIGH: i64 = 480;
 
 /// A form to evaluate exactly.
 enum Form {
@@ -35,8 +35,9 @@ fn case(name: &'static str, source: &str, form: impl Fn(&crate::Predicate) -> Fo
     let shape = match &form {
         Form::Raw(g) => Shape::raw(g),
         Form::Differences(g, leaves) => Shape::differences(g, *leaves),
-    };
-    let plan = plan(&shape, 2f64.powi(LOW), 2f64.powi(HIGH));
+    }
+    .unwrap();
+    let plan = plan(&shape, LOW, HIGH).unwrap();
     Case {
         name,
         form,
@@ -70,39 +71,22 @@ fn exponent(power_of_two: f64) -> i64 {
     i64::from(power_of_two.log2() as i32)
 }
 
-/// Whether every nonzero component of every product operand is at least
-/// `2^LOW`, for nonzero leaves of magnitude at least `2^m`.
-fn lower_ends_fit(shape: &Shape, m: i64) -> bool {
-    let grids = shape.grids(m);
-    shape
-        .operands()
-        .all(|x| grids[x].is_none_or(|g| g >= i64::from(LOW)))
-}
-
-/// Whether every component of every product operand is at most `2^HIGH`,
-/// and every value below `2^1020`, for leaves of magnitude at most `2^big_m`.
-fn upper_ends_fit(shape: &Shape, big_m: i64) -> bool {
-    let bounds = shape.component_bounds(big_m);
-    let high = Dyadic::pow2(i64::from(HIGH));
-    shape.operands().all(|x| bounds[x] <= high)
-        && bounds.iter().all(|b| *b < Dyadic::pow2(OVERFLOW_EXPONENT))
-}
-
 #[test]
 fn every_product_operand_stays_in_the_domain_at_the_edges() {
     for c in cases() {
         let (m, big_m) = (exponent(c.plan.range.min), exponent(c.plan.range.max));
-        assert!(lower_ends_fit(&c.shape, m), "{}", c.name);
-        assert!(upper_ends_fit(&c.shape, big_m), "{}", c.name);
+        assert!(grids_fit(&c.shape, m, LOW), "{}", c.name);
+        assert!(magnitudes_fit(&c.shape, big_m, HIGH), "{}", c.name);
         // The interval is the widest: one step further out fails, or leaves
-        // the domain itself.
+        // the domain itself. The table of exponents in the integration tests
+        // is the check of the rule that does not go through this code.
         assert!(
-            m - 1 < i64::from(LOW) || !lower_ends_fit(&c.shape, m - 1),
+            m - 1 < LOW || !grids_fit(&c.shape, m - 1, LOW),
             "{}",
             c.name
         );
         assert!(
-            big_m + 1 > i64::from(HIGH) || !upper_ends_fit(&c.shape, big_m + 1),
+            big_m + 1 > HIGH || !magnitudes_fit(&c.shape, big_m + 1, HIGH),
             "{}",
             c.name
         );

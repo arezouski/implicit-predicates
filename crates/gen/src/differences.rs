@@ -66,8 +66,8 @@ enum Mapped {
 /// Returns an error, at `position` (the name of the predicate), when a
 /// coordinate is used outside a difference, a difference mixes axes or
 /// subtracts a point from itself, a sum or difference combines nodes of
-/// different degree, or an integer literal appears other than as the zero of a
-/// negation.
+/// different degree, a degree exceeds `u32::MAX`, or an integer literal
+/// appears other than as the zero of a negation.
 pub fn difference_graph(graph: &Graph, file: &str, position: Position) -> Result<DiffGraph, Error> {
     let fail = |message: String| Error {
         file: file.to_string(),
@@ -146,7 +146,12 @@ fn combine(
     let (gx, gy) = (out.degrees[x], out.degrees[y]);
     let node = make(x, y);
     let degree = if matches!(node, DiffNode::Mul(..)) {
-        gx + gy
+        gx.checked_add(gy).ok_or_else(|| {
+            fail(format!(
+                "a product has a degree in the differences above {}",
+                u32::MAX
+            ))
+        })?
     } else if gx == gy {
         gx
     } else {

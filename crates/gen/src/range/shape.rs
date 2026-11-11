@@ -28,6 +28,10 @@ enum Op {
 /// node, `2^51`; it keeps `3 u T <= 3/4` in the component bound.
 const MAX_OPERATIONS: u128 = 1 << 51;
 
+/// The upper limit on the worst-case length of a temporary, and on the
+/// total length of all of them: `2^32` components, 32 GiB.
+pub(crate) const MAX_LENGTH: u64 = 1 << 32;
+
 /// An exact evaluation of a graph with leaves of one kind.
 #[derive(Debug)]
 pub(crate) struct Shape {
@@ -38,6 +42,9 @@ pub(crate) struct Shape {
     leaf_scale: i64,
     /// The worst-case length of every node.
     pub(crate) lengths: Vec<usize>,
+    /// The highest degree in the leaves of every node, saturated at
+    /// `u64::MAX`.
+    pub(crate) degrees: Vec<u64>,
     /// `T`: the number of error-free transformations of every node and of
     /// everything it is computed from, with multiplicity, saturated at
     /// `u128::MAX`.
@@ -46,22 +53,38 @@ pub(crate) struct Shape {
 
 impl Shape {
     /// The raw form: every coordinate is a leaf of one component.
-    pub(crate) fn raw(graph: &Graph) -> Self {
+    ///
+    /// Fails, with the message to report, when a constant is not exact in
+    /// `f64` or the evaluation is too large (see [`Shape::new`]).
+    pub(crate) fn raw(graph: &Graph) -> Result<Self, String> {
         let ops = graph
             .nodes
             .iter()
             .map(|node| match *node {
-                Node::Coord { .. } => Op::Leaf,
-                Node::Int(n) => Op::Constant(n),
-                Node::Add(x, y) | Node::Sub(x, y) => Op::Sum(x, y),
-                Node::Mul(x, y) => Op::Product(x, y),
+                Node::Coord { .. } => Ok(Op::Leaf),
+                Node::Int(n) => {
+                    let magnitude = n.unsigned_abs();
+                    if magnitude >> magnitude.trailing_zeros().min(63) < 1 << 53 {
+                        Ok(Op::Constant(n))
+                    } else {
+                        Err(format!(
+                            "the constant {n} is not exactly representable in f64, \
+                             so it cannot be used in exact evaluation"
+                        ))
+                    }
+                }
+                Node::Add(x, y) | Node::Sub(x, y) => Ok(Op::Sum(x, y)),
+                Node::Mul(x, y) => Ok(Op::Product(x, y)),
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         Shape::new(ops, Leaves::One)
     }
 
     /// A difference form, with leaves of one or two components.
-    pub(crate) fn differences(graph: &DiffGraph, leaves: Leaves) -> Self {
+    ///
+    /// Fails, with the message to report, when the evaluation is too large
+    /// (see [`Shape::new`]).
+    pub(crate) fn differences(graph: &DiffGraph, leaves: Leaves) -> Result<Self, String> {
         let ops = graph
             .nodes
             .iter()
@@ -85,45 +108,70 @@ impl Shape {
     /// scalings, at most `l_x + l_y` merges of inputs of total length at most
     /// `2 l_x l_y`, whichever operand is scaled and in whatever order the
     /// scalings are merged: `3 l_x l_y + 4 l_x l_y (l_x + l_y)`.
-    fn new(ops: Vec<Op>, leaves: Leaves) -> Self {
-        let (leaf_length, leaf_scale, leaf_operations) = match leaves {
+    ///
+    /// Fails, with the message to report, at the first node whose length
+    /// exceeds [`MAX_LENGTH`] or whose operation count exceeds `2^51`, before
+    /// anything is computed from the oversized values.
+    fn new(ops: Vec<Op>, leaves: Leaves) -> Result<Self, String> {
+        let (leaf_length, leaf_scale, leaf_operations): (u64, i64, u128) = match leaves {
             Leaves::One => (1, 0, 0),
             Leaves::Two => (2, 1, 1),
         };
-        let mut lengths: Vec<usize> = Vec::with_capacity(ops.len());
+        let mut lengths: Vec<u64> = Vec::with_capacity(ops.len());
+        let mut degrees: Vec<u64> = Vec::with_capacity(ops.len());
         let mut operations: Vec<u128> = Vec::with_capacity(ops.len());
         for op in &ops {
-            let (length, own) = match *op {
-                Op::Leaf => (leaf_length, leaf_operations),
-                Op::Constant(n) => (usize::from(n != 0), 0),
-                Op::Neg(x) => (lengths[x], 0),
+            // Lengths are at most 2^32, so none of this overflows.
+            let (length, degree, own) = match *op {
+                Op::Leaf => (leaf_length, 1, leaf_operations),
+                Op::Constant(n) => (u64::from(n != 0), 0, 0),
+                Op::Neg(x) => (lengths[x], degrees[x], 0),
                 Op::Sum(x, y) => {
-                    let length = lengths[x].checked_add(lengths[y]).expect(TOO_LONG);
-                    (length, 2 * length as u128)
+                    let length = lengths[x] + lengths[y];
+                    (length, degrees[x].max(degrees[y]), 2 * u128::from(length))
                 }
                 Op::Product(x, y) => {
-                    let (lx, ly) = (lengths[x], lengths[y]);
-                    let length = lx.checked_mul(ly).and_then(|n| n.checked_mul(2));
-                    // Lengths fit in 64 bits, so these do not overflow.
-                    let pairs = lx as u128 * ly as u128;
-                    let merges = pairs.saturating_mul(4 * (lx as u128 + ly as u128));
-                    (length.expect(TOO_LONG), merges.saturating_add(3 * pairs))
+                    let (lx, ly) = (u128::from(lengths[x]), u128::from(lengths[y]));
+                    let length = u64::try_from(2 * lx * ly).unwrap_or(u64::MAX);
+                    let degree = degrees[x].saturating_add(degrees[y]);
+                    (length, degree, 3 * lx * ly + 4 * lx * ly * (lx + ly))
                 }
             };
+            if length > MAX_LENGTH {
+                return Err(
+                    "the expression is too large for exact evaluation: a temporary \
+                            would need more than 2^32 components"
+                        .to_string(),
+                );
+            }
             let below = match *op {
                 Op::Leaf | Op::Constant(_) => 0,
                 Op::Neg(x) => operations[x],
                 Op::Sum(x, y) | Op::Product(x, y) => operations[x].saturating_add(operations[y]),
             };
+            let count = below.saturating_add(own);
+            if count > MAX_OPERATIONS {
+                return Err(
+                    "the expression is too large for exact evaluation: a temporary \
+                            would take more than 2^51 floating-point operations"
+                        .to_string(),
+                );
+            }
             lengths.push(length);
-            operations.push(below.saturating_add(own));
+            degrees.push(degree);
+            operations.push(count);
         }
-        Shape {
+        let lengths = lengths
+            .into_iter()
+            .map(|n| usize::try_from(n).expect("a length of at most 2^32 fits in usize"))
+            .collect();
+        Ok(Shape {
             ops,
             leaf_scale,
             lengths,
+            degrees,
             operations,
-        }
+        })
     }
 
     /// Each operand of each product, once per product it is an operand of.
@@ -169,23 +217,13 @@ impl Shape {
     /// their product for a product, and that of the operand for a negation.
     ///
     /// `S` also bounds the magnitude of the exact value of the node.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a constant is not exactly representable in `f64`.
     pub(crate) fn magnitudes(&self, big_m: i64) -> Vec<Dyadic> {
         let leaf = Dyadic::pow2(big_m + self.leaf_scale);
         let mut magnitudes: Vec<Dyadic> = Vec::with_capacity(self.ops.len());
         for op in &self.ops {
             let magnitude = match *op {
                 Op::Leaf => leaf.clone(),
-                Op::Constant(n) => {
-                    assert!(
-                        n.unsigned_abs() <= 1 << 53,
-                        "the constant {n} is not exact in f64"
-                    );
-                    Dyadic::integer(n.unsigned_abs())
-                }
+                Op::Constant(n) => Dyadic::integer(n.unsigned_abs()),
                 Op::Neg(x) => magnitudes[x].clone(),
                 Op::Sum(x, y) => &magnitudes[x] + &magnitudes[y],
                 Op::Product(x, y) => &magnitudes[x] * &magnitudes[y],
@@ -198,12 +236,8 @@ impl Shape {
     /// For leaves of magnitude at most `2^big_m`, a bound on the magnitude
     /// of every floating-point value the evaluation of each node handles, in
     /// particular of each of its components: `S (1 + 6 u T)`, with `S` from
-    /// [`Shape::magnitudes`], `T` the operation count and `u = 2^-53`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a node depends on more than `2^51` error-free
-    /// transformations.
+    /// [`Shape::magnitudes`], `T <= 2^51` the operation count and
+    /// `u = 2^-53`.
     pub(crate) fn component_bounds(&self, big_m: i64) -> Vec<Dyadic> {
         let six_u = Dyadic::new(6, -53);
         let one = Dyadic::integer(1);
@@ -211,15 +245,9 @@ impl Shape {
             .iter()
             .zip(&self.operations)
             .map(|(magnitude, &operations)| {
-                assert!(
-                    operations <= MAX_OPERATIONS,
-                    "the exact evaluation needs too many operations to bound"
-                );
                 let factor = &one + &(&six_u * &Dyadic::integer(operations));
                 magnitude * &factor
             })
             .collect()
     }
 }
-
-const TOO_LONG: &str = "a worst-case length overflows usize";

@@ -13,8 +13,10 @@ mod shape;
 
 use crate::differences::DiffGraph;
 use crate::dyadic::Dyadic;
+use crate::error::Error;
 use crate::graph::Graph;
-use shape::Shape;
+use crate::parse::Position;
+use shape::{MAX_LENGTH, Shape};
 
 /// The exponent of the overflow limit of the arithmetic core: every
 /// component and scalar operand of its expansion functions has magnitude
@@ -118,13 +120,29 @@ pub enum Leaves {
 ///
 /// See [`ExactRange`] for the rule and why it is sound.
 ///
+/// # Errors
+///
+/// Returns an error, at `position` (the name of the form) in `file`, when no
+/// range satisfies the rule, when a constant is not exact in `f64`, or when
+/// the evaluation is too large: a temporary longer than `2^32` components,
+/// temporaries longer than that in all, or a node that depends on more than
+/// `2^51` error-free transformations.
+///
 /// # Panics
 ///
 /// Panics if `operand_min` and `operand_max` are not normal powers of two
-/// with `operand_min <= operand_max`, if no range exists, if a constant is
-/// not exact in `f64`, or if a length overflows `usize`.
-pub fn exact_plan_raw(graph: &Graph, operand_min: f64, operand_max: f64) -> ExactPlan {
-    plan(&Shape::raw(graph), operand_min, operand_max)
+/// with `operand_min <= operand_max`.
+pub fn exact_plan_raw(
+    graph: &Graph,
+    file: &str,
+    position: Position,
+    operand_min: f64,
+    operand_max: f64,
+) -> Result<ExactPlan, Error> {
+    let (low, high) = domain(operand_min, operand_max);
+    Shape::raw(graph)
+        .and_then(|shape| plan(&shape, low, high))
+        .map_err(|message| Error::at(file, position, message))
 }
 
 /// Derives the exact stage of a difference form whose leaves have the given
@@ -132,42 +150,71 @@ pub fn exact_plan_raw(graph: &Graph, operand_min: f64, operand_max: f64) -> Exac
 ///
 /// See [`ExactRange`] for the rule and why it is sound.
 ///
+/// # Errors
+///
+/// As [`exact_plan_raw`], except that a difference form has no constants.
+///
 /// # Panics
 ///
 /// As [`exact_plan_raw`].
 pub fn exact_plan_differences(
     graph: &DiffGraph,
     leaves: Leaves,
+    file: &str,
+    position: Position,
     operand_min: f64,
     operand_max: f64,
-) -> ExactPlan {
-    plan(&Shape::differences(graph, leaves), operand_min, operand_max)
+) -> Result<ExactPlan, Error> {
+    let (low, high) = domain(operand_min, operand_max);
+    Shape::differences(graph, leaves)
+        .and_then(|shape| plan(&shape, low, high))
+        .map_err(|message| Error::at(file, position, message))
 }
 
-fn plan(shape: &Shape, operand_min: f64, operand_max: f64) -> ExactPlan {
+/// The exponents of the bounds of the product domain.
+fn domain(operand_min: f64, operand_max: f64) -> (i64, i64) {
     let (low, high) = (exponent(operand_min), exponent(operand_max));
     assert!(low <= high, "the product domain is empty");
+    (low, high)
+}
+
+/// The plan for the product domain `[2^low, 2^high]`, or the message to
+/// report.
+fn plan(shape: &Shape, low: i64, high: i64) -> Result<ExactPlan, String> {
     let min = first_failure(low, high, |m| !grids_fit(shape, m, low));
     let max = first_failure(low, high, |big_m| magnitudes_fit(shape, big_m, high)) - 1;
-    assert!(
-        min <= high && max >= low && min <= max,
-        "the exact stage has no range: nonzero leaves need a magnitude of at \
-         least 2^{min} for the products to stay in the domain, and at most \
-         2^{max} to avoid leaving it or overflowing"
-    );
+    if min > high || max < low || min > max {
+        let degree = shape
+            .operands()
+            .map(|x| shape.degrees[x])
+            .max()
+            .unwrap_or(0);
+        return Err(format!(
+            "no input range keeps every exact product inside the operand domain \
+             [2^{low}, 2^{high}] of the exact arithmetic: a product operand of \
+             degree {degree} needs nonzero inputs of magnitude at least 2^{min}, \
+             and keeping every operand within the domain and every value below \
+             2^{OVERFLOW_EXPONENT} needs inputs of at most 2^{max}"
+        ));
+    }
     let total = shape
         .lengths
         .iter()
-        .try_fold(0usize, |sum, &n| sum.checked_add(n))
-        .expect("the total length overflows usize");
-    ExactPlan {
+        .try_fold(0u64, |sum, &n| sum.checked_add(n as u64))
+        .filter(|&total| total <= MAX_LENGTH)
+        .ok_or_else(|| {
+            "the expression is too large for exact evaluation: its temporaries \
+             would need more than 2^32 components in all"
+                .to_string()
+        })?;
+    Ok(ExactPlan {
         range: ExactRange {
             min: Dyadic::pow2(min).round_up(),
             max: Dyadic::pow2(max).round_up(),
         },
         lengths: shape.lengths.clone(),
-        total,
-    }
+        total: usize::try_from(total).expect("at most 2^32"),
+    })
 }
 
 /// Whether, with nonzero leaves of magnitude at least `2^m`, every nonzero

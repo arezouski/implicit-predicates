@@ -4,6 +4,8 @@ use std::fmt;
 
 use proc_macro2::Span;
 
+use crate::parse::Position;
+
 /// An error found in a definition file, with the position of the offending
 /// token.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,6 +18,18 @@ pub struct Error {
     pub column: usize,
     /// What is wrong.
     pub message: String,
+}
+
+impl Error {
+    /// The error `message` at `position` of `file`.
+    pub(crate) fn at(file: &str, position: Position, message: impl Into<String>) -> Self {
+        Error {
+            file: file.to_string(),
+            line: position.line,
+            column: position.column,
+            message: message.into(),
+        }
+    }
 }
 
 impl fmt::Display for Error {

@@ -172,3 +172,13 @@ fn a_long_sum_does_not_overflow_the_stack() {
     assert_eq!(g.degrees[g.root], 1);
     assert_eq!(g.nodes.len(), 2 + 100_000);
 }
+
+#[test]
+fn a_degree_beyond_u32_is_an_error_not_a_panic() {
+    let mut body = String::from("let t0 = a.x - b.x; ");
+    for i in 1..=32 {
+        body += &format!("let t{i} = t{} * t{}; ", i - 1, i - 1);
+    }
+    let source = format!("fn p(a: Point3, b: Point3) -> Sign {{ {body}t32 }}");
+    rejected(&source, "degree");
+}

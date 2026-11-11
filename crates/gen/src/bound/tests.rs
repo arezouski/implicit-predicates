@@ -1,7 +1,7 @@
 use super::{FilterBound, filter_bound};
 use crate::differences::{DiffGraph, DiffNode, difference_graph};
 use crate::dyadic::Dyadic;
-use crate::parse::parse;
+use crate::parse::{Position, parse};
 
 const ORIENT3D: &str = include_str!("../../tests/fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("../../tests/fixtures/insphere.pred");
@@ -16,6 +16,10 @@ fn graph(source: &str) -> (DiffGraph, usize) {
     let p = parse(source, "t.pred").unwrap().remove(0);
     let g = difference_graph(&p.main, "t.pred", p.position).unwrap();
     (g, p.params.len())
+}
+
+fn bound_of(g: &DiffGraph) -> FilterBound {
+    filter_bound(g, "t.pred", Position { line: 1, column: 1 }).unwrap()
 }
 
 fn int(n: i64) -> Dyadic {
@@ -59,7 +63,7 @@ fn exponent_of(power_of_two: f64) -> i64 {
 #[test]
 fn d_max_is_the_largest_power_of_two_without_overflow() {
     for source in SOURCES {
-        let b = filter_bound(&graph(source).0);
+        let b = bound_of(&graph(source).0);
         let j = exponent_of(b.constants().d_max);
         assert!(no_overflow(&b, j), "{source}");
         assert!(!no_overflow(&b, j + 1), "{source}");
@@ -69,7 +73,7 @@ fn d_max_is_the_largest_power_of_two_without_overflow() {
 #[test]
 fn d_min_is_the_smallest_power_of_two_covering_underflow() {
     for source in SOURCES {
-        let b = filter_bound(&graph(source).0);
+        let b = bound_of(&graph(source).0);
         let j = exponent_of(b.constants().d_min);
         assert!(underflow_covered(&b, j), "{source}");
         assert!(!underflow_covered(&b, j - 1), "{source}");
@@ -80,7 +84,7 @@ fn d_min_is_the_smallest_power_of_two_covering_underflow() {
 fn emitted_constants_are_the_inflated_values_rounded_up() {
     let inflate = &int(1) + &Dyadic::pow2(-30);
     for source in SOURCES {
-        let b = filter_bound(&graph(source).0);
+        let b = bound_of(&graph(source).0);
         let c = b.constants();
         let root = &b.nodes[b.root];
         for (emitted, exact) in [(c.epsilon, &root.alpha), (c.kappa, &root.beta)] {
@@ -93,7 +97,7 @@ fn emitted_constants_are_the_inflated_values_rounded_up() {
 
 #[test]
 fn the_exact_values_are_reported_as_fractions() {
-    let b = filter_bound(&graph(ORIENT3D).0);
+    let b = bound_of(&graph(ORIENT3D).0);
     let root = &b.nodes[b.root];
     assert_eq!(b.epsilon_in_u, (&root.alpha * &Dyadic::pow2(53)).fraction());
     assert_eq!(b.kappa_exact, root.beta.fraction());
@@ -203,7 +207,7 @@ fn the_per_node_bounds_hold_on_random_points() {
     let mut rng = Rng(0x2545_f491_4f6c_dd1d);
     for source in SOURCES {
         let (g, count) = graph(source);
-        let b = filter_bound(&g);
+        let b = bound_of(&g);
         assert_eq!(b.nodes.len(), g.nodes.len());
         for _ in 0..300 {
             check_call(&g, &b, &random_points(&mut rng, count));

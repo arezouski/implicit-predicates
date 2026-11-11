@@ -1,6 +1,6 @@
 //! Tests for the filter bound.
 
-use indirect_predicates_gen::{FilterBound, difference_graph, filter_bound, parse};
+use indirect_predicates_gen::{Error, FilterBound, difference_graph, filter_bound, parse};
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
@@ -8,10 +8,31 @@ const INSPHERE: &str = include_str!("fixtures/insphere.pred");
 /// `u = 2^-53`, the unit roundoff of `f64`.
 const U: f64 = 1.0 / 9_007_199_254_740_992.0;
 
-fn bound(source: &str) -> FilterBound {
+fn try_bound(source: &str) -> Result<FilterBound, Error> {
     let p = parse(source, "t.pred").unwrap().remove(0);
     let g = difference_graph(&p.main, "t.pred", p.position).unwrap();
-    filter_bound(&g)
+    filter_bound(&g, "t.pred", p.position)
+}
+
+fn bound(source: &str) -> FilterBound {
+    try_bound(source).unwrap()
+}
+
+/// Asserts that a definition on one line is rejected at the name of the
+/// predicate with a message containing every fragment.
+fn rejected(source: &str, fragments: &[&str]) {
+    let e = try_bound(source).expect_err("the definition must be rejected");
+    for fragment in fragments {
+        assert!(e.message.contains(fragment), "{e}");
+    }
+    assert_eq!(e.file, "t.pred");
+    assert_eq!((e.line, e.column), (1, 4), "{e}");
+}
+
+/// A predicate on one line: the product of `count` equal differences.
+fn power(count: usize) -> String {
+    let product = vec!["(a.x - b.x)"; count].join(" * ");
+    format!("fn p(a: Point3, b: Point3) -> Sign {{ {product} }}")
 }
 
 fn is_power_of_two(x: f64) -> bool {
@@ -127,4 +148,29 @@ fn d_min_and_d_max_are_powers_of_two_and_ordered() {
     }
     let c = bound(ORIENT3D).constants();
     assert_eq!(c.degree, 3);
+}
+
+#[test]
+fn a_degree_beyond_any_filter_scale_is_an_error_not_a_panic() {
+    // Eleven squarings and one more factor: degree 2049.
+    let mut body = String::from("let t0 = a.x - b.x; ");
+    for i in 1..=11 {
+        body += &format!("let t{i} = t{} * t{}; ", i - 1, i - 1);
+    }
+    let source = format!("fn p(a: Point3, b: Point3) -> Sign {{ {body}t11 * t0 }}");
+    rejected(&source, &["degree 2049", "below 2^1022"]);
+}
+
+#[test]
+fn a_degree_that_overflows_above_one_is_an_error() {
+    // `c > 1` at degree 1022: `c D^1022 <= 2^1022` fails for `D = 2`.
+    rejected(&power(1022), &["degree 1022", "below 2^1022"]);
+}
+
+#[test]
+fn a_degree_whose_bound_underflows_below_one_is_an_error() {
+    // `epsilon` is about `2^-42` at degree 1000: `epsilon 2^-1000` is below
+    // `2^-1021`.
+    rejected(&power(1000), &["degree 1000", "underflow"]);
+    assert!(try_bound(&power(900)).is_ok());
 }
