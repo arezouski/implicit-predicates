@@ -12,7 +12,7 @@ use implicit_predicates_corpus::weighted::weights;
 use implicit_predicates_corpus::{Corpus, Predicate};
 
 use super::corpus_points::{call_points, implicit_count, points};
-use super::{CHAIN, in_range, refs};
+use super::{CHAIN, all_in_range, first_deciding, in_range, refs};
 
 /// The stages a call can be attributed to, in the order of the chain: the
 /// filter giving a sign, the filter giving `Zero` (some axis is flat, so the
@@ -45,6 +45,9 @@ pub enum Why {
     /// A component of an exact coordinate is outside
     /// `SPANS_UNTRANSLATED_RANGE`.
     ComponentOutOfRange,
+    /// None of the above: every input is inside the documented ranges, so
+    /// some stage should have decided. A sweep counts it as a mismatch.
+    Unexplained,
 }
 
 /// The first stage that decides a call, as an index in [`COLUMNS`], with
@@ -63,7 +66,16 @@ fn attribute(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Result<Sig
             .enumerate()
             .skip(1)
             .find_map(|(i, (_, stage))| stage(refs(&q)).map(|sign| (i + 1, Ok(sign))))
-            .unwrap_or((NONE, Err(Why::CoordinateOutOfRange)));
+            .unwrap_or_else(|| {
+                // `expansions_untranslated` decides whenever every coordinate
+                // is in its range.
+                let why = if all_in_range(&q, stages::UNTRANSLATED_RANGE) {
+                    Why::Unexplained
+                } else {
+                    Why::CoordinateOutOfRange
+                };
+                (NONE, Err(why))
+            });
     }
     let mark = scratch.mark();
     let result = attribute_spans(scratch, p);
@@ -103,9 +115,27 @@ fn attribute_spans(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Resu
     {
         Why::ComponentOutOfRange
     } else {
-        panic!("no stage decides, for no documented reason: {p:?}")
+        Why::Unexplained
     };
     (NONE, Err(why))
+}
+
+/// For explicit points: whether `column` is the stage that the order of
+/// `CHAIN`, the order of the generated chain, decides first, and whether
+/// every stage of `CHAIN` that decides gives the recorded sign (`wrong` is
+/// false), not only the first.
+fn explicit_chain_agrees(p: &[AnyPoint; 4], column: usize, wrong: impl Fn(Sign) -> bool) -> bool {
+    let q = p.map(|x| *x.approx());
+    let expected = match first_deciding(&q) {
+        Some((0, Sign::Zero)) => CERTAIN_ZERO,
+        Some((0, _)) => 0,
+        Some((i, _)) => i + 1,
+        None => NONE,
+    };
+    let every_stage_right = CHAIN
+        .iter()
+        .all(|(_, stage)| !stage(refs(&q)).is_some_and(&wrong));
+    column == expected && every_stage_right
 }
 
 /// The weighted tally of the calls with a given number of implicit points.
@@ -244,8 +274,15 @@ impl Tally {
             )
         };
         let staged = result.ok();
-        let wrong = staged.is_some_and(|s| REFERENCE_ORIENT3D_FACTOR * i8::from(s) != recorded);
-        if wrong || public != staged || in_arena != staged || arena.used() != 0 {
+        let wrong = |s: Sign| REFERENCE_ORIENT3D_FACTOR * i8::from(s) != recorded;
+        let unexplained = result == Err(Why::Unexplained);
+        if staged.is_some_and(wrong)
+            || unexplained
+            || public != staged
+            || in_arena != staged
+            || arena.used() != 0
+            || (p.iter().all(Point::is_explicit) && !explicit_chain_agrees(p, column, wrong))
+        {
             self.mismatch_count += 1;
             if self.mismatches.len() < MISMATCHES {
                 self.mismatches.push(describe());

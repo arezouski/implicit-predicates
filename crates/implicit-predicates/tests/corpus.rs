@@ -53,7 +53,8 @@ fn read(path: &Path) -> Corpus {
 }
 
 /// Fails, after the report, if a call got a sign other than the recorded
-/// one or the public functions disagree with the stages.
+/// one, the public functions disagree with the stages, or no stage decided
+/// a call whose inputs are inside the documented ranges.
 fn assert_no_mismatch(name: &str, tally: &Tally) {
     assert!(
         tally.mismatch_count == 0,
@@ -111,9 +112,20 @@ fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
         "no generated corpus in {}: build it with `python3 corpus/tools/corpus.py all`",
         dir.display()
     );
+    // Each population with the fewest calls without and with implicit
+    // points that its sweep must check: as many as the generated corpus
+    // holds, so that the sweep cannot pass if calls stop being checked.
     let populations = [
-        ("models without self-intersections", "corpus/data/nosi.txt"),
-        ("models with self-intersections", "corpus/data/si.txt"),
+        (
+            "models without self-intersections",
+            "corpus/data/nosi.txt",
+            (3_163_737, 7_861_160),
+        ),
+        (
+            "models with self-intersections",
+            "corpus/data/si.txt",
+            (2_738_941, 6_560_056),
+        ),
     ];
     // The two lists split the generated corpus.
     let in_dir: BTreeSet<_> = std::fs::read_dir(&dir)
@@ -122,7 +134,7 @@ fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
         .filter(|name| Path::new(name).extension().is_some_and(|e| e == "ipcorpus"))
         .collect();
     let mut seen = BTreeSet::new();
-    for (_, list) in populations {
+    for (_, list, _) in populations {
         for path in listed(list) {
             let name = path.file_name().expect("a file name").to_owned();
             assert!(seen.insert(name), "{} listed twice", path.display());
@@ -131,17 +143,49 @@ fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
     assert_eq!(seen, in_dir, "the lists do not split the generated corpus");
 
     let mut tallies = Vec::new();
-    for (name, list) in populations {
+    for (name, list, least) in populations {
         let mut tally = Tally::default();
         let files = listed(list);
+        let mut checked = (0, 0);
         for path in &files {
-            tally.add_corpus(&read(path));
+            let (explicit, implicit) = tally.add_corpus(&read(path));
+            checked = (checked.0 + explicit, checked.1 + implicit);
         }
         println!("{} files", files.len());
         println!("{}", tally.report(name));
-        tallies.push((name, tally));
+        tallies.push((name, tally, checked, least));
     }
-    for (name, tally) in &tallies {
+    for (name, tally, checked, least) in &tallies {
         assert_no_mismatch(name, tally);
+        assert_complete(name, tally, *checked, *least);
     }
+}
+
+/// Fails if a sweep of the generated corpus skipped a call or a point, or
+/// checked fewer calls than `least`, without and with implicit points.
+///
+/// The generated corpus has no point of a kind this crate does not provide,
+/// no point with an input that is not finite, and no point on a line with a
+/// parameter outside `[0, 1]`. If a new corpus has any, support them, or
+/// state here how many are allowed and why.
+fn assert_complete(name: &str, tally: &Tally, checked: (usize, usize), least: (usize, usize)) {
+    let unsupported: Vec<_> = tally.buckets.iter().map(|b| b.unsupported).collect();
+    assert!(
+        unsupported.iter().all(|&n| n == 0) && tally.points_unsupported == 0,
+        "{name}: calls with points of an unsupported kind, by implicit count: {unsupported:?}"
+    );
+    assert_eq!(tally.points_non_finite, 0, "{name}: points not finite");
+    assert_eq!(
+        tally.points_unchecked, 0,
+        "{name}: points on a line with t outside [0, 1]"
+    );
+    let stored: Vec<_> = tally.buckets.iter().map(|b| b.stored).collect();
+    assert!(
+        stored.iter().all(|&n| n > 0),
+        "{name}: no call checked for some number of implicit points: {stored:?}"
+    );
+    assert!(
+        checked.0 >= least.0 && checked.1 >= least.1,
+        "{name}: {checked:?} calls checked, fewer than {least:?}"
+    );
 }
