@@ -9,9 +9,10 @@ use std::collections::BTreeMap;
 
 use num_bigint::BigInt;
 
+use crate::differences::{DiffGraph, DiffNode};
 use crate::error::Error;
 use crate::graph::{Graph, Node};
-use crate::parse::Predicate;
+use crate::parse::{Position, Predicate};
 
 /// A variable: coordinate `axis` of parameter `point`.
 type Variable = (usize, u8);
@@ -48,7 +49,7 @@ impl Polynomial {
         p
     }
 
-    /// Adds `sign * other` to `self`.
+    /// Adds `other`, or subtracts it when `negate`.
     fn add_scaled(&mut self, other: &Polynomial, negate: bool) {
         for (monomial, coefficient) in &other.terms {
             let entry = self.terms.entry(monomial.clone()).or_default();
@@ -186,15 +187,15 @@ pub fn canonical(graph: &Graph) -> Polynomial {
 /// polynomial.
 pub fn check_same_polynomial(predicate: &Predicate, file: &str) -> Result<(), Error> {
     let main = canonical(&predicate.main);
-    let error = |graph: &Graph, message: String| Error {
+    let error = |at: Position, message: String| Error {
         file: file.to_string(),
-        line: graph.line,
-        column: graph.column,
+        line: at.line,
+        column: at.column,
         message,
     };
     if main.is_zero() {
         return Err(error(
-            &predicate.main,
+            predicate.position,
             format!(
                 "the polynomial of `{}` is identically zero, so its sign is always zero",
                 predicate.name
@@ -205,7 +206,7 @@ pub fn check_same_polynomial(predicate: &Predicate, file: &str) -> Result<(), Er
         let exact = canonical(exact_graph);
         if exact != main {
             return Err(error(
-                exact_graph,
+                predicate.exact_position.unwrap_or(predicate.position),
                 format!(
                     "the exact form of `{}` differs from its main form: \
                      they are not the same polynomial (main form has {} terms, exact form has {})",
@@ -217,4 +218,56 @@ pub fn check_same_polynomial(predicate: &Predicate, file: &str) -> Result<(), Er
         }
     }
     Ok(())
+}
+
+/// Expands a [`DiffGraph`] into its canonical polynomial over the input
+/// coordinates: a leaf is the minuend coordinate minus the subtrahend
+/// coordinate and a negation is `0 - x`.
+///
+/// For the graph a difference form was made from, the result equals
+/// [`canonical`] of that graph.
+pub fn canonical_of_differences(graph: &DiffGraph) -> Polynomial {
+    let mut nodes = vec![Node::Int(0)];
+    let mut ids = Vec::with_capacity(graph.nodes.len());
+    for node in &graph.nodes {
+        let id = match *node {
+            DiffNode::Leaf {
+                axis,
+                minuend,
+                subtrahend,
+            } => {
+                nodes.push(Node::Coord {
+                    point: minuend,
+                    axis,
+                });
+                nodes.push(Node::Coord {
+                    point: subtrahend,
+                    axis,
+                });
+                nodes.push(Node::Sub(nodes.len() - 2, nodes.len() - 1));
+                nodes.len() - 1
+            }
+            DiffNode::Neg(x) => {
+                nodes.push(Node::Sub(0, ids[x]));
+                nodes.len() - 1
+            }
+            DiffNode::Add(x, y) => {
+                nodes.push(Node::Add(ids[x], ids[y]));
+                nodes.len() - 1
+            }
+            DiffNode::Sub(x, y) => {
+                nodes.push(Node::Sub(ids[x], ids[y]));
+                nodes.len() - 1
+            }
+            DiffNode::Mul(x, y) => {
+                nodes.push(Node::Mul(ids[x], ids[y]));
+                nodes.len() - 1
+            }
+        };
+        ids.push(id);
+    }
+    canonical(&Graph {
+        root: ids[graph.root],
+        nodes,
+    })
 }

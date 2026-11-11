@@ -44,5 +44,5 @@ mod polynomial;
 pub use differences::{DiffGraph, DiffNode, difference_graph};
 pub use error::Error;
 pub use graph::{Graph, Node, NodeId};
-pub use parse::{Predicate, parse};
-pub use polynomial::{Polynomial, canonical, check_same_polynomial};
+pub use parse::{Position, Predicate, parse};
+pub use polynomial::{Polynomial, canonical, canonical_of_differences, check_same_polynomial};

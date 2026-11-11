@@ -3,6 +3,7 @@
 
 use crate::error::Error;
 use crate::graph::{Graph, Node, NodeId};
+use crate::parse::Position;
 
 /// One node of a [`DiffGraph`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,6 +18,8 @@ pub enum DiffNode {
         /// Index of the parameter whose coordinate is subtracted.
         subtrahend: usize,
     },
+    /// Negation of a node, with the degree of its operand.
+    Neg(NodeId),
     /// Sum of two nodes of the same degree.
     Add(NodeId, NodeId),
     /// Difference of two nodes of the same degree.
@@ -27,9 +30,8 @@ pub enum DiffNode {
 
 /// An expression graph homogeneous in differences of point coordinates.
 ///
-/// Children come before their parents. Negation (`0 - x` in the source graph)
-/// does not change the degree nor the leaves a value depends on, so it has no
-/// node: it is the node of `x`.
+/// Children come before their parents. The graph is a faithful image of the
+/// source: `0 - x` becomes `Neg(x)`, and nothing is folded or reordered.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiffGraph {
     /// The nodes, in dependency order.
@@ -57,20 +59,20 @@ enum Mapped {
 ///
 /// A leaf is a difference of the same coordinate of two different points.
 /// A leaf used twice is one node; `a.x - d.x` and `d.x - a.x` are different
-/// leaves. The graph is walked iteratively in node order.
+/// leaves. A negation is `0 - x`, kept as a `Neg` node. The graph is walked iteratively in node order.
 ///
 /// # Errors
 ///
-/// Returns an error, at the position of the predicate's name, when a
+/// Returns an error, at `position` (the name of the predicate), when a
 /// coordinate is used outside a difference, a difference mixes axes or
 /// subtracts a point from itself, a sum or difference combines nodes of
 /// different degree, or an integer literal appears other than as the zero of a
 /// negation.
-pub fn difference_graph(graph: &Graph, file: &str) -> Result<DiffGraph, Error> {
+pub fn difference_graph(graph: &Graph, file: &str, position: Position) -> Result<DiffGraph, Error> {
     let fail = |message: String| Error {
         file: file.to_string(),
-        line: graph.line,
-        column: graph.column,
+        line: position.line,
+        column: position.column,
         message,
     };
     let mut out = DiffGraph {
@@ -108,7 +110,10 @@ pub fn difference_graph(graph: &Graph, file: &str) -> Result<DiffGraph, Error> {
                         1,
                     ))
                 }
-                (Mapped::Literal(0), Mapped::Node(id)) => Mapped::Node(id),
+                (Mapped::Literal(0), Mapped::Node(id)) => {
+                    let degree = out.degrees[id];
+                    Mapped::Node(push(&mut out, DiffNode::Neg(id), degree))
+                }
                 (Mapped::Literal(0), operand) => return Err(fail(operand_problem(operand))),
                 (x, y) => combine(&mut out, DiffNode::Sub, x, y, &fail)?,
             },

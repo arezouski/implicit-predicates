@@ -1,13 +1,22 @@
 //! Tests for the difference form.
 
-use indirect_predicates_gen::{DiffNode, Error, difference_graph, parse};
+use indirect_predicates_gen::{
+    DiffGraph, DiffNode, Error, canonical, canonical_of_differences, difference_graph, parse,
+};
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
 
-fn diff(source: &str) -> Result<indirect_predicates_gen::DiffGraph, Error> {
+fn diff(source: &str) -> Result<DiffGraph, Error> {
     let p = parse(source, "t.pred").unwrap().remove(0);
-    difference_graph(&p.main, "t.pred")
+    difference_graph(&p.main, "t.pred", p.position)
+}
+
+/// Asserts that the difference form is the same polynomial as the source.
+fn assert_same_value(source: &str) {
+    let p = parse(source, "t.pred").unwrap().remove(0);
+    let g = difference_graph(&p.main, "t.pred", p.position).unwrap();
+    assert_eq!(canonical_of_differences(&g), canonical(&p.main), "{source}");
 }
 
 fn rejected(source: &str, fragment: &str) {
@@ -39,6 +48,7 @@ fn orient3d_has_nine_leaves_and_degree_3() {
                 assert_eq!(subtrahend, 3);
                 assert!(minuend < 3);
             }
+            DiffNode::Neg(x) => assert!(x < id),
             DiffNode::Add(x, y) | DiffNode::Sub(x, y) | DiffNode::Mul(x, y) => {
                 assert!(x < id && y < id);
             }
@@ -53,10 +63,48 @@ fn insphere_has_degree_5() {
 }
 
 #[test]
-fn negation_keeps_the_degree_and_the_leaves() {
+fn negation_is_a_node_with_the_degree_of_its_operand() {
     let g = diff("fn p(a: Point3, d: Point3) -> Sign { -(a.x - d.x) * (a.y - d.y) }").unwrap();
     assert_eq!(g.degrees[g.root], 2);
-    assert_eq!(g.nodes.len(), 3);
+    assert_eq!(g.nodes.len(), 4);
+    let negations = g
+        .nodes
+        .iter()
+        .filter(|n| matches!(n, DiffNode::Neg(_)))
+        .count();
+    assert_eq!(negations, 1);
+}
+
+#[test]
+fn the_difference_form_has_the_value_of_the_source() {
+    assert_same_value(ORIENT3D);
+    assert_same_value(INSPHERE);
+    for (params, body) in [
+        ("a, d", "-(a.x - d.x) * (a.y - d.y)"),
+        ("a, d", "-((a.x - d.x) * (a.y - d.y))"),
+        ("a, b, d", "-(a.x - d.x) - (b.x - d.x)"),
+        ("a, d", "- -(a.x - d.x)"),
+        ("a, b, d", "-(a.x - d.x) * (b.y - d.y)"),
+        ("a, b, d", "-(a.x - d.x) * -(b.y - d.y)"),
+        ("a, b, d", "(a.x - d.x) * -((b.y - d.y) + (a.z - d.z))"),
+        ("a, b, d", "-((a.x - d.x) + (b.x - d.x)) * (a.y - d.y)"),
+    ] {
+        let params = params
+            .split(", ")
+            .map(|n| format!("{n}: Point3"))
+            .collect::<Vec<_>>();
+        assert_same_value(&format!("fn p({}) -> Sign {{ {body} }}", params.join(", ")));
+    }
+}
+
+#[test]
+fn a_form_and_its_negation_are_different_graphs() {
+    let x = diff("fn p(a: Point3, d: Point3) -> Sign { (a.x - d.x) * (a.y - d.y) }").unwrap();
+    let neg = diff("fn p(a: Point3, d: Point3) -> Sign { -((a.x - d.x) * (a.y - d.y)) }").unwrap();
+    assert_ne!(x, neg);
+    let twice = diff("fn p(a: Point3, d: Point3) -> Sign { - -(a.x - d.x) }").unwrap();
+    assert_eq!(twice.degrees[twice.root], 1);
+    assert_eq!(twice.nodes.len(), 3, "negation of negation is not folded");
 }
 
 #[test]

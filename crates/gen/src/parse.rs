@@ -32,6 +32,29 @@ pub struct Predicate {
     pub main: Graph,
     /// The form marked `#[exact]`, if the file has one.
     pub exact: Option<Graph>,
+    /// Position of the name of the main form.
+    pub position: Position,
+    /// Position of the name of the exact form, if there is one.
+    pub exact_position: Option<Position>,
+}
+
+/// A position in a definition file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Position {
+    /// Line, starting at 1.
+    pub line: usize,
+    /// Column, starting at 1.
+    pub column: usize,
+}
+
+impl Position {
+    fn of(span: Span) -> Self {
+        let start = span.start();
+        Position {
+            line: start.line,
+            column: start.column + 1,
+        }
+    }
 }
 
 /// One function of the file, before forms are paired.
@@ -102,6 +125,8 @@ fn parse_source(source: &str) -> Res<Vec<Predicate>> {
                 params: form.params,
                 main: form.graph,
                 exact: None,
+                position: Position::of(form.name_span),
+                exact_position: None,
             });
         }
     }
@@ -122,6 +147,7 @@ fn parse_source(source: &str) -> Res<Vec<Predicate>> {
             ));
         }
         predicate.exact = Some(form.graph);
+        predicate.exact_position = Some(Position::of(form.name_span));
     }
     if predicates.is_empty() {
         return Err(diag(Span::call_site(), "no predicate definitions found"));
@@ -157,10 +183,7 @@ fn parse_item(cur: &mut Cursor) -> Res<Form> {
         _ => return Err(cur.expected("`{`")),
     };
     cur.bump();
-    let mut graph = parse_body(Cursor::new(body, Some(close)), &params)?;
-    let start = name_span.start();
-    graph.line = start.line;
-    graph.column = start.column + 1;
+    let graph = parse_body(Cursor::new(body, Some(close)), &params)?;
     for (point, (name, span)) in params.iter().zip(&spans).enumerate() {
         let used = graph
             .nodes

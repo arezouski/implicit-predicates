@@ -36,10 +36,6 @@ pub struct Graph {
     pub nodes: Vec<Node>,
     /// The node holding the value of the whole expression.
     pub root: NodeId,
-    /// Line of the function name that introduced this graph, starting at 1.
-    pub line: usize,
-    /// Column of the function name that introduced this graph, starting at 1.
-    pub column: usize,
 }
 
 /// Builds a graph, giving equal nodes the same id.
@@ -91,8 +87,6 @@ impl Builder {
         Graph {
             root: nodes.len() - 1,
             nodes,
-            line: 0,
-            column: 0,
         }
     }
 }
