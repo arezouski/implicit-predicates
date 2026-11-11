@@ -91,7 +91,9 @@ indirect-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
 reads every `.pred` file in `<pred-dir>` and writes `<name>.rs` for each
 predicate to the `--stages` directory, and the module of its checks to the
 `--checks` directory. The output is formatted with
-`rustfmt --edition 2024`, which must be installed. With `--check` nothing is
+`rustfmt --edition 2024`, which must be installed; the text can depend on the
+rustfmt version, and the files committed in this repository are produced with
+the stable toolchain's rustfmt. With `--check` nothing is
 written: the tool compares the files with what it would write, names each
 one that differs or is missing, and exits with a nonzero status if any does.
 

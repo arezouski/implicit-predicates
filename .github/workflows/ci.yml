@@ -23,6 +23,22 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all --check
 
+  generated:
+    # The committed generated code must be what the generator produces. The
+    # text is formatted by rustfmt, so this uses the same toolchain as `fmt`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: >-
+          cargo run -p indirect-predicates-gen --
+          crates/indirect-predicates/predicates
+          --stages crates/indirect-predicates/src/generated
+          --checks crates/indirect-predicates/tests/generated
+          --check
+
   clippy:
     runs-on: ubuntu-latest
     steps:

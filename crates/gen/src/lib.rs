@@ -15,10 +15,11 @@
 //! README gives the command that regenerates the code of the
 //! `indirect-predicates` crate.
 //!
-//! The steps of the generation are public as well. [`parse`] takes a `.pred` file, written in a small subset of Rust, and
-//! returns each [`Predicate`] as an expression [`Graph`] in which equal
-//! subexpressions share a node. Mistakes in the file are reported as an
-//! [`Error`] that carries the position of the offending token.
+//! The steps of the generation are public as well. [`parse`] takes a `.pred`
+//! file, written in a small subset of Rust, and returns each [`Predicate`] as
+//! an expression [`Graph`] in which equal subexpressions share a node.
+//! Mistakes in the file are reported as an [`Error`] that carries the position
+//! of the offending token.
 //!
 //! A definition is a function over `Point3` parameters returning `Sign`. Its
 //! body holds `let` bindings and a final expression built from `+`, `-` (binary

@@ -32,3 +32,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   valid expansion.
 - `Dyadic`, an exact dyadic rational number, in `indirect-predicates-oracle`
   for checking results.
+- `indirect-predicates-gen`, a code generator for predicates, with a command
+  line tool. A definition is a `.pred` file in a small subset of Rust: `let`
+  bindings and a final expression built from `+`, `-`, `*`, integer
+  constants, coordinates `p.x`, `p.y`, `p.z` and earlier bindings, with an
+  optional second form marked `#[exact]`. The generator checks that both
+  forms are the same nonzero polynomial and that the main form is homogeneous
+  in differences of coordinates. It derives, in exact arithmetic, the
+  constants of the floating-point filter, the ranges of input magnitudes of
+  the exact stages and the exponent ranges and buffer sizes they need. It
+  emits, for each predicate, a module of stages (filter, exact differences,
+  translated expansions, and the `#[exact]` form) and a module of checks for
+  tests, formatted with `rustfmt`. `--check` compares the files with what
+  would be written without writing them. Errors carry the file, line and
+  column.
+- `orient3d` for explicit points, in `indirect-predicates`, generated from
+  its definition: a floating-point filter, then exact differences of
+  coordinates, then expansions on translated coordinates, then expansions on
+  the raw coordinates. The sign is that of Shewchuk's `orient3d`. It takes
+  `&[f64; 3]` points, does not allocate and works without `std`. The result
+  is provisionally an `Option<Sign>`: `None` when a coordinate is not finite
+  or, if the earlier stages cannot decide, when a nonzero coordinate is
+  outside `2^-188..=2^239`.
