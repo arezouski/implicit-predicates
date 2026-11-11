@@ -253,6 +253,12 @@ fn no_input_makes_the_parser_panic() {
     }
 }
 
+/// Runs `parse` and checks that it returns an error instead of crashing.
+fn assert_rejected(body: &str) {
+    let source = format!("fn p(a: Point3) -> Sign {{ {body} }}");
+    assert!(parse(&source, "t.pred").is_err(), "accepted: {:.60}", body);
+}
+
 #[test]
 fn long_chains_are_rejected_without_exhausting_the_stack() {
     let n = 100_000;
@@ -263,12 +269,121 @@ fn long_chains_are_rejected_without_exhausting_the_stack() {
         format!("a.x{}", " as i32".repeat(n)),
         format!("{}a.x", "return ".repeat(n)),
     ];
-    for chain in chains {
-        let source = format!("fn p(a: Point3) -> Sign {{ {chain} }}");
+    for chain in &chains {
+        assert_rejected(chain);
+    }
+    // Chains just under the token limit, which only the expression depth stops.
+    let chains = [
+        format!("a.x{}", " + a.x".repeat(1490)),
+        format!("a.x{}", ".x".repeat(2990)),
+        format!("{}a.x", "-".repeat(5990)),
+        format!("a.x{}", " as i32".repeat(1990)),
+        format!("{}a.x", "!".repeat(5990)),
+        format!("{}a.x", "return ".repeat(2990)),
+    ];
+    for chain in &chains {
+        assert_rejected(chain);
+    }
+}
+
+#[test]
+fn a_semicolon_hidden_in_a_comment_or_literal_does_not_reset_the_limits() {
+    let n = 100_000;
+    let hidden = [
+        "/*;*/",
+        "/* /* ; */ ; */",
+        "//;\n",
+        "\"a;\"",
+        "'a'",
+        "';'",
+        "'\\''",
+        "r#\";\"#",
+        "br\"x;\"",
+    ];
+    for h in hidden {
+        assert_rejected(&format!("a.x{}", format!(" +{h} a.x").repeat(n)));
+    }
+}
+
+#[test]
+fn brackets_hidden_in_comments_and_literals_do_not_count_but_real_ones_do() {
+    let n = 100_000;
+    let comments = format!(
+        "/* {} */ // {}\n/* /* {} */ {} */\n",
+        "(".repeat(n),
+        "{".repeat(n),
+        "[".repeat(n),
+        "(".repeat(n)
+    );
+    let source = format!("{comments}fn p(a: Point3) -> Sign {{ a.x }}");
+    assert!(parse(&source, "t.pred").is_ok());
+    // Literals full of brackets are not definitions, but they are not too deep.
+    let literals = format!(
+        "\"{}\" '(' r#\"{}\"# b\"{}\" '\\'' \"\\\"{}\"",
+        "(".repeat(n),
+        "[".repeat(n),
+        "{".repeat(n),
+        "(".repeat(n)
+    );
+    let e = rejected(&literals);
+    assert!(!e.message.contains("nested too deeply"), "{e}");
+    // Real brackets after a comment that hides some, with nested block comments.
+    let source = format!(
+        "/* /* ( */ ( */ fn p(a: Point3) -> Sign {{ {}a.x{} }}",
+        "(".repeat(n),
+        ")".repeat(n)
+    );
+    let e = rejected(&source);
+    assert!(e.message.contains("nested too deeply"), "{e}");
+    for source in ["(".repeat(n), "[".repeat(n), "{".repeat(n)] {
         assert!(parse(&source, "t.pred").is_err());
     }
-    // A moderately long sum is still accepted.
-    let sum = vec!["a.x"; 150].join(" + ");
+    // An unterminated comment or literal is an error, not a crash.
+    for source in ["/* /* */", "\"abc\\", "'\\", "r##\"abc\"#", "fn p() { 'a"] {
+        assert!(parse(source, "t.pred").is_err(), "{source}");
+    }
+}
+
+#[test]
+fn a_flat_sum_of_500_terms_is_accepted() {
+    let sum = vec!["a.x * a.y"; 500].join(" + ");
     let source = format!("fn p(a: Point3) -> Sign {{ {sum} }}");
     assert!(parse(&source, "t.pred").is_ok());
+}
+
+/// A definition with the shape of an in-sphere predicate: five points, rows of
+/// differences against the last one with a lifted column, 2x2 minors bound
+/// with `let`, and a final cofactor expression.
+fn insphere_like() -> String {
+    let rows = ["a", "b", "c", "d"];
+    let cols = ["x", "y", "z", "w"];
+    let mut src = String::from(
+        "fn insphere(a: Point3, b: Point3, c: Point3, d: Point3, e: Point3) -> Sign {\n",
+    );
+    for r in rows {
+        for c in ["x", "y", "z"] {
+            src += &format!("    let {r}{c} = {r}.{c} - e.{c};\n");
+        }
+        src += &format!("    let {r}w = {r}x*{r}x + {r}y*{r}y + {r}z*{r}z;\n");
+    }
+    let pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+    for (top, bottom) in [(0, 1), (2, 3)] {
+        for (i, j) in pairs {
+            let (r, s) = (rows[top], rows[bottom]);
+            let (ci, cj) = (cols[i], cols[j]);
+            src += &format!("    let m{top}{ci}{cj} = {r}{ci}*{s}{cj} - {r}{cj}*{s}{ci};\n");
+        }
+    }
+    src += "    m0xy*m2zw - m0xz*m2yw + m0xw*m2yz + m0yz*m2xw - m0yw*m2xz + m0zw*m2xy\n}\n";
+    src
+}
+
+#[test]
+fn an_insphere_shaped_definition_is_accepted() {
+    let preds = parse(&insphere_like(), "insphere.pred").unwrap();
+    assert_eq!(preds[0].params.len(), 5);
+    assert_eq!(
+        count(&preds[0].main, |n| matches!(n, Node::Coord { .. })),
+        15
+    );
 }

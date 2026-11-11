@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use proc_macro2::Span;
+
 /// An error found in a definition file, with the position of the offending
 /// token.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,3 +29,22 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// A problem at a position of the source, before the file name is known.
+pub(crate) struct Diag {
+    pub(crate) line: usize,
+    pub(crate) column: usize,
+    pub(crate) message: String,
+}
+
+pub(crate) type Res<T> = Result<T, Diag>;
+
+/// Reports `message` at the first token of `span`.
+pub(crate) fn diag(span: Span, message: impl Into<String>) -> Diag {
+    let start = span.start();
+    Diag {
+        line: start.line,
+        column: start.column + 1,
+        message: message.into(),
+    }
+}

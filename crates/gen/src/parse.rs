@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use syn::spanned::Spanned;
 use syn::{
@@ -10,8 +10,9 @@ use syn::{
     Visibility,
 };
 
-use crate::error::Error;
+use crate::error::{Error, Res, diag};
 use crate::graph::{Builder, Graph, Node, NodeId};
+use crate::limits;
 
 /// A predicate read from a definition file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,24 +25,6 @@ pub struct Predicate {
     pub main: Graph,
     /// The form marked `#[exact]`, if the file has one.
     pub exact: Option<Graph>,
-}
-
-/// A problem at a position of the source, before the file name is known.
-struct Diag {
-    line: usize,
-    column: usize,
-    message: String,
-}
-
-type Res<T> = Result<T, Diag>;
-
-fn diag(span: Span, message: impl Into<String>) -> Diag {
-    let start = span.start();
-    Diag {
-        line: start.line,
-        column: start.column + 1,
-        message: message.into(),
-    }
 }
 
 /// One function of the file, before forms are paired.
@@ -65,13 +48,45 @@ enum Binding {
 /// `file` is only used to label errors. Predicates come in the order of their
 /// main forms.
 ///
+/// # Limits
+///
+/// No input makes this function panic or overflow the stack, whatever its
+/// size or shape. Parsing runs on a helper thread with a 256 MiB stack
+/// (reserved, not committed) and the input is bounded:
+///
+/// - brackets nest at most 64 deep (brackets inside comments and literals do
+///   not count);
+/// - a statement, which ends at `;`, has at most 6000 tokens, where the
+///   contents of a bracket pair count as a statement of their own and comments
+///   are free;
+/// - an expression tree is at most 1000 levels deep, which allows a flat sum
+///   of about 1000 terms.
+///
 /// # Errors
 ///
 /// Returns the first problem found: a syntax error, a construct outside the
-/// accepted subset, an undefined or redefined name, an unused parameter, or a
-/// misplaced `#[exact]` form.
+/// accepted subset, an exceeded limit, an undefined or redefined name, an
+/// unused parameter, or a misplaced `#[exact]` form.
 pub fn parse(source: &str, file: &str) -> Result<Vec<Predicate>, Error> {
-    parse_source(source).map_err(|d| Error {
+    let run = |source: &str| {
+        std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .stack_size(limits::PARSER_STACK_BYTES)
+                .spawn_scoped(scope, || parse_source(source))
+                .map(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .unwrap_or_else(|e| {
+                    Err(diag(
+                        Span::call_site(),
+                        format!("cannot start the parser thread: {e}"),
+                    ))
+                })
+        })
+    };
+    run(source).map_err(|d| Error {
         file: file.to_string(),
         line: d.line,
         column: d.column,
@@ -79,73 +94,11 @@ pub fn parse(source: &str, file: &str) -> Result<Vec<Predicate>, Error> {
     })
 }
 
-/// Deepest bracket nesting accepted. The tokenizer recurses on brackets, so
-/// the depth is checked before any parsing.
-const MAX_NESTING: usize = 64;
-
-/// Most tokens (words, numbers and punctuation marks other than brackets, `,`
-/// and `;`) accepted between two `;`. The syntax tree of a long chain of
-/// operators, casts or fields is as deep as the chain, and the parser recurses
-/// on it.
-const MAX_TOKENS: usize = 1000;
-
-/// Deepest expression tree accepted, so that evaluation cannot exhaust the stack.
-const MAX_EXPR_DEPTH: usize = 200;
-
-/// Rejects sources that would nest too deeply for the recursive parser.
-///
-/// The check looks at raw characters, so brackets and operators inside
-/// comments and strings count too; it is conservative.
-fn check_limits(source: &str) -> Res<()> {
-    let (mut depth, mut tokens) = (0usize, 0usize);
-    let (mut line, mut column) = (1usize, 1usize);
-    let mut in_word = false;
-    for ch in source.chars() {
-        let mut exceeded = None;
-        let word = ch.is_alphanumeric() || ch == '_';
-        if word && !in_word || ch.is_ascii_punctuation() && !"()[]{},;_".contains(ch) {
-            tokens += 1;
-            if tokens > MAX_TOKENS {
-                exceeded = Some("too many tokens in one statement");
-            }
-        }
-        in_word = word;
-        match ch {
-            '(' | '[' | '{' => {
-                depth += 1;
-                if depth > MAX_NESTING {
-                    exceeded = Some("brackets are nested too deeply");
-                }
-            }
-            ')' | ']' | '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    tokens = 0;
-                }
-            }
-            ';' => tokens = 0,
-            _ => {}
-        }
-        if let Some(message) = exceeded {
-            return Err(Diag {
-                line,
-                column,
-                message: message.into(),
-            });
-        }
-        if ch == '\n' {
-            line += 1;
-            column = 1;
-        } else {
-            column += 1;
-        }
-    }
-    Ok(())
-}
-
 fn parse_source(source: &str) -> Res<Vec<Predicate>> {
-    check_limits(source)?;
-    let ast = syn::parse_file(source).map_err(|e| diag(e.span(), e.to_string()))?;
+    limits::check_nesting(source)?;
+    let tokens: TokenStream = syn::parse_str(source).map_err(|e| diag(e.span(), e.to_string()))?;
+    limits::check_statements(tokens.clone())?;
+    let ast: syn::File = syn::parse2(tokens).map_err(|e| diag(e.span(), e.to_string()))?;
     if let Some(attr) = ast.attrs.first() {
         return Err(diag(attr.span(), "file attributes are not supported"));
     }
@@ -345,7 +298,7 @@ fn eval_at(
     builder: &mut Builder,
     env: &HashMap<String, Binding>,
 ) -> Res<NodeId> {
-    if depth > MAX_EXPR_DEPTH {
+    if depth > limits::MAX_EXPR_DEPTH {
         return Err(diag(expr.span(), "the expression is nested too deeply"));
     }
     let depth = depth + 1;
@@ -388,8 +341,9 @@ fn eval_at(
             let y = eval_at(&e.right, depth, builder, env)?;
             Ok(builder.intern(make(x, y)))
         }
-        Expr::Path(p) if p.qself.is_none() && p.path.get_ident().is_some() => {
-            let ident = p.path.get_ident().expect("checked by the guard");
+        Expr::Path(_) => {
+            let ident =
+                plain_ident(expr).ok_or_else(|| diag(expr.span(), "this name is not supported"))?;
             match env.get(&ident.to_string()) {
                 Some(Binding::Let(id)) => Ok(*id),
                 Some(Binding::Param(_)) => Err(diag(
@@ -402,23 +356,18 @@ fn eval_at(
             }
         }
         Expr::Field(e) => {
-            let point = match &*e.base {
-                Expr::Path(p) if p.qself.is_none() && p.path.get_ident().is_some() => {
-                    let ident = p.path.get_ident().expect("checked by the guard");
-                    match env.get(&ident.to_string()) {
-                        Some(Binding::Param(point)) => *point,
-                        Some(Binding::Let(_)) => {
-                            return Err(diag(ident.span(), format!("`{ident}` is not a point")));
-                        }
-                        None => return Err(diag(ident.span(), format!("unknown name `{ident}`"))),
-                    }
+            let Some(ident) = plain_ident(&e.base) else {
+                return Err(diag(
+                    e.base.span(),
+                    "fields can only be taken from a point parameter",
+                ));
+            };
+            let point = match env.get(&ident.to_string()) {
+                Some(Binding::Param(point)) => *point,
+                Some(Binding::Let(_)) => {
+                    return Err(diag(ident.span(), format!("`{ident}` is not a point")));
                 }
-                other => {
-                    return Err(diag(
-                        other.span(),
-                        "fields can only be taken from a point parameter",
-                    ));
-                }
+                None => return Err(diag(ident.span(), format!("unknown name `{ident}`"))),
             };
             let axis = match &e.member {
                 Member::Named(id) if id == "x" => 0,
@@ -437,5 +386,13 @@ fn eval_at(
             Ok(builder.intern(Node::Coord { point, axis }))
         }
         other => Err(diag(other.span(), "this expression is not supported")),
+    }
+}
+
+/// The name an expression consists of, if it is a single plain identifier.
+fn plain_ident(expr: &Expr) -> Option<&syn::Ident> {
+    match expr {
+        Expr::Path(p) if p.qself.is_none() => p.path.get_ident(),
+        _ => None,
     }
 }

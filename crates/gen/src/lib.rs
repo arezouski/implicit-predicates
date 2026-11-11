@@ -15,11 +15,18 @@
 //! `p.y`, `p.z` of a parameter and the names of earlier bindings. A second
 //! function with the same name and parameters, marked `#[exact]`, gives the
 //! form used for exact evaluation.
+//!
+//! Input is bounded so that no definition can make [`parse`] panic or
+//! overflow the stack: brackets nest at most 64 deep, a statement has at most
+//! 6000 tokens (comments are free), and an expression tree is at most 1000
+//! levels deep, which allows a flat sum of about 1000 terms. Parsing runs on a
+//! helper thread with a 256 MiB stack, reserved but only committed as used.
 
 #![forbid(unsafe_code)]
 
 mod error;
 mod graph;
+mod limits;
 mod parse;
 
 pub use error::Error;
