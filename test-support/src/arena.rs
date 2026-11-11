@@ -15,6 +15,9 @@ pub const PRODUCT_OPERAND_LIMIT: usize = 4;
 pub enum ArenaOp {
     /// `Scratch::push` of the expansion.
     Push(Vec<f64>),
+    /// `Scratch::write` of the expansion, with a capacity this many
+    /// components longer than it.
+    Write(Vec<f64>, usize),
     /// `Scratch::sum`.
     Sum(usize, usize),
     /// `Scratch::diff`.
@@ -27,12 +30,15 @@ pub enum ArenaOp {
 
 /// Arena operations. Pushed expansions come from [`expansion_with`] with
 /// leaves in `2^-40 ..= 2^41`, or from [`bit_pattern_expansion`] with bits in
-/// `2^-120 ..= 2^120`; scale factors have at most 8 significant bits and
+/// `2^-120 ..= 2^120`; written expansions come from [`expansion_with`] with
+/// up to 4 components to spare; scale factors have at most 8 significant bits and
 /// magnitude in `2^-20 ..= 2^21`.
 pub fn arena_op() -> impl Strategy<Value = ArenaOp> {
     prop_oneof![
         expansion_with(8, leaf(-40, 40, 53)).prop_map(ArenaOp::Push),
         bit_pattern_expansion(12, -120, 120).prop_map(ArenaOp::Push),
+        (expansion_with(8, leaf(-40, 40, 53)), 0usize..=4)
+            .prop_map(|(e, extra)| ArenaOp::Write(e, extra)),
         (any::<usize>(), any::<usize>()).prop_map(|(a, b)| ArenaOp::Sum(a, b)),
         (any::<usize>(), any::<usize>()).prop_map(|(a, b)| ArenaOp::Diff(a, b)),
         (any::<usize>(), leaf(-20, 20, 8)).prop_map(|(a, b)| ArenaOp::Scale(a, b)),
@@ -64,6 +70,13 @@ impl ArenaOp {
         let index = |i: usize| i.checked_rem(spans.len());
         let (operands, result) = match *self {
             ArenaOp::Push(ref e) => (vec![], scratch.push(e)),
+            ArenaOp::Write(ref e, extra) => (
+                vec![],
+                scratch.write(e.len() + extra, |out| {
+                    out[..e.len()].copy_from_slice(e);
+                    e.len()
+                }),
+            ),
             ArenaOp::Sum(a, b) => {
                 let (a, b) = (index(a)?, index(b)?);
                 (vec![a, b], scratch.sum(spans[a], spans[b]))

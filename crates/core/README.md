@@ -15,7 +15,13 @@ Currently it provides:
   exact addition, subtraction, scaling and sign, all without allocation;
 - `Scratch`, a bump arena over a borrowed buffer that holds the expansions
   of a computation and runs those operations on them, as well as the exact
-  product of two expansions.
+  product of two expansions; `Scratch::write` lets other code write
+  expansions of its own into it;
+- `Point`, the contract every point type implements: an approximation of its
+  coordinates, a bound on their error, and its exact coordinates as
+  expansions in an arena. `[f64; 3]` implements it as an explicit point;
+- `filter`, the helpers that turn the errors of the points of a call into
+  the uncertainty of the floating-point filter of a predicate.
 
 The exact products require operands in a documented range, the product
 domain (`eft::in_product_domain`); debug builds check it.

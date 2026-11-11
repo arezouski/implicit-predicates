@@ -1,0 +1,175 @@
+//! The contract every point type implements, explicit or implicit.
+//!
+//! A predicate reads a point twice. Its fast path, the floating-point
+//! filter, uses [`Point::approx`], an approximation of the coordinates, and
+//! [`Point::err`], a bound on the error of each one. Only when the filter
+//! cannot decide does it ask for [`Point::exact`], the coordinates as
+//! expansions in a [`Scratch`] arena, in homogeneous form.
+//!
+//! `[f64; 3]` implements the contract as an explicit point: its components
+//! are its exact coordinates, with no error.
+
+use core::fmt;
+
+use crate::expansion;
+use crate::scratch::{Scratch, ScratchExhausted, Span};
+
+/// A point in three dimensions, as the predicates read it.
+///
+/// Implementations must uphold, for each axis `k`:
+///
+/// - `err()[k]` is not negative (it may be `+∞`) and bounds the distance
+///   between `approx()[k]` and the exact coordinate `k` that
+///   [`exact`](Self::exact) writes;
+/// - `err()[k]` is zero only when `approx()[k]` is that exact coordinate.
+///
+/// A predicate given a point that breaks this contract can return a wrong
+/// sign.
+///
+/// # Examples
+///
+/// ```
+/// use implicit_predicates_core::{Point, Scratch, Weight};
+///
+/// let p = [1.5, 0.0, -2.0];
+/// assert!(p.is_explicit());
+/// assert_eq!(p.err(), &[0.0; 3]);
+///
+/// let mut buf = [0.0; 3];
+/// let mut scratch = Scratch::borrowed(&mut buf);
+/// let exact = p.exact(&mut scratch)?;
+/// assert_eq!(scratch.get(exact.x), &[1.5]);
+/// assert!(exact.y.is_empty()); // zero
+/// assert_eq!(exact.w, Weight::One);
+/// # Ok::<(), implicit_predicates_core::ExactError>(())
+/// ```
+pub trait Point {
+    /// Returns an approximation of the coordinates.
+    fn approx(&self) -> &[f64; 3];
+
+    /// Returns, per coordinate, a bound on the error of
+    /// [`approx`](Self::approx).
+    fn err(&self) -> &[f64; 3];
+
+    /// Returns `true` if [`approx`](Self::approx) holds the exact
+    /// coordinates, every [`err`](Self::err) is zero and
+    /// [`exact`](Self::exact) gives [`Weight::One`].
+    fn is_explicit(&self) -> bool;
+
+    /// Writes the exact coordinates as expansions in `scratch`: the point is
+    /// `(x / w, y / w, z / w)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`ExactError::Exhausted`] if `scratch` runs out of room;
+    /// - [`ExactError::OutOfRange`] if the inputs of the point lie outside
+    ///   the range in which its exact coordinates can be computed: they are
+    ///   not finite, or a product they need leaves the product domain of
+    ///   [`eft`](crate::eft).
+    ///
+    /// After an error, `scratch` may hold partial results above the top it
+    /// had before the call; resetting to a mark taken before the call
+    /// releases them.
+    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError>;
+}
+
+/// The exact coordinates of a point, in homogeneous form: the point is
+/// `(x / w, y / w, z / w)`. The spans belong to the arena given to
+/// [`Point::exact`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExactCoords {
+    /// The numerator of the first coordinate.
+    pub x: Span,
+    /// The numerator of the second coordinate.
+    pub y: Span,
+    /// The numerator of the third coordinate.
+    pub z: Span,
+    /// The common denominator.
+    pub w: Weight,
+}
+
+/// The common denominator of the exact coordinates of a point.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Weight {
+    /// The denominator is one: the numerators are the coordinates.
+    One,
+    /// The denominator is the expansion at this span.
+    Expansion(Span),
+}
+
+/// The error of [`Point::exact`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExactError {
+    /// The arena ran out of room.
+    Exhausted(ScratchExhausted),
+    /// The inputs of the point lie outside the range of the exact
+    /// arithmetic.
+    OutOfRange,
+}
+
+impl From<ScratchExhausted> for ExactError {
+    fn from(e: ScratchExhausted) -> Self {
+        ExactError::Exhausted(e)
+    }
+}
+
+impl fmt::Display for ExactError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExactError::Exhausted(e) => e.fmt(f),
+            ExactError::OutOfRange => {
+                f.write_str("point outside the range of the exact arithmetic")
+            }
+        }
+    }
+}
+
+impl core::error::Error for ExactError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            ExactError::Exhausted(e) => Some(e),
+            ExactError::OutOfRange => None,
+        }
+    }
+}
+
+/// An explicit point, not validated: its components are its exact
+/// coordinates. A component that is not finite makes
+/// [`exact`](Point::exact) fail with [`ExactError::OutOfRange`].
+impl Point for [f64; 3] {
+    #[inline]
+    fn approx(&self) -> &[f64; 3] {
+        self
+    }
+
+    #[inline]
+    fn err(&self) -> &[f64; 3] {
+        &[0.0; 3]
+    }
+
+    #[inline]
+    fn is_explicit(&self) -> bool {
+        true
+    }
+
+    /// Writes each coordinate as an expansion of one component, or none for
+    /// zero, with [`Weight::One`]. Needs up to 3 free components; on an
+    /// error the arena is unchanged.
+    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        if !self.iter().all(|c| c.is_finite()) {
+            return Err(ExactError::OutOfRange);
+        }
+        let mark = scratch.mark();
+        let mut write = |c: f64| {
+            scratch
+                .write(1, |out| expansion::from_f64(c, out))
+                .inspect_err(|_| scratch.reset(mark))
+        };
+        Ok(ExactCoords {
+            x: write(self[0])?,
+            y: write(self[1])?,
+            z: write(self[2])?,
+            w: Weight::One,
+        })
+    }
+}

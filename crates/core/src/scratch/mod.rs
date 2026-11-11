@@ -14,7 +14,8 @@
 //! - **Spans are indices.** Operations take and return [`Span`]s, positions
 //!   in the arena rather than references to it, so a computation can hold
 //!   many results while it keeps calling `&mut self` operations. Read the
-//!   components of a span with [`Scratch::get`].
+//!   components of a span with [`Scratch::get`]; write an expansion computed
+//!   elsewhere with [`Scratch::write`].
 //! - **Marks and reset.** [`Scratch::mark`] records the current top and
 //!   [`Scratch::reset`] lowers the top back to a mark, releasing at once
 //!   every result built since. Spans created before the mark stay valid.
@@ -67,6 +68,7 @@ mod product;
 mod reservation;
 mod span;
 mod storage;
+mod write;
 
 pub use error::ScratchExhausted;
 pub use span::{Mark, Span};

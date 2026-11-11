@@ -52,6 +52,7 @@ impl Run {
         let operand = |i: usize| self.spans[operands[i]].1.as_slice();
         let (worst_case, expected) = match op {
             ArenaOp::Push(e) => (e.len(), Expected::Components(e.clone())),
+            ArenaOp::Write(e, extra) => (e.len() + extra, Expected::Components(e.clone())),
             ArenaOp::Sum(..) => {
                 let (ea, eb) = (operand(0), operand(1));
                 let sum = slice_op(ea.len() + eb.len(), |out| expansion::sum(ea, eb, out));
