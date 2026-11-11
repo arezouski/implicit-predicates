@@ -3,6 +3,9 @@
 //! uncertainty, checked by the functions of the generated checks on every
 //! stage and on the chain with points of several types.
 
+// `orient3d` needs the `std` feature.
+#![cfg(feature = "std")]
+
 mod common;
 
 use common::generated::{check_bound_edge_cases, check_uncertainty_edge_cases, exact};

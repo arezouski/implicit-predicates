@@ -2,6 +2,9 @@
 //! inputs, given as `[f64; 3]`, `Explicit` or `AnyPoint`, its documented
 //! range, and the symmetries of the determinant.
 
+// `orient3d` needs the `std` feature.
+#![cfg(feature = "std")]
+
 mod common;
 
 use common::generated::exact;

@@ -9,8 +9,9 @@
 //! compute that sum per axis ([`uncertainty`]), or once for every axis
 //! ([`uncertainty_max`]).
 //!
-//! Both are on the fast path of every call with implicit points: they do
-//! not allocate, and they use selects rather than data-dependent branches.
+//! Both are on the fast path of every call with implicit points. They do
+//! not allocate. Their comparisons, which keep a NaN, may compile to
+//! branches that depend on the errors: they are not free of branches.
 //! Calls on explicit points do not need them, since every error is zero:
 //! the generated predicates use an uncertainty of zero instead when every
 //! point is explicit ([`Point::is_explicit`](crate::Point::is_explicit)),

@@ -3,6 +3,9 @@
 //! and on the concrete types; the degenerate cases; and inputs that are not
 //! finite.
 
+// `orient3d` needs the `std` feature.
+#![cfg(feature = "std")]
+
 mod common;
 
 use common::args::{Arg, Args, all_explicit, decidable, every_stage, exact_sign, spans_decidable};

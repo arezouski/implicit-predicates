@@ -22,6 +22,10 @@ use crate::scratch::{Scratch, ScratchExhausted, Span};
 ///   between `approx()[k]` and the exact coordinate `k` that
 ///   [`exact`](Self::exact) writes;
 /// - `err()[k]` is zero only when `approx()[k]` is that exact coordinate;
+/// - [`is_explicit`](Self::is_explicit) returns `true` only if `approx()`
+///   holds the exact coordinates, `err()` is zero on every axis and
+///   [`exact`](Self::exact) gives [`Weight::One`]: for such points the
+///   predicates use `approx()` alone, with no uncertainty;
 /// - every span of the [`ExactCoords`] that [`exact`](Self::exact) returns
 ///   holds a valid expansion (see [`expansion`]: nonzero components of
 ///   strictly increasing magnitude that do not overlap), written in the
@@ -55,9 +59,11 @@ pub trait Point {
     /// [`approx`](Self::approx).
     fn err(&self) -> &[f64; 3];
 
-    /// Returns `true` if [`approx`](Self::approx) holds the exact
-    /// coordinates, every [`err`](Self::err) is zero and
-    /// [`exact`](Self::exact) gives [`Weight::One`].
+    /// Whether the point is explicit. It may return `true` only if
+    /// [`approx`](Self::approx) holds the exact coordinates, every
+    /// [`err`](Self::err) is zero and [`exact`](Self::exact) gives
+    /// [`Weight::One`]; returning `false` is always allowed. A wrong `true`
+    /// makes the predicates return wrong signs, unchecked.
     fn is_explicit(&self) -> bool;
 
     /// Writes the exact coordinates as expansions in `scratch`: the point is

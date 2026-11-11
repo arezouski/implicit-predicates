@@ -12,6 +12,9 @@
 //! in release mode with `cargo test -p implicit-predicates --release --
 //! --ignored --nocapture`, which also shows the counts they print.
 
+// `orient3d` needs the `std` feature.
+#![cfg(feature = "std")]
+
 mod common;
 
 use std::fs::File;

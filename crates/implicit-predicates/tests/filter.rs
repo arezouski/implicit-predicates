@@ -8,6 +8,9 @@
 //! and `D_MAX`: they check that the filter honours them, while their values
 //! are checked by `the_constants_are_the_derived_ones`.
 
+// `orient3d` needs the `std` feature.
+#![cfg(feature = "std")]
+
 mod common;
 
 use common::boxes::{determinant_at, exact_corners};

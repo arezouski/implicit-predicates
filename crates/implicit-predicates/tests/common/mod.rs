@@ -12,6 +12,7 @@ pub mod generated;
 #[path = "../generated/points.rs"]
 pub mod point_checks;
 
+#[cfg(feature = "std")]
 pub mod args;
 pub mod boxes;
 
@@ -58,6 +59,7 @@ pub fn refs(p: &Points) -> [&[f64; 3]; 4] {
 }
 
 /// `orient3d` on the four points.
+#[cfg(feature = "std")]
 pub fn orient3d(p: &Points) -> Option<Sign> {
     implicit_predicates::orient3d(&p[0], &p[1], &p[2], &p[3])
 }

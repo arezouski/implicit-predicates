@@ -3,6 +3,9 @@
 //! coordinates, a point whose exact coordinates call a predicate does not
 //! make it panic, and the result does not depend on earlier calls.
 
+// `orient3d` needs the `std` feature.
+#![cfg(feature = "std")]
+
 mod common;
 
 use std::cell::Cell;
@@ -317,6 +320,62 @@ fn the_result_does_not_depend_on_earlier_calls() {
             })
             .collect();
         assert_eq!(results, expected_reversed);
+    })
+    .join()
+    .unwrap();
+}
+
+thread_local! {
+    /// The `used()` of the arena that the last [`Probe`] was given.
+    static USED_ON_ENTRY: Cell<usize> = const { Cell::new(usize::MAX) };
+}
+
+/// A point at the origin, not explicit, that records the `used()` of the
+/// arena on entry to its exact coordinates; when `panics`, it then fills
+/// part of the arena and panics.
+struct Probe {
+    panics: bool,
+}
+
+impl Point for Probe {
+    fn approx(&self) -> &[f64; 3] {
+        &[0.0; 3]
+    }
+
+    fn err(&self) -> &[f64; 3] {
+        &[f64::INFINITY; 3]
+    }
+
+    fn is_explicit(&self) -> bool {
+        false
+    }
+
+    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        USED_ON_ENTRY.with(|u| u.set(scratch.used()));
+        if self.panics {
+            for _ in 0..1000 {
+                scratch.push(&[1.0])?;
+            }
+            panic!("exact coordinates that panic");
+        }
+        [0.0; 3].exact(scratch)
+    }
+}
+
+#[test]
+fn the_arena_of_the_thread_is_empty_after_a_call_that_panicked() {
+    std::thread::spawn(|| {
+        let (a, b, c) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+        for _ in 0..3 {
+            let panicked = catch_unwind(AssertUnwindSafe(|| {
+                orient3d(&Probe { panics: true }, &a, &b, &c)
+            }));
+            assert!(panicked.is_err());
+        }
+        // The first point is the first to write to the arena.
+        let sign = orient3d(&Probe { panics: false }, &a, &b, &c);
+        assert_eq!(sign, orient3d(&[0.0; 3], &a, &b, &c));
+        assert_eq!(USED_ON_ENTRY.with(Cell::get), 0);
     })
     .join()
     .unwrap();

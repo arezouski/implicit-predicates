@@ -1,5 +1,8 @@
 //! Basic cases of `orient3d` whose sign is known by hand.
 
+// `orient3d` needs the `std` feature.
+#![cfg(feature = "std")]
+
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{Sign, orient3d};
 
