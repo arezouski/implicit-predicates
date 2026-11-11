@@ -1,60 +1,50 @@
 //! `orient3d` on the calls recorded from a tetrahedral mesher: every stored
-//! `orient3d` call whose points are all explicit must get the recorded sign.
+//! `orient3d` call, with explicit points and with points on a line, must
+//! get the recorded sign, and the public functions must agree with the
+//! first stage of the chain that decides.
 //!
 //! The recording program uses the opposite sign convention, so the recorded
-//! sign is `REFERENCE_ORIENT3D_FACTOR` times ours. A call with a coordinate
-//! outside the range where `orient3d` is documented to decide may get
-//! `None`; such calls are counted and reported, and any other `None` is a
-//! failure.
+//! sign is `REFERENCE_ORIENT3D_FACTOR` times ours. Calls with a kind of
+//! point that this crate does not provide yet are counted and reported.
+//! A call that no stage decides is reported with the documented reason
+//! (see `common::corpus_sweep::Why`); on the samples there must be none.
 //!
 //! The versioned samples are checked by default. The generated corpus is
-//! large and not versioned; its tests are ignored, and are meant to be run
-//! in release mode with `cargo test -p implicit-predicates --release --
-//! --ignored --nocapture`, which also shows the counts they print.
+//! large and not versioned; its sweep is ignored, and is meant to be run in
+//! release mode with `cargo test -p implicit-predicates --release --test
+//! corpus -- --ignored --nocapture`, which also prints, for the models
+//! without and with self-intersections, the weighted fraction of the calls
+//! that each stage decides first, by number of implicit points.
 
 // `orient3d` needs the `std` feature.
 #![cfg(feature = "std")]
 
 mod common;
 
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use common::{CHAIN, Points, all_in_range, first_deciding};
-use implicit_predicates::Sign;
-use implicit_predicates::stages::orient3d as stages;
-use implicit_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
-use implicit_predicates_corpus::weighted::weights;
-use implicit_predicates_corpus::{Call, Corpus, PointDef, Predicate};
+use common::corpus_sweep::Tally;
+use implicit_predicates_corpus::Corpus;
 
-/// The directory of the versioned sample corpora.
-fn samples_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/samples")
+/// The root of the workspace.
+fn root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The directory of the generated corpus, which must exist.
-fn generated_dir() -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/data/corpus");
-    assert!(
-        dir.is_dir(),
-        "no generated corpus in {}: build it with `python3 corpus/tools/corpus.py all`",
-        dir.display()
-    );
-    dir
-}
+/// The versioned sample corpora, each of which must exist.
+const SAMPLES: [&str; 3] = [
+    "thingi10k-1716275.ipcorpus",
+    "thingi10k-217026.ipcorpus",
+    "thingi10k-97167.ipcorpus",
+];
 
-/// The `.ipcorpus` files of `dir`, in file name order.
-fn corpus_files(dir: &Path) -> Vec<PathBuf> {
-    let mut files: Vec<_> = std::fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("cannot list {}: {e}", dir.display()))
-        .map(|entry| entry.expect("a directory entry").path())
-        .filter(|path| path.extension().is_some_and(|e| e == "ipcorpus"))
-        .collect();
-    files.sort();
-    assert!(!files.is_empty(), "no corpus file in {}", dir.display());
-    files
-}
+/// The fewest calls without and with implicit points that the samples
+/// check: as many as they hold, so that the test cannot pass on an empty or
+/// truncated sample.
+const SAMPLE_CALLS: (usize, usize) = (1200, 3177);
 
 fn read(path: &Path) -> Corpus {
     let file = File::open(path).unwrap_or_else(|e| panic!("cannot open {}: {e}", path.display()));
@@ -62,142 +52,96 @@ fn read(path: &Path) -> Corpus {
         .unwrap_or_else(|e| panic!("invalid corpus {}: {e:?}", path.display()))
 }
 
-/// The points of an `orient3d` call, if they are all explicit.
-fn explicit_orient3d(corpus: &Corpus, call: &Call) -> Option<Points> {
-    if call.predicate != Predicate::Orient3d {
-        return None;
-    }
-    let mut points = [[0.0; 3]; 4];
-    for (point, &index) in points.iter_mut().zip(call.points()) {
-        match corpus.points[index as usize] {
-            PointDef::Explicit(c) => *point = c,
-            _ => return None,
-        }
-    }
-    Some(points)
-}
-
-/// The coordinates of a call as bit patterns, for failure messages.
-fn bits(p: &Points) -> [[u64; 3]; 4] {
-    p.map(|q| q.map(f64::to_bits))
-}
-
-/// What a sweep over recorded calls found.
-#[derive(Debug, Default)]
-struct Sweep {
-    files: usize,
-    checked: usize,
-    zero: usize,
-    outside_range: usize,
-    undecided: usize,
-}
-
-/// Checks every explicit `orient3d` call of the files in `dir` against its
-/// recorded sign.
-fn sweep(dir: &Path) -> Sweep {
-    let mut found = Sweep::default();
-    for path in corpus_files(dir) {
-        let corpus = read(&path);
-        found.files += 1;
-        for (index, call) in corpus.calls.iter().enumerate() {
-            let Some(p) = explicit_orient3d(&corpus, call) else {
-                continue;
-            };
-            found.checked += 1;
-            let in_range = all_in_range(&p, stages::UNTRANSLATED_RANGE);
-            found.outside_range += usize::from(!in_range);
-            let Some(sign) = common::orient3d(&p) else {
-                assert!(
-                    !in_range,
-                    "{} call {index}: undecided inside the range, bits {:x?}",
-                    corpus.model,
-                    bits(&p)
-                );
-                found.undecided += 1;
-                continue;
-            };
-            found.zero += usize::from(sign == Sign::Zero);
-            assert_eq!(
-                REFERENCE_ORIENT3D_FACTOR * i8::from(sign),
-                call.sign,
-                "{} call {index}: recorded sign differs, bits {:x?}",
-                corpus.model,
-                bits(&p)
-            );
-        }
-    }
-    found
-}
-
-#[test]
-fn orient3d_matches_the_recorded_sign_on_the_samples() {
-    let found = sweep(&samples_dir());
-    println!("samples: {found:?}");
+/// Fails, after the report, if a call got a sign other than the recorded
+/// one or the public functions disagree with the stages.
+fn assert_no_mismatch(name: &str, tally: &Tally) {
     assert!(
-        found.checked > 0,
-        "no explicit orient3d call in the samples"
+        tally.mismatch_count == 0,
+        "{name}: {} mismatches, the first: {}",
+        tally.mismatch_count,
+        tally.mismatches[0]
     );
 }
 
 #[test]
-fn the_first_stage_that_decides_gives_the_result_of_the_chain_on_the_samples() {
-    for path in corpus_files(&samples_dir()) {
-        let corpus = read(&path);
-        for (index, call) in corpus.calls.iter().enumerate() {
-            let Some(p) = explicit_orient3d(&corpus, call) else {
-                continue;
-            };
-            assert_eq!(
-                first_deciding(&p).map(|(_, sign)| sign),
-                common::orient3d(&p),
-                "{} call {index}: bits {:x?}",
-                corpus.model,
-                bits(&p)
-            );
-        }
+fn orient3d_matches_the_recorded_sign_on_the_samples() {
+    let mut tally = Tally::default();
+    let mut total = (0, 0);
+    for name in SAMPLES {
+        let (explicit, implicit) =
+            tally.add_corpus(&read(&root().join("corpus/samples").join(name)));
+        assert!(explicit > 0, "{name}: no explicit orient3d call checked");
+        assert!(
+            implicit > 0,
+            "{name}: no orient3d call with implicit points checked"
+        );
+        total = (total.0 + explicit, total.1 + implicit);
     }
+    println!("{}", tally.report("samples"));
+    assert_no_mismatch("samples", &tally);
+    assert!(
+        tally.undecided.is_empty(),
+        "undecided calls on the samples: {:?}",
+        tally.examples
+    );
+    assert!(
+        total.0 >= SAMPLE_CALLS.0 && total.1 >= SAMPLE_CALLS.1,
+        "the samples check {total:?} calls, fewer than {SAMPLE_CALLS:?}"
+    );
+}
+
+/// The files listed in `list`, relative to the root of the workspace.
+fn listed(list: &str) -> Vec<PathBuf> {
+    let path = root().join(list);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| root().join(line))
+        .collect()
 }
 
 #[test]
-#[ignore = "needs the generated corpus; run in release mode"]
+#[ignore = "needs the generated corpus; prints a table; run in release mode"]
 fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
-    let found = sweep(&generated_dir());
-    println!("generated corpus: {found:?}");
-    assert!(found.checked > 0, "no explicit orient3d call in the corpus");
-}
-
-/// The weight of the explicit `orient3d` calls of the files in `dir` that
-/// each stage of `CHAIN` decides first, and last of those no stage decides; each
-/// stored call weighs as many calls of the recording run as it stands for.
-fn stage_weights(dir: &Path) -> [f64; CHAIN.len() + 1] {
-    let mut decided = [0.0; CHAIN.len() + 1];
-    for path in corpus_files(dir) {
-        let corpus = read(&path);
-        for (call, weight) in corpus.calls.iter().zip(weights(&corpus)) {
-            let Some(p) = explicit_orient3d(&corpus, call) else {
-                continue;
-            };
-            let stage = first_deciding(&p).map_or(CHAIN.len(), |(i, _)| i);
-            decided[stage] += weight;
+    let dir = root().join("corpus/data/corpus");
+    assert!(
+        dir.is_dir(),
+        "no generated corpus in {}: build it with `python3 corpus/tools/corpus.py all`",
+        dir.display()
+    );
+    let populations = [
+        ("models without self-intersections", "corpus/data/nosi.txt"),
+        ("models with self-intersections", "corpus/data/si.txt"),
+    ];
+    // The two lists split the generated corpus.
+    let in_dir: BTreeSet<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot list {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry").file_name())
+        .filter(|name| Path::new(name).extension().is_some_and(|e| e == "ipcorpus"))
+        .collect();
+    let mut seen = BTreeSet::new();
+    for (_, list) in populations {
+        for path in listed(list) {
+            let name = path.file_name().expect("a file name").to_owned();
+            assert!(seen.insert(name), "{} listed twice", path.display());
         }
     }
-    decided
-}
+    assert_eq!(seen, in_dir, "the lists do not split the generated corpus");
 
-fn print_stage_fractions(name: &str, decided: &[f64]) {
-    let total: f64 = decided.iter().sum();
-    println!("{name}: {total:.0} weighted explicit orient3d calls");
-    let names = CHAIN.iter().map(|(name, _)| *name).chain(["none"]);
-    for (stage, weight) in names.zip(decided) {
-        println!("  {stage:<24} {:>12.6} %", 100.0 * weight / total);
+    let mut tallies = Vec::new();
+    for (name, list) in populations {
+        let mut tally = Tally::default();
+        let files = listed(list);
+        for path in &files {
+            tally.add_corpus(&read(path));
+        }
+        println!("{} files", files.len());
+        println!("{}", tally.report(name));
+        tallies.push((name, tally));
     }
-}
-
-#[test]
-#[ignore = "prints a table; needs the generated corpus; run in release mode"]
-fn orient3d_stage_fractions_on_recorded_calls() {
-    let samples = stage_weights(&samples_dir());
-    print_stage_fractions("samples", &samples);
-    let generated = stage_weights(&generated_dir());
-    print_stage_fractions("generated corpus", &generated);
+    for (name, tally) in &tallies {
+        assert_no_mismatch(name, tally);
+    }
 }
