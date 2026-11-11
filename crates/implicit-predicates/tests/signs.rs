@@ -1,12 +1,13 @@
-//! `orient3d` against the exact sign on every family of inputs, its
-//! documented range, and the symmetries of the determinant.
+//! `orient3d` on explicit points against the exact sign on every family of
+//! inputs, given as `[f64; 3]`, `Explicit` or `AnyPoint`, its documented
+//! range, and the symmetries of the determinant.
 
 mod common;
 
 use common::generated::exact;
 use common::{Points, STAGES, all_finite, all_in_range, edges, first_deciding, orient3d, refs};
-use implicit_predicates::Sign;
 use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates::{AnyPoint, Explicit, Scratch, Sign};
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{
     config, coplanar4, extreme4, grid4, near_coplanar4, random4, repeated4, signed_zeros4,
@@ -94,6 +95,21 @@ proptest! {
             if family == "coplanar" || family == "repeated" {
                 prop_assert_eq!(expected, Sign::Zero, "{} {:?}", family, p);
             }
+            // The same through every explicit point type, and the chain
+            // for points of any type with an arena.
+            let explicit = p.map(Explicit::new_unchecked);
+            let any = explicit.map(AnyPoint::from);
+            let mut buf = [0.0; 64];
+            let mut scratch = Scratch::borrowed(&mut buf);
+            for (name, result) in [
+                ("Explicit", implicit_predicates::orient3d(&explicit[0], &explicit[1], &explicit[2], &explicit[3])),
+                ("AnyPoint", implicit_predicates::orient3d(&any[0], &any[1], &any[2], &any[3])),
+                ("orient3d_in", implicit_predicates::orient3d_in(&mut scratch, &p[0], &p[1], &p[2], &p[3]).unwrap()),
+            ] {
+                prop_assert_eq!(result, orient3d(&p), "{} {} {:?}", name, family, p);
+            }
+            // Explicit points do not use the arena.
+            prop_assert_eq!(scratch.high_water(), 0);
             match orient3d(&p) {
                 Some(sign) => prop_assert_eq!(sign, expected, "{} {:?}", family, p),
                 None => prop_assert!(

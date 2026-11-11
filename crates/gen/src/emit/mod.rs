@@ -7,11 +7,13 @@
 //! order, so it is the same on every run; it is not formatted.
 
 mod chain;
+mod check_fns;
 mod checks;
 mod edges;
 mod exact;
 mod filter;
 mod filter_axis;
+mod generic;
 mod grid;
 mod point_checks;
 mod point_eval;
@@ -87,7 +89,12 @@ pub struct Generated {
 /// predicate for now. A stage on the stack is emitted only when its
 /// temporaries take at most 4,096 `f64`; when one does not fit, `staged`
 /// takes an arena and runs the stage over spans of the same form in its
-/// place, on the exact coordinates of the explicit points. The module of
+/// place, on the exact coordinates of the explicit points. For points of
+/// any type that implements `Point`, `staged_in` runs `filter_points`, the
+/// filter with the uncertainty of the errors of the points, then
+/// `exact_stages`, the exact stages of `staged`, when every point is
+/// explicit, and otherwise `exact_stages_in`, the stages over spans on the
+/// exact coordinates of the points, the translated form first. The module of
 /// its checks holds `exact`, the main form evaluated with the exact numbers
 /// of `implicit-predicates-oracle`, `bound_edge_cases`, pairs of inputs at
 /// the edge of the error bound of the filter for explicit points, and, for a
@@ -233,7 +240,22 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         ),
     };
     write_exact_stages(&mut out, points, &forms);
-    chain::write_chain(&mut out, points, &chain_stages(&forms), explicit);
+    let explicit_stages = chain_stages(&forms);
+    chain::write_chain(&mut out, points, &explicit_stages, explicit);
+    let spans: &[&str] = if forms.spans_untranslated.is_some() {
+        &["expansions_translated_in", "expansions_untranslated_in"]
+    } else {
+        &["expansions_translated_in"]
+    };
+    generic::write_generic_chain(
+        &mut out,
+        &generic::GenericChain {
+            points,
+            per_axis: matches!(forms.filter, FilterKind::PerAxis(..)),
+            explicit: &explicit_stages,
+            spans,
+        },
+    );
     if uses_max {
         filter::write_max(&mut out);
     }
@@ -282,20 +304,23 @@ fn write_header(out: &mut String, predicate: &Predicate, notice: &str, forms: &F
             "The stages of the predicate `{}`.\n\n\
              Every stage takes the points {} of the definition as `p`, in that order, \
              and returns the sign of the predicate, or `None` when it cannot decide. \
-             [`staged`] runs them in order.",
+             [`staged`] runs them in order on explicit points, and [`staged_in`] on points \
+             of any type.",
             predicate.name,
             list(&predicate.params)
         ),
     );
     // The names the module uses, in the order rustfmt sorts them.
-    let in_arena = chain_stages(forms)
-        .iter()
-        .any(|s| matches!(s, ChainStage::Spans(_)));
-    let mut names = vec!["ExactCoords"];
-    if in_arena {
-        names.extend(["ExactError", "Point"]);
-    }
-    names.extend(["Scratch", "ScratchExhausted", "Sign", "Span", "Weight"]);
+    let mut names = vec![
+        "ExactCoords",
+        "ExactError",
+        "Point",
+        "Scratch",
+        "ScratchExhausted",
+        "Sign",
+        "Span",
+        "Weight",
+    ];
     if forms.differences.is_some() {
         names.push("eft");
     }

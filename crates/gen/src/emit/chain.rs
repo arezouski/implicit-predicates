@@ -122,23 +122,6 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
          result\n}}\n"
     )
     .unwrap();
-    comment(
-        out,
-        "///",
-        0,
-        "The exact coordinates of the explicit point `p`, written to `scratch`, or \
-         `None` if a coordinate is not finite.",
-    );
-    out.push_str(
-        "fn exact(scratch: &mut Scratch<'_>, p: &[f64; 3]) \
-         -> Result<Option<ExactCoords>, ScratchExhausted> {\n\
-         match p.exact(scratch) {\n\
-         Ok(c) => Ok(Some(c)),\n\
-         Err(ExactError::OutOfRange) => Ok(None),\n\
-         Err(ExactError::Exhausted(e)) => Err(e),\n\
-         }\n\
-         }\n\n",
-    );
 }
 
 /// Writes `staged` when every stage is on the stack.

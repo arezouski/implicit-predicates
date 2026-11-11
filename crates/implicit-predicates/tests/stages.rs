@@ -1,14 +1,15 @@
 //! Every stage of `orient3d`, alone, against the exact sign, and the cases
 //! at the edge of the error bound of the filter, without and with an
-//! uncertainty.
+//! uncertainty, checked by the functions of the generated checks on every
+//! stage and on the chain with points of several types.
 
 mod common;
 
-use common::boxes::{determinant_at, exact_corners};
-use common::generated::exact;
+use common::generated::{check_bound_edge_cases, check_uncertainty_edge_cases, exact};
 use common::{Points, STAGES, all_in_range, edges, generated, orient3d, refs};
-use implicit_predicates::Sign;
 use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates::{AnyPoint, ExactCoords, ExactError, Explicit, Lnc, Point, Scratch, Sign};
+use implicit_predicates_core::filter::uncertainty;
 use implicit_predicates_test_support::{
     config, coplanar4, extreme4, grid4, near_coplanar4, random4, repeated4, signed_zeros4,
 };
@@ -64,74 +65,102 @@ proptest! {
     }
 }
 
+/// The bound edge cases, by the generated check, on every stage and on the
+/// chain with each type of point that can hold an explicit point exactly:
+/// `[f64; 3]`, `Explicit`, `AnyPoint`, and a point on a line whose parents
+/// are both the point, which goes through the stages over spans.
 #[test]
 fn the_bound_edge_cases_are_decided_correctly() {
-    let cases = generated::bound_edge_cases();
-    assert!(cases.len() >= 64, "{} cases", cases.len());
-    let (mut decided, mut declined) = (0, 0);
-    for p in &cases {
-        let expected = exact(p);
-        match stages::filter(refs(p), [0.0; 3]) {
-            Some(sign) => {
-                assert_eq!(sign, expected, "filter on {p:?}");
-                decided += 1;
-            }
-            None => declined += 1,
-        }
-        for (name, stage) in STAGES {
-            if let Some(sign) = stage(refs(p)) {
-                assert_eq!(sign, expected, "{name} on {p:?}");
-            }
-        }
-        if all_in_range(p, stages::UNTRANSLATED_RANGE) {
-            assert_eq!(orient3d(p), Some(expected), "{p:?}");
-        }
-    }
+    let [decided, declined] = check_bound_edge_cases(|p| stages::filter(refs(p), [0.0; 3]));
+    assert!(decided + declined >= 64, "{decided} + {declined} cases");
     // The cases straddle the bound: the filter decides some, not all.
     assert!(
         decided > 0 && declined > 0,
         "{decided} decided, {declined} declined"
     );
+    for (_, stage) in STAGES {
+        check_bound_edge_cases(|p| stage(refs(p)));
+    }
+    // The chain on each type, and the range in which it must decide.
+    let (stack, spans) = (stages::UNTRANSLATED_RANGE, stages::SPANS_UNTRANSLATED_RANGE);
+    let chains: [(&str, Chain, (f64, f64)); 4] = [
+        ("arrays", |p| orient3d(p), stack),
+        (
+            "Explicit",
+            |p| {
+                let [a, b, c, d] = p.map(Explicit::new_unchecked);
+                implicit_predicates::orient3d(&a, &b, &c, &d)
+            },
+            stack,
+        ),
+        (
+            "AnyPoint",
+            |p| {
+                let [a, b, c, d] = p.map(|x| AnyPoint::from(Explicit::new_unchecked(x)));
+                implicit_predicates::orient3d(&a, &b, &c, &d)
+            },
+            stack,
+        ),
+        (
+            "Lnc",
+            |p| {
+                let [a, b, c, d] = p.map(|x| Lnc::new_unchecked(x, x, 0.375));
+                implicit_predicates::orient3d(&a, &b, &c, &d)
+            },
+            spans,
+        ),
+    ];
+    let cases = generated::bound_edge_cases();
+    for (name, chain, range) in chains {
+        let [decided, _] = check_bound_edge_cases(chain);
+        let inside = cases.iter().filter(|p| all_in_range(p, range));
+        for p in inside.clone() {
+            assert!(chain(p).is_some(), "{name} on {p:?}");
+        }
+        assert!(decided >= inside.count(), "{name}");
+    }
 }
 
+/// The chain on four points of one type.
+type Chain = fn(&Points) -> Option<Sign>;
+
+/// A point given by an approximation and the error of each coordinate,
+/// without exact coordinates: for the filter only.
+struct Approx([f64; 3], [f64; 3]);
+
+impl Point for Approx {
+    fn approx(&self) -> &[f64; 3] {
+        &self.0
+    }
+
+    fn err(&self) -> &[f64; 3] {
+        &self.1
+    }
+
+    fn is_explicit(&self) -> bool {
+        false
+    }
+
+    fn exact(&self, _: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        Err(ExactError::OutOfRange)
+    }
+}
+
+/// The uncertainty edge cases, by the generated check, on the filter given
+/// the uncertainty of the errors, and on the filter of points of a type
+/// that carries them.
 #[test]
 fn the_uncertainty_edge_cases_are_decided_correctly() {
-    let cases = generated::uncertainty_edge_cases();
-    // Counted by where `e` is not zero: on x, y or z alone, or on all three;
-    // then decided or declined.
-    let mut counts = [[0usize; 2]; 4];
-    for (p, e) in &cases {
-        let kind = match e.map(|x| x > 0.0) {
-            [true, false, false] => 0,
-            [false, true, false] => 1,
-            [false, false, true] => 2,
-            [true, true, true] => 3,
-            _ => panic!("e = {e:?}"),
-        };
-        match stages::filter(refs(p), *e) {
-            Some(sign) => {
-                assert_ne!(sign, Sign::Zero, "{p:?} e = {e:?}");
-                assert_eq!(sign, exact(p), "{p:?} e = {e:?}");
-                // `e[k]` bounds the sum of the two largest errors on axis
-                // `k`, so each point may be off by half of it: the sign holds
-                // at the corners of those boxes.
-                let half = [[e[0] / 2.0, e[1] / 2.0, e[2] / 2.0]; 4];
-                for truth in exact_corners(p, half) {
-                    let expected = match determinant_at(&truth).sign() {
-                        -1 => Sign::Negative,
-                        0 => Sign::Zero,
-                        _ => Sign::Positive,
-                    };
-                    assert_eq!(sign, expected, "{p:?} e = {e:?}");
-                }
-                counts[kind][0] += 1;
-            }
-            None => counts[kind][1] += 1,
-        }
-    }
+    let filter =
+        check_uncertainty_edge_cases(|p, err| stages::filter(refs(p), uncertainty(err.each_ref())));
+    let points = check_uncertainty_edge_cases(|p, err| {
+        let [a, b, c, d] = std::array::from_fn(|i| Approx(p[i], err[i]));
+        stages::filter_points(&a, &b, &c, &d)
+    });
+    assert_eq!(filter, points);
     // The cases straddle the bound in every kind: the filter decides some,
     // not all.
-    for (kind, [decided, declined]) in counts.iter().enumerate() {
+    for (kind, [decided, declined]) in filter.iter().enumerate() {
         assert!(
             *decided > 0 && *declined > 0,
             "kind {kind}: {decided} decided, {declined} declined"
@@ -170,6 +199,30 @@ fn the_chain_of_the_tests_is_the_order_of_staged() {
     assert_eq!(
         body.matches("(p)").count() + 1,
         common::CHAIN.len(),
+        "{body}"
+    );
+}
+
+/// `exact_stages`, which the chain for points of any type runs on explicit
+/// points after `filter_points`, runs the exact stages of `CHAIN` in the
+/// same order.
+#[test]
+fn the_exact_stages_for_points_of_any_type_are_those_of_staged() {
+    let source = include_str!("../src/generated/orient3d.rs");
+    let start = source.find("pub fn exact_stages(").expect("exact_stages");
+    let body = &source[start..];
+    let body = &body[..body.find("\n}").expect("the end of exact_stages")];
+    let at: Vec<usize> = common::CHAIN[1..]
+        .iter()
+        .map(|(name, _)| {
+            body.find(&format!("{name}(p)"))
+                .unwrap_or_else(|| panic!("{name} is not in exact_stages: {body}"))
+        })
+        .collect();
+    assert!(at.is_sorted(), "{body}");
+    assert_eq!(
+        body.matches("(p)").count(),
+        common::CHAIN.len() - 1,
         "{body}"
     );
 }

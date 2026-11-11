@@ -11,7 +11,12 @@
 //!
 //! Both are on the fast path of every call with implicit points: they do
 //! not allocate, and they use selects rather than data-dependent branches.
-//! For explicit points, whose errors are the constant zero, they fold away.
+//! Calls on explicit points do not need them, since every error is zero:
+//! the generated predicates use an uncertainty of zero instead when every
+//! point is explicit ([`Point::is_explicit`](crate::Point::is_explicit)),
+//! a test that the compiler resolves for the types where it is a constant.
+//! Whether a call to these functions with errors that are the constant zero
+//! folds away is up to the compiler, and is not guaranteed.
 //!
 //! The result is rounded up, so that it never falls below the exact sum. An
 //! infinite error gives an infinite result and a NaN error a NaN result,

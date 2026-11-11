@@ -1,16 +1,20 @@
 //! The checks of a predicate: code for its tests, not for its users.
 //!
-//! The generated module holds `exact`, the main form evaluated with the
-//! exact dyadic numbers of `implicit-predicates-oracle`, one statement per
-//! node of the difference form as in the filter, and `bound_edge_cases`,
+//! The generated module holds `exact_at`, the main form evaluated with the
+//! exact dyadic numbers of `implicit-predicates-oracle` at exact
+//! coordinates, one statement per node of the difference form as in the
+//! filter, `exact`, the same at `f64` coordinates, and `bound_edge_cases`,
 //! inputs on either side of the error bound of the filter for explicit
 //! points; for a per-axis filter, also `uncertainty_edge_cases`, inputs on
 //! either side of its bound with an uncertainty on one axis or on all of
 //! them. The cases are built by [`super::edges`] and written as bit
-//! patterns so that they read back as exactly the same `f64`s.
+//! patterns so that they read back as exactly the same `f64`s. The functions
+//! that check a stage on those cases, whatever the types of its points, are
+//! written by [`super::check_fns`].
 
 use std::fmt::Write;
 
+use super::check_fns;
 use super::comment;
 use super::edges::{Case, bound_edge_cases, uncertainty_edge_cases};
 use super::filter::FilterKind;
@@ -36,27 +40,23 @@ pub(crate) fn write_checks(
         "//!",
         0,
         &format!(
-            "Checks of the predicate `{}`, for its tests: [`exact`], its exact sign, and \
-             [`bound_edge_cases`], inputs at the edge of the error bound of its filter.",
+            "Checks of the predicate `{}`, for its tests: [`exact`] and [`exact_at`], its \
+             exact sign, [`bound_edge_cases`], inputs at the edge of the error bound of \
+             its filter, and [`check_bound_edge_cases`], which checks a stage on them.",
             predicate.name
         ),
     );
     out.push_str("\nuse implicit_predicates::Sign;\nuse implicit_predicates_oracle::Dyadic;\n\n");
+    let exact_ty = format!("[[Dyadic; 3]; {points}]");
     comment(
         out,
         "///",
         0,
-        "The exact sign of the predicate at the points `p`: its main form, evaluated \
-         with exact dyadic numbers in the order of the definition.\n\n\
-         # Panics\n\n\
-         Panics if a coordinate is not finite.",
+        "The exact sign of the predicate at the points with the exact coordinates \
+         `c`: its main form, evaluated with exact dyadic numbers in the order of the \
+         definition.",
     );
-    writeln!(
-        out,
-        "pub fn exact(p: &{ty}) -> Sign {{\n\
-         let c = p.map(|point| point.map(Dyadic::from_f64));"
-    )
-    .unwrap();
+    writeln!(out, "pub fn exact_at(c: &{exact_ty}) -> Sign {{").unwrap();
     for statement in node_statements(graph, "c", true) {
         writeln!(out, "{statement}").unwrap();
     }
@@ -67,6 +67,21 @@ pub(crate) fn write_checks(
          _ => Sign::Zero,\n\
          }\n}\n\n",
     );
+    comment(
+        out,
+        "///",
+        0,
+        "The exact sign of the predicate at the points `p`: [`exact_at`] on their \
+         coordinates.\n\n\
+         # Panics\n\n\
+         Panics if a coordinate is not finite.",
+    );
+    writeln!(
+        out,
+        "pub fn exact(p: &{ty}) -> Sign {{\n\
+         exact_at(&p.map(|point| point.map(Dyadic::from_f64)))\n}}\n"
+    )
+    .unwrap();
     let cases = bound_edge_cases(graph, points, filter);
     let bound = match filter {
         FilterKind::Global(c) => format!(
@@ -123,6 +138,7 @@ pub(crate) fn write_checks(
         let cases = uncertainty_edge_cases(graph, points, constants);
         write_uncertainty_cases(out, &cases, points);
     }
+    check_fns::write_check_fns(out, points, matches!(filter, FilterKind::PerAxis(..)));
 }
 
 /// Writes `uncertainty_edge_cases` and its table, for `points` points.

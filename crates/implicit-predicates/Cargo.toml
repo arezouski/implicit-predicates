@@ -15,7 +15,8 @@ exclude = ["tests/"]
 
 [features]
 default = ["std"]
-std = []
+# The arena of each thread used by `orient3d`.
+std = ["implicit-predicates-core/alloc"]
 
 [dependencies]
 implicit-predicates-core.workspace = true

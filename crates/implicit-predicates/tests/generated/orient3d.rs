@@ -2,21 +2,18 @@
 // To regenerate, run from the directory that the paths are relative to:
 // implicit-predicates-gen crates/implicit-predicates/predicates --stages crates/implicit-predicates/src/generated --checks crates/implicit-predicates/tests/generated
 
-//! Checks of the predicate `orient3d`, for its tests: [`exact`], its exact
-//! sign, and [`bound_edge_cases`], inputs at the edge of the error bound of its
-//! filter.
+//! Checks of the predicate `orient3d`, for its tests: [`exact`] and
+//! [`exact_at`], its exact sign, [`bound_edge_cases`], inputs at the edge of
+//! the error bound of its filter, and [`check_bound_edge_cases`], which checks
+//! a stage on them.
 
 use implicit_predicates::Sign;
 use implicit_predicates_oracle::Dyadic;
 
-/// The exact sign of the predicate at the points `p`: its main form, evaluated
-/// with exact dyadic numbers in the order of the definition.
-///
-/// # Panics
-///
-/// Panics if a coordinate is not finite.
-pub fn exact(p: &[[f64; 3]; 4]) -> Sign {
-    let c = p.map(|point| point.map(Dyadic::from_f64));
+/// The exact sign of the predicate at the points with the exact coordinates
+/// `c`: its main form, evaluated with exact dyadic numbers in the order of the
+/// definition.
+pub fn exact_at(c: &[[Dyadic; 3]; 4]) -> Sign {
     let t0 = &c[0][0] - &c[3][0];
     let t1 = &c[0][1] - &c[3][1];
     let t2 = &c[0][2] - &c[3][2];
@@ -45,6 +42,16 @@ pub fn exact(p: &[[f64; 3]; 4]) -> Sign {
         -1 => Sign::Negative,
         _ => Sign::Zero,
     }
+}
+
+/// The exact sign of the predicate at the points `p`: [`exact_at`] on their
+/// coordinates.
+///
+/// # Panics
+///
+/// Panics if a coordinate is not finite.
+pub fn exact(p: &[[f64; 3]; 4]) -> Sign {
+    exact_at(&p.map(|point| point.map(Dyadic::from_f64)))
 }
 
 /// Inputs on either side of the error bound of the filter for explicit points,
@@ -1822,3 +1829,78 @@ const UNCERTAINTY_EDGE_CASES: [([[u64; 3]; 4], [u64; 3]); 128] = [
         [0x5270000000000000, 0x51f0000000000000, 0x5320000000000000],
     ),
 ];
+
+/// Runs `decide` on every case of [`bound_edge_cases`] and checks that,
+/// whenever it decides, its sign is the exact sign. Returns how many cases it
+/// decided and how many it declined.
+///
+/// # Panics
+///
+/// Panics if `decide` gives a sign other than the exact sign.
+pub fn check_bound_edge_cases(
+    mut decide: impl FnMut(&[[f64; 3]; 4]) -> Option<Sign>,
+) -> [usize; 2] {
+    let mut counts = [0; 2];
+    for p in bound_edge_cases() {
+        match decide(&p) {
+            Some(sign) => {
+                assert_eq!(sign, exact(&p), "{p:?}");
+                counts[0] += 1;
+            }
+            None => counts[1] += 1,
+        }
+    }
+    counts
+}
+
+/// Runs `decide` on every case of [`uncertainty_edge_cases`], given the
+/// approximations `p` and an error of `e[k] / 2` for every point on each axis
+/// `k`, so that the sum of the two largest errors on each axis is `e[k]`, and
+/// checks that, whenever it decides, its sign is not zero and is the exact sign
+/// at each of the `2^12` corners of the boxes of the errors around the
+/// approximations; the predicate is affine in each coordinate, so it is then
+/// the exact sign at every point within them. Returns how many cases it decided
+/// and how many it declined, for `e` not zero on x only, on y only, on z only
+/// and on every axis.
+///
+/// # Panics
+///
+/// Panics if `decide` gives a sign that does not hold in the boxes.
+pub fn check_uncertainty_edge_cases(
+    mut decide: impl FnMut(&[[f64; 3]; 4], &[[f64; 3]; 4]) -> Option<Sign>,
+) -> [[usize; 2]; 4] {
+    let mut counts = [[0; 2]; 4];
+    for (p, e) in uncertainty_edge_cases() {
+        let kind = match e.map(|x| x > 0.0) {
+            [true, false, false] => 0,
+            [false, true, false] => 1,
+            [false, false, true] => 2,
+            [true, true, true] => 3,
+            _ => panic!("e = {e:?}"),
+        };
+        // Powers of two, far from the subnormals: halving them is exact.
+        let half = e.map(|x| x / 2.0);
+        assert_eq!(half.map(|x| x * 2.0), e);
+        let err = [half; 4];
+        let Some(sign) = decide(&p, &err) else {
+            counts[kind][1] += 1;
+            continue;
+        };
+        assert_ne!(sign, Sign::Zero, "{p:?} e = {e:?}");
+        for corner in 0..1u64 << (3 * 4) {
+            let c: [[Dyadic; 3]; 4] = std::array::from_fn(|i| {
+                std::array::from_fn(|k| {
+                    let (x, d) = (Dyadic::from_f64(p[i][k]), Dyadic::from_f64(err[i][k]));
+                    if (corner >> (3 * i + k)) & 1 == 0 {
+                        &x - &d
+                    } else {
+                        &x + &d
+                    }
+                })
+            });
+            assert_eq!(exact_at(&c), sign, "{p:?} e = {e:?}, corner {corner}");
+        }
+        counts[kind][0] += 1;
+    }
+    counts
+}

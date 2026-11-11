@@ -9,6 +9,10 @@
 #[path = "../generated/orient3d.rs"]
 pub mod generated;
 
+#[path = "../generated/points.rs"]
+pub mod point_checks;
+
+pub mod args;
 pub mod boxes;
 
 use implicit_predicates::Sign;

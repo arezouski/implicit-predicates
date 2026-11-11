@@ -5,8 +5,9 @@ Code generator for
 the definition of a predicate into specialized Rust code.
 
 > **Status: early development.** The generator handles predicates over
-> explicit points and emits the point types declared next to them; its API
-> may change.
+> points of any type that implements the `Point` contract of
+> `implicit-predicates-core`, and emits the point types declared next to
+> them; its API may change.
 
 ## Definitions
 
@@ -142,14 +143,22 @@ For each predicate the generator writes one module with:
 - `staged`, which runs the filter and then the exact stages in the order:
   differences that are exact, the translated expansion form, then the
   `#[exact]` form if one is given. The order is the same for every
-  predicate for now.
+  predicate for now;
+- for points of any type: `filter_points`, the filter on the approximations
+  of the points with the uncertainty of their errors (zero when every point
+  is explicit); `exact_stages`, the exact stages of `staged`;
+  `exact_stages_in`, the expansion forms over spans of an arena, on the
+  exact coordinates of the points; and `staged_in`, which runs
+  `filter_points`, then `exact_stages` when every point is explicit and
+  `exact_stages_in` otherwise.
 
 Each stage returns `None` when it cannot decide.
 
 For the tests of each predicate it writes a second module, of checks, with:
 
-- `exact`, the main form evaluated with the exact dyadic numbers of
-  `implicit-predicates-oracle`, the reference the stages are tested against;
+- `exact_at` and `exact`, the main form evaluated with the exact dyadic
+  numbers of `implicit-predicates-oracle` at exact or at `f64` coordinates,
+  the reference the stages are tested against;
 - `bound_edge_cases`, pairs of inputs on either side of the error bound of
   the filter for explicit points, one representable value apart in one
   coordinate, built with exact arithmetic from points on a grid at scales
@@ -158,7 +167,11 @@ For the tests of each predicate it writes a second module, of checks, with:
 - for a filter with one uncertainty per axis, `uncertainty_edge_cases`,
   pairs built in the same way on either side of its bound with an
   uncertainty that is not zero on one axis, for each axis, or on all of
-  them, given with each pair.
+  them, given with each pair;
+- `check_bound_edge_cases` and `check_uncertainty_edge_cases`, which run a
+  stage, given as a closure of the coordinates of the points (and of their
+  errors), on those cases and check its signs, so that the tests can run
+  them on every stage and on points of any type.
 
 Generated files start with a header saying that they must not be edited
 and giving the command that regenerates them.

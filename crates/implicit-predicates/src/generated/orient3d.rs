@@ -6,10 +6,11 @@
 //!
 //! Every stage takes the points `a`, `b`, `c` and `d` of the definition as `p`,
 //! in that order, and returns the sign of the predicate, or `None` when it
-//! cannot decide. [`staged`] runs them in order.
+//! cannot decide. [`staged`] runs them in order on explicit points, and
+//! [`staged_in`] on points of any type.
 
 use implicit_predicates_core::{
-    ExactCoords, Scratch, ScratchExhausted, Sign, Span, Weight, eft, expansion,
+    ExactCoords, ExactError, Point, Scratch, ScratchExhausted, Sign, Span, Weight, eft, expansion,
 };
 
 /// The degree `G_k` of the predicate in the differences of coordinates of each
@@ -612,6 +613,136 @@ pub fn staged(p: [&[f64; 3]; 4]) -> Option<Sign> {
         .or_else(|| exact_differences(p))
         .or_else(|| expansions_translated(p))
         .or_else(|| expansions_untranslated(p))
+}
+
+/// [`filter`] on the approximations of points of any type, with the uncertainty
+/// of their errors: `[0.0; 3]` when every point is explicit, and otherwise
+/// `uncertainty` of their errors, from `implicit_predicates_core::filter`.
+///
+/// The errors are not read when every point is explicit. When that is known
+/// from the types, as with `[f64; 3]`, whose `is_explicit` is the constant
+/// `true`, this is `filter` with `e = [0.0; 3]`.
+#[inline]
+pub fn filter_points<P0: Point, P1: Point, P2: Point, P3: Point>(
+    p0: &P0,
+    p1: &P1,
+    p2: &P2,
+    p3: &P3,
+) -> Option<Sign> {
+    let p = [p0.approx(), p1.approx(), p2.approx(), p3.approx()];
+    let e = if p0.is_explicit() & p1.is_explicit() & p2.is_explicit() & p3.is_explicit() {
+        [0.0; 3]
+    } else {
+        implicit_predicates_core::filter::uncertainty([p0.err(), p1.err(), p2.err(), p3.err()])
+    };
+    filter(p, e)
+}
+
+/// The exact stages of [`staged`], after its filter: [`exact_differences`],
+/// then [`expansions_translated`], then [`expansions_untranslated`]. `None`
+/// means that no stage can decide.
+#[cold]
+#[inline(never)]
+pub fn exact_stages(p: [&[f64; 3]; 4]) -> Option<Sign> {
+    exact_differences(p)
+        .or_else(|| expansions_translated(p))
+        .or_else(|| expansions_untranslated(p))
+}
+
+/// The exact sign of the predicate for points of any type:
+/// [`expansions_translated_in`], then [`expansions_untranslated_in`], on the
+/// exact coordinates of the points written to `scratch`, which is reset to its
+/// mark whatever they return. `Ok(None)` means that no stage can decide: the
+/// inputs of some point are outside the range of its exact arithmetic
+/// ([`ExactError::OutOfRange`]), or none of the stages decides.
+///
+/// # Errors
+///
+/// [`ScratchExhausted`] if `scratch` runs out of room.
+#[cold]
+#[inline(never)]
+pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point>(
+    scratch: &mut Scratch<'_>,
+    p0: &P0,
+    p1: &P1,
+    p2: &P2,
+    p3: &P3,
+) -> Result<Option<Sign>, ScratchExhausted> {
+    fn run<P0: Point, P1: Point, P2: Point, P3: Point>(
+        scratch: &mut Scratch<'_>,
+        p0: &P0,
+        p1: &P1,
+        p2: &P2,
+        p3: &P3,
+    ) -> Result<Option<Sign>, ScratchExhausted> {
+        let Some(q0) = exact(scratch, p0)? else {
+            return Ok(None);
+        };
+        let Some(q1) = exact(scratch, p1)? else {
+            return Ok(None);
+        };
+        let Some(q2) = exact(scratch, p2)? else {
+            return Ok(None);
+        };
+        let Some(q3) = exact(scratch, p3)? else {
+            return Ok(None);
+        };
+        let q = [&q0, &q1, &q2, &q3];
+        if let Some(sign) = expansions_translated_in(scratch, q)? {
+            return Ok(Some(sign));
+        }
+        expansions_untranslated_in(scratch, q)
+    }
+    let mark = scratch.mark();
+    let result = run(scratch, p0, p1, p2, p3);
+    scratch.reset(mark);
+    result
+}
+
+/// The sign of the predicate for points of any type, from the first stage that
+/// decides.
+///
+/// Runs [`filter_points`]; then, when every point is explicit, [`exact_stages`]
+/// on their coordinates, which does not use `scratch`; otherwise
+/// [`exact_stages_in`], on their exact coordinates written to `scratch`.
+/// `scratch` is left as it was. `Ok(None)` means that no stage can decide.
+///
+/// # Errors
+///
+/// [`ScratchExhausted`] if `scratch` runs out of room.
+#[inline]
+pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point>(
+    scratch: &mut Scratch<'_>,
+    p0: &P0,
+    p1: &P1,
+    p2: &P2,
+    p3: &P3,
+) -> Result<Option<Sign>, ScratchExhausted> {
+    if let Some(sign) = filter_points(p0, p1, p2, p3) {
+        return Ok(Some(sign));
+    }
+    if p0.is_explicit() & p1.is_explicit() & p2.is_explicit() & p3.is_explicit() {
+        return Ok(exact_stages([
+            p0.approx(),
+            p1.approx(),
+            p2.approx(),
+            p3.approx(),
+        ]));
+    }
+    exact_stages_in(scratch, p0, p1, p2, p3)
+}
+
+/// The exact coordinates of the point `p`, written to `scratch`, or `None` if
+/// its inputs are outside the range of its exact arithmetic.
+fn exact(
+    scratch: &mut Scratch<'_>,
+    p: &impl Point,
+) -> Result<Option<ExactCoords>, ScratchExhausted> {
+    match p.exact(scratch) {
+        Ok(c) => Ok(Some(c)),
+        Err(ExactError::OutOfRange) => Ok(None),
+        Err(ExactError::Exhausted(e)) => Err(e),
+    }
 }
 
 /// The larger of `a` and `b`, or `b` if they are unordered.
