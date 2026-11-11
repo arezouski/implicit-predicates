@@ -9,25 +9,26 @@
 
 use std::fmt::Write;
 
+use super::comment;
 use super::edges::{Case, bound_edge_cases};
 use super::statements::node_statements;
-use super::{comment, write_notice};
 use crate::bound::FilterConstants;
 use crate::differences::DiffGraph;
 use crate::parse::Predicate;
 
 /// Writes the checks module of `predicate`, whose difference form is
-/// `graph` and whose filter has the emitted `constants`.
+/// `graph` and whose filter has the emitted `constants`, starting with
+/// `notice`.
 pub(crate) fn write_checks(
     out: &mut String,
     predicate: &Predicate,
     graph: &DiffGraph,
     constants: &FilterConstants,
-    file: &str,
+    notice: &str,
 ) {
     let points = predicate.params.len();
     let ty = format!("[[f64; 3]; {points}]");
-    write_notice(out, file);
+    out.push_str(notice);
     comment(
         out,
         "//!",

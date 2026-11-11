@@ -4,6 +4,9 @@
 use indirect_predicates_gen::{Generated, generate};
 use proc_macro2::TokenStream;
 
+/// How the tests say to regenerate the code.
+const REGENERATE: &str = "run the tests.";
+
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
 
@@ -13,7 +16,7 @@ const SOURCES: [(&str, &str); 2] = [
 ];
 
 fn generated(source: &str, file: &str) -> Generated {
-    let mut all = generate(source, file).unwrap();
+    let mut all = generate(source, file, REGENERATE).unwrap();
     assert_eq!(all.len(), 1);
     all.remove(0)
 }

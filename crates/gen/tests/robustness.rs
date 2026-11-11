@@ -6,6 +6,9 @@ use std::time::{Duration, Instant};
 
 use indirect_predicates_gen::{Error, canonical, difference_graph, filter_bound, generate, parse};
 
+/// How the tests say to regenerate the code.
+const REGENERATE: &str = "run the tests.";
+
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
 
@@ -16,7 +19,7 @@ const LIMIT: Duration = Duration::from_secs(5);
 /// Runs `generate` on `source` and returns its result with the time it took.
 fn timed(source: &str) -> (Result<usize, Error>, Duration) {
     let start = Instant::now();
-    let result = generate(source, "t.pred").map(|all| all.len());
+    let result = generate(source, "t.pred", REGENERATE).map(|all| all.len());
     (result, start.elapsed())
 }
 

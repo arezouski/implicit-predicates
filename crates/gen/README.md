@@ -80,7 +80,8 @@ For the tests of each predicate it writes a second module, of checks, with:
   exact arithmetic from points on a grid at scales from just above `D_MIN`
   to just below `D_MAX`, and written as bit patterns.
 
-Generated files start with a header saying that they must not be edited.
+Generated files start with a header saying that they must not be edited
+and giving the command that regenerates them.
 
 ## Command line
 
@@ -90,12 +91,14 @@ indirect-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
 
 reads every `.pred` file in `<pred-dir>` and writes `<name>.rs` for each
 predicate to the `--stages` directory, and the module of its checks to the
-`--checks` directory. The output is formatted with
-`rustfmt --edition 2024`, which must be installed; the text can depend on the
-rustfmt version, and the files committed in this repository are produced with
-the stable toolchain's rustfmt. With `--check` nothing is
-written: the tool compares the files with what it would write, names each
-one that differs or is missing, and exits with a nonzero status if any does.
+`--checks` directory. The output is formatted with `rustfmt --edition 2024`,
+which must be installed; the text can depend on the rustfmt version, and the
+files committed in this repository are produced with the stable toolchain's
+rustfmt. The header of each file gives the command that wrote it, with its
+arguments as they were given. With `--check` nothing is written: the tool
+compares the files, header included, with what it would write, names each
+one that differs or is missing, and exits with a nonzero status if any does,
+so it must be run with the arguments the files were written with.
 
 In the `indirect-predicates` repository, the generated code is regenerated
 with a single command from the root:

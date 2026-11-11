@@ -5,6 +5,11 @@
 //! ```text
 //! indirect-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
 //! ```
+//!
+//! The header of every file written gives the command that regenerates it:
+//! this one, with the same arguments and without `--check`. The comparison
+//! of `--check` includes the header, so it must be run with the arguments
+//! the files were written with.
 
 use std::ffi::OsStr;
 use std::fs;
@@ -111,16 +116,18 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
     // The header names the file relative to the parent of the directory,
     // so that it does not depend on where the tool runs.
     let label_dir = dir.file_name().map(Path::new).unwrap_or(Path::new(""));
+    let regenerate = regeneration_command(options);
     let mut names: Vec<(String, PathBuf)> = Vec::new();
     let mut outputs = Vec::new();
     for path in files {
         let source = fs::read_to_string(&path)
             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let label = label_dir.join(path.file_name().expect("a file"));
-        let generated = generate(&source, &label.to_string_lossy()).map_err(|mut e| {
-            e.file = path.display().to_string();
-            e.to_string()
-        })?;
+        let generated =
+            generate(&source, &label.to_string_lossy(), &regenerate).map_err(|mut e| {
+                e.file = path.display().to_string();
+                e.to_string()
+            })?;
         for g in generated {
             if let Some((_, other)) = names.iter().find(|(name, _)| *name == g.name) {
                 return Err(format!(
@@ -146,6 +153,38 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
         }
     }
     Ok(outputs)
+}
+
+/// The text of the header that tells how to regenerate the files: this
+/// command, with the arguments it was given except `--check`, to be run from
+/// the directory that relative paths are relative to.
+fn regeneration_command(options: &Options) -> String {
+    let mut command = String::from(env!("CARGO_BIN_NAME"));
+    let arguments = [
+        (None, &options.definitions),
+        (Some("--stages"), &options.stages),
+        (Some("--checks"), &options.checks),
+    ];
+    for (flag, path) in arguments {
+        if let Some(flag) = flag {
+            command.push(' ');
+            command.push_str(flag);
+        }
+        command.push(' ');
+        command.push_str(&quoted(&path.to_string_lossy()));
+    }
+    format!("run from the directory that the paths are relative to:\n{command}")
+}
+
+/// `argument` as a shell word: unchanged if it only has characters that a
+/// shell does not interpret, otherwise in single quotes.
+fn quoted(argument: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || "_-./=+,:@%".contains(c);
+    if !argument.is_empty() && argument.chars().all(plain) {
+        argument.to_string()
+    } else {
+        format!("'{}'", argument.replace('\'', "'\\''"))
+    }
 }
 
 /// Formats `code` with `rustfmt --edition 2024`, as `cargo fmt` does.

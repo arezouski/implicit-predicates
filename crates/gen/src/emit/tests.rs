@@ -266,7 +266,7 @@ fn emitted_stages() -> Vec<(String, String, Polynomial)> {
         for (p, g) in parse(source, "t.pred")
             .unwrap()
             .iter()
-            .zip(super::generate(source, "t.pred").unwrap())
+            .zip(super::generate(source, "t.pred", "run the tests.").unwrap())
         {
             for stage in [
                 "exact_differences",
@@ -305,7 +305,7 @@ fn the_exact_evaluator_of_the_checks_has_the_value_of_the_source_polynomial() {
         for (p, g) in parse(source, "t.pred")
             .unwrap()
             .iter()
-            .zip(super::generate(source, "t.pred").unwrap())
+            .zip(super::generate(source, "t.pred", "run the tests.").unwrap())
         {
             let code = readback::function(&g.checks, "exact");
             assert_eq!(
