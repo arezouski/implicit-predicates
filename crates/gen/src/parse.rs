@@ -157,7 +157,10 @@ fn parse_item(cur: &mut Cursor) -> Res<Form> {
         _ => return Err(cur.expected("`{`")),
     };
     cur.bump();
-    let graph = parse_body(Cursor::new(body, Some(close)), &params)?;
+    let mut graph = parse_body(Cursor::new(body, Some(close)), &params)?;
+    let start = name_span.start();
+    graph.line = start.line;
+    graph.column = start.column + 1;
     for (point, (name, span)) in params.iter().zip(&spans).enumerate() {
         let used = graph
             .nodes

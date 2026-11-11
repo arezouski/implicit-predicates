@@ -1,0 +1,26 @@
+// In-sphere test of e against the sphere through a, b, c and d.
+// Rows are (p - e, |p - e|^2); the predicate is the 4x4 determinant,
+// expanded along the last column.
+fn insphere(a: Point3, b: Point3, c: Point3, d: Point3, e: Point3) -> Sign {
+    let ax = a.x - e.x;
+    let ay = a.y - e.y;
+    let az = a.z - e.z;
+    let al = ax*ax + ay*ay + az*az;
+    let bx = b.x - e.x;
+    let by = b.y - e.y;
+    let bz = b.z - e.z;
+    let bl = bx*bx + by*by + bz*bz;
+    let cx = c.x - e.x;
+    let cy = c.y - e.y;
+    let cz = c.z - e.z;
+    let cl = cx*cx + cy*cy + cz*cz;
+    let dx = d.x - e.x;
+    let dy = d.y - e.y;
+    let dz = d.z - e.z;
+    let dl = dx*dx + dy*dy + dz*dz;
+    let mbcd = bx*(cy*dz - cz*dy) - by*(cx*dz - cz*dx) + bz*(cx*dy - cy*dx);
+    let macd = ax*(cy*dz - cz*dy) - ay*(cx*dz - cz*dx) + az*(cx*dy - cy*dx);
+    let mabd = ax*(by*dz - bz*dy) - ay*(bx*dz - bz*dx) + az*(bx*dy - by*dx);
+    let mabc = ax*(by*cz - bz*cy) - ay*(bx*cz - bz*cx) + az*(bx*cy - by*cx);
+    -al*mbcd + bl*macd - cl*mabd + dl*mabc
+}

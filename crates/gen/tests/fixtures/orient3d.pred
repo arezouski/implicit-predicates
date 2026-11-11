@@ -1,0 +1,19 @@
+// Orientation of d with respect to the plane through a, b and c.
+// The main form is written on differences against d; the exact form is the
+// 4x4 determinant with a column of ones, written on raw coordinates and
+// expanded along that column.
+fn orient3d(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {
+    let ax = a.x - d.x;  let ay = a.y - d.y;  let az = a.z - d.z;
+    let bx = b.x - d.x;  let by = b.y - d.y;  let bz = b.z - d.z;
+    let cx = c.x - d.x;  let cy = c.y - d.y;  let cz = c.z - d.z;
+    ax*(by*cz - bz*cy) - ay*(bx*cz - bz*cx) + az*(bx*cy - by*cx)
+}
+
+#[exact]
+fn orient3d(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {
+    let mbcd = b.x*(c.y*d.z - c.z*d.y) - b.y*(c.x*d.z - c.z*d.x) + b.z*(c.x*d.y - c.y*d.x);
+    let macd = a.x*(c.y*d.z - c.z*d.y) - a.y*(c.x*d.z - c.z*d.x) + a.z*(c.x*d.y - c.y*d.x);
+    let mabd = a.x*(b.y*d.z - b.z*d.y) - a.y*(b.x*d.z - b.z*d.x) + a.z*(b.x*d.y - b.y*d.x);
+    let mabc = a.x*(b.y*c.z - b.z*c.y) - a.y*(b.x*c.z - b.z*c.x) + a.z*(b.x*c.y - b.y*c.x);
+    -mbcd + macd - mabd + mabc
+}
