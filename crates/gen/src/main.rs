@@ -7,7 +7,9 @@
 //! ```
 //!
 //! The header of every file written gives the command that regenerates it:
-//! this one, with the same arguments and without `--check`. The comparison
+//! this one, with the same arguments and without `--check`. The paths must
+//! be relative to the directory the command is run from, so that the header
+//! does not depend on where the files are; absolute paths are refused. The comparison
 //! of `--check` includes the header, so it must be run with the arguments
 //! the files were written with.
 
@@ -73,12 +75,23 @@ fn parse_args(args: impl Iterator<Item = std::ffi::OsString>) -> Result<Options,
             _ => return Err("only one directory of definitions is allowed".to_string()),
         }
     }
-    Ok(Options {
+    let options = Options {
         definitions: definitions.ok_or("missing the directory of definitions")?,
         stages: stages.ok_or("missing --stages")?,
         checks: checks.ok_or("missing --checks")?,
         check,
-    })
+    };
+    // The paths go into the header of the generated files.
+    for path in [&options.definitions, &options.stages, &options.checks] {
+        if path.is_absolute() {
+            return Err(format!(
+                "{} is an absolute path: pass paths relative to the directory the command \
+                 is run from, so the generated header is reproducible",
+                path.display()
+            ));
+        }
+    }
+    Ok(options)
 }
 
 /// Generates and formats everything first, so that nothing is written when

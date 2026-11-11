@@ -207,3 +207,22 @@ fn the_header_gives_the_command_that_wrote_the_file() {
         assert!(code.starts_with(expected), "{file}:\n{}", &code[..300]);
     }
 }
+
+#[test]
+fn absolute_paths_are_refused() {
+    let workspace = Workspace::new(&[("orient3d.pred", ORIENT3D)]);
+    let absolute = workspace.path("predicates");
+    let output = Command::new(env!("CARGO_BIN_EXE_indirect-predicates-gen"))
+        .current_dir(&workspace.root)
+        .arg(&absolute)
+        .args(["--stages", "stages", "--checks", "checks"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("pass paths relative to the directory the command is run from"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!workspace.path("stages").exists());
+}

@@ -95,13 +95,18 @@ predicate to the `--stages` directory, and the module of its checks to the
 which must be installed; the text can depend on the rustfmt version, and the
 files committed in this repository are produced with the stable toolchain's
 rustfmt. The header of each file gives the command that wrote it, with its
-arguments as they were given. With `--check` nothing is written: the tool
-compares the files, header included, with what it would write, names each
-one that differs or is missing, and exits with a nonzero status if any does,
-so it must be run with the arguments the files were written with.
+arguments as they were given; the paths must be relative to the directory
+the command is run from, so that the header is the same wherever the files
+are, and absolute paths are refused. With `--check` nothing is written: the
+tool compares the files, header included, with what it would write, names
+each one that differs or is missing, and exits with a nonzero status if any
+does, so it must be run with the arguments the files were written with.
 
-In the `indirect-predicates` repository, the generated code is regenerated
-with a single command from the root:
+The header shows the tool's own name, `indirect-predicates-gen`, followed by
+those arguments. Inside the `indirect-predicates` repository the tool is not
+installed: it is run through `cargo run -p indirect-predicates-gen --`
+followed by the same arguments, from the root of the repository. The
+generated code is regenerated with:
 
 ```sh
 cargo run -p indirect-predicates-gen -- crates/indirect-predicates/predicates --stages crates/indirect-predicates/src/generated --checks crates/indirect-predicates/tests/generated
