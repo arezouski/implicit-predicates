@@ -443,10 +443,11 @@ fn parse_points_rejects_what_it_would_otherwise_skip_over_a_point() {
     // A function without a body would swallow the declaration after it.
     check(
         "fn f(a: Point3) -> Sign\npoint A(p: F64x3) = p;",
-        (2, 22),
+        (2, 1),
         "`{`",
     );
-    check("#[exact]", (1, 2), "`{`");
+    check("#[exact]", (1, 2), "`fn`");
+    check("#[exact] fn", (1, 10), "a function name");
 }
 
 #[test]
@@ -457,4 +458,20 @@ fn a_point_followed_by_a_predicate_gives_each_its_items() {
     let reversed = format!("{ORIENT3D}\n{POINTS}");
     assert_eq!(parse_points(&reversed, "t.pred").unwrap().len(), 2);
     assert_eq!(parse(&reversed, "t.pred").unwrap().len(), 1);
+}
+
+#[test]
+fn a_function_without_a_body_cannot_swallow_a_point_before_a_later_body() {
+    let source =
+        "fn f(a: Point3) -> Sign\npoint A(p: F64x3) = p;\nfn g(a: Point3) -> Sign { a.x }\n";
+    check(source, (2, 1), "`{`");
+    check("fn f(a: Point3) Sign { a.x }", (1, 17), "`->`");
+    check("fn f(a: Point3) -> Bool { a.x }", (1, 20), "`Sign`");
+    check("fn f -> Sign { a.x }", (1, 6), "`(`");
+}
+
+#[test]
+fn a_file_of_only_points_has_points_but_no_predicates() {
+    assert_eq!(parse(POINTS, "t.pred").unwrap(), []);
+    assert_eq!(parse_points(POINTS, "t.pred").unwrap().len(), 2);
 }

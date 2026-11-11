@@ -27,7 +27,7 @@ use super::expr::{Scope, Value, operator_span, parse_expr};
 use super::{
     Constraint, LinearSum, ParamType, PointBuilder, PointGraph, PointNode, PointParam, PointType,
 };
-use crate::cursor::Cursor;
+use crate::cursor::{Cursor, is_punct};
 use crate::error::{Diag, Error, Res, diag};
 use crate::expr::int_literal;
 use crate::limits;
@@ -38,9 +38,9 @@ use crate::parse::{Position, can_name_a_module};
 /// `file` is only used to label errors. Points come in the order of their
 /// declarations. A file without points gives an empty list. The functions of
 /// the file are skipped without being read, since [`crate::parse`] reads them
-/// and reports their errors; but what is skipped must start with `fn` or
-/// `#`, and reach a `{` body, or it is an error at its position, so no
-/// declaration is lost.
+/// and reports their errors; but what is skipped must have the shape
+/// `#[..]* fn NAME (..) -> Sign {..}`, or it is an error at its position, so
+/// no declaration is lost.
 ///
 /// # Limits
 ///
@@ -90,23 +90,46 @@ pub(crate) fn read_declaration(cur: &mut Cursor, points: &mut Vec<PointType>) ->
     Ok(())
 }
 
-/// Moves past a function of a predicate, with its attributes, without reading
-/// it: [`crate::parse`] does. Anything that does not start like one is an
-/// error, so a declaration cannot be lost behind a stray token.
+/// Moves past a function of a predicate without reading it: [`crate::parse`]
+/// does. Only the shape `#[..]* fn NAME (..) -> Sign {..}` is skipped; anything
+/// else is an error at its position, so a declaration cannot be lost behind a
+/// malformed function or a stray token.
 fn skip_function(cur: &mut Cursor) -> Res<()> {
-    if !(cur.peek_word("fn") || cur.peek_punct('#')) {
+    while cur.peek_punct('#') {
+        cur.bump();
+        if !matches!(cur.peek(), Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Bracket) {
+            return Err(cur.expected("`[`"));
+        }
+        cur.bump();
+    }
+    if !cur.peek_word("fn") {
         return Err(cur.expected("`point` or `fn`"));
     }
-    loop {
-        let Some(token) = cur.peek() else {
-            return Err(cur.expected("`{`"));
-        };
-        let is_body = matches!(token, TokenTree::Group(g) if g.delimiter() == Delimiter::Brace);
-        cur.bump();
-        if is_body {
-            return Ok(());
-        }
+    cur.bump();
+    if !matches!(cur.peek(), Some(TokenTree::Ident(_))) {
+        return Err(cur.expected("a function name"));
     }
+    cur.bump();
+    expect_group(cur, Delimiter::Parenthesis, "`(`")?;
+    if !(cur.peek_punct('-') && is_punct(cur.peek_at(1), '>')) {
+        return Err(cur.expected("`->`"));
+    }
+    cur.bump();
+    cur.bump();
+    if !cur.peek_word("Sign") {
+        return Err(cur.expected("`Sign`"));
+    }
+    cur.bump();
+    expect_group(cur, Delimiter::Brace, "`{`")
+}
+
+/// Moves past a group with the delimiter `delimiter`.
+fn expect_group(cur: &mut Cursor, delimiter: Delimiter, what: &str) -> Res<()> {
+    if !matches!(cur.peek(), Some(TokenTree::Group(g)) if g.delimiter() == delimiter) {
+        return Err(cur.expected(what));
+    }
+    cur.bump();
+    Ok(())
 }
 
 fn parse_declaration(cur: &mut Cursor, seen: &[PointType]) -> Res<PointType> {
