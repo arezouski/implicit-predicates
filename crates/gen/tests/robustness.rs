@@ -4,7 +4,9 @@
 
 use std::time::{Duration, Instant};
 
-use implicit_predicates_gen::{Error, canonical, difference_graph, filter_bound, generate, parse};
+use implicit_predicates_gen::{
+    Error, canonical, difference_graph, filter_bound, generate, parse, parse_points,
+};
 
 /// How the tests say to regenerate the code.
 const REGENERATE: &str = "run the tests.";
@@ -204,4 +206,59 @@ fn the_largest_accepted_chain_generates_in_a_few_seconds() {
     let elapsed = start.elapsed();
     assert!(elapsed < Duration::from_secs(90), "took {elapsed:?}");
     rejected_quickly(&long_sum(MAX_NODES + 1), (1, 4), "subexpressions");
+}
+
+#[test]
+fn a_point_of_250000_terms_is_read_in_time() {
+    // A flat chain: read in a loop, so no stack depth and no limit but time.
+    let terms = "p + t * q + ".repeat(125_000);
+    let source = format!("point A(p: F64x3, q: F64x3, t: f64) = {terms}p;");
+    let start = Instant::now();
+    let points = parse_points(&source, "t.pred").unwrap();
+    assert!(start.elapsed() < LIMIT, "took {:?}", start.elapsed());
+    assert_eq!(points[0].graph.roots.len(), 3);
+}
+
+#[test]
+fn a_point_with_a_huge_where_side_is_read_in_time() {
+    let side = "t + 1 + ".repeat(125_000);
+    let source = format!("point A(p: F64x3, t: f64) = p * t where {side}t <= 0;");
+    let start = Instant::now();
+    let points = parse_points(&source, "t.pred").unwrap();
+    assert!(start.elapsed() < LIMIT, "took {:?}", start.elapsed());
+    assert_eq!(points[0].constraints[0].lhs.params.len(), 125_001);
+    assert_eq!(points[0].constraints[0].lhs.constant, 125_000);
+}
+
+#[test]
+fn a_long_run_of_unary_minus_in_a_point_is_read_in_time() {
+    let source = format!("point A(p: F64x3) = {}p;", "-".repeat(250_000));
+    let start = Instant::now();
+    let points = parse_points(&source, "t.pred").unwrap();
+    assert!(start.elapsed() < LIMIT, "took {:?}", start.elapsed());
+    assert_eq!(points[0].graph.nodes.len(), 3 + 3 * 250_000);
+}
+
+#[test]
+fn points_nested_32_deep_are_read_and_one_more_is_rejected() {
+    let nested = |depth: usize| {
+        format!(
+            "point A(p: F64x3, t: f64) = {}p * t{};",
+            "(".repeat(depth),
+            ")".repeat(depth)
+        )
+    };
+    let start = Instant::now();
+    assert!(parse_points(&nested(32), "t.pred").is_ok());
+    let e = parse_points(&nested(33), "t.pred").expect_err("33 levels");
+    assert!(start.elapsed() < LIMIT, "took {:?}", start.elapsed());
+    assert_eq!((e.line, e.column), (1, 28 + 33), "{e}");
+    assert!(e.message.contains("nested more than 32 deep"), "{e}");
+    // Far deeper, and unbalanced: an error, not a stack overflow.
+    for source in [
+        nested(100_000),
+        format!("point A(p: F64x3) = {}", "(".repeat(100_000)),
+    ] {
+        assert!(parse_points(&source, "t.pred").is_err());
+    }
 }

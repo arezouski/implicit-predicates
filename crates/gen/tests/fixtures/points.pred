@@ -1,0 +1,6 @@
+// The point types of the library.
+
+point Explicit(p: F64x3) = p;
+
+point Lnc(p: F64x3, q: F64x3, t: f64) = q + t*(p - q)
+    where 0 <= t, t <= 1;

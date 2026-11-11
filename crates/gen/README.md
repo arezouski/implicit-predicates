@@ -5,7 +5,7 @@ Code generator for
 the definition of a predicate into specialized Rust code.
 
 > **Status: early development.** The generator handles predicates over
-> explicit points; its API may change.
+> explicit points and reads declarations of point types; its API may change.
 
 ## Definitions
 
@@ -37,6 +37,38 @@ differences of one coordinate of two points, combined by sums of terms of
 equal degree and by products. An optional second form, marked `#[exact]`,
 gives the polynomial to use for exact evaluation; it may use the raw
 coordinates and integer constants.
+
+## Point types
+
+The same files declare the types of points a predicate can take:
+
+```text
+point Explicit(p: F64x3) = p;
+
+point Lnc(p: F64x3, q: F64x3, t: f64) = q + t*(p - q)
+    where 0 <= t, t <= 1;
+```
+
+A declaration is the word `point`, a name, parameters of type `F64x3` (three
+`f64` coordinates) or `f64`, `=`, an expression and `;`. The expression is
+built from the parameters, integer literals, `+`, `-` (binary and unary), `*`
+and parentheses. Operations on an `F64x3` are per coordinate: a sum or a
+difference combines two values of the same type, a product combines an `f64`
+with an `F64x3` (in either order) or two `f64`, and the value of the whole
+expression must be an `F64x3`. Every parameter must be used by the
+expression.
+
+An optional `where` clause lists, separated by commas, comparisons `<=`
+between sums of `f64` parameters and integer literals, such as
+`0 <= u, 0 <= v, u + v <= 1`: what the parameters must satisfy for the point
+to exist. The names of points and parameters cannot be Rust keywords, and two
+points cannot share a name.
+
+`parse_points` reads the declarations of a file; `parse` reads its
+predicates and skips them. Each coordinate of a point is held in one graph
+of `f64` operations in which equal subexpressions share a node, and the
+clause as a list of comparisons, so that they can be evaluated and emitted
+operation by operation.
 
 ## What the generator checks
 

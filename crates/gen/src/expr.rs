@@ -152,7 +152,7 @@ fn parse_name(name: &str, span: Span, cur: &mut Cursor, scope: &mut Scope) -> Re
 }
 
 /// Converts the text of a literal token into an integer.
-fn int_literal(text: &str, span: Span) -> Res<i64> {
+pub(crate) fn int_literal(text: &str, span: Span) -> Res<i64> {
     let starts_with_digit = text.starts_with(|c: char| c.is_ascii_digit());
     let is_float = starts_with_digit
         && !text.starts_with("0x")

@@ -29,6 +29,19 @@
 //! (`///`, `//!`, `/** */`, `/*! */`) are rejected, and so are predicate
 //! names that cannot name a module, such as keywords.
 //!
+//! A `.pred` file may also declare point types, which [`parse_points`] reads
+//! and [`parse`] skips: the word `point`, a name, parameters of type `F64x3`
+//! or `f64`, `=`, an expression and `;`, as in
+//! `point Lnc(p: F64x3, q: F64x3, t: f64) = q + t*(p - q) where 0 <= t, t <= 1;`.
+//! The expression uses `+`, `-`, `*`, parentheses, integer literals and the
+//! parameters; operations on an `F64x3` are per coordinate, a product has at
+//! least one `f64` factor, and the value is an `F64x3`. The optional `where`
+//! clause is a list of comparisons `<=` between sums of `f64` parameters and
+//! integers. A [`PointType`] holds the three coordinates as one
+//! [`PointGraph`] of `f64` operations in which equal subexpressions share a
+//! node, and the clause as a list of [`Constraint`]s. The limit on brackets
+//! and the guarantee of never panicking are those of [`parse`].
+//!
 //! The only limit of [`parse`] is the nesting of brackets, at most 32 deep,
 //! which keeps the stack small: sums, products and runs of unary minus are
 //! read in loops, so [`parse`] cannot panic or overflow the stack of the
@@ -77,6 +90,7 @@ mod expr;
 mod graph;
 mod limits;
 mod parse;
+mod point;
 mod polynomial;
 mod range;
 
@@ -86,5 +100,8 @@ pub use emit::{Generated, generate};
 pub use error::Error;
 pub use graph::{Graph, Node, NodeId};
 pub use parse::{Position, Predicate, parse};
+pub use point::{
+    Constraint, LinearSum, ParamType, PointGraph, PointNode, PointParam, PointType, parse_points,
+};
 pub use polynomial::{Polynomial, canonical, canonical_of_differences, check_same_polynomial};
 pub use range::{ExactPlan, ExactRange, Leaves, exact_plan_differences, exact_plan_raw};

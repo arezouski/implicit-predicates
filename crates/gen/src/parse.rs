@@ -9,7 +9,8 @@
 //! block  := '{' ('let' NAME '=' expr ';')* expr '}'
 //! ```
 //!
-//! Expressions are read by [`crate::expr`].
+//! Expressions are read by [`crate::expr`]. A `point` declaration, read by
+//! [`crate::parse_points`], is skipped up to its `;`.
 
 use std::collections::HashMap;
 
@@ -20,6 +21,7 @@ use crate::error::{Error, Res, diag};
 use crate::expr::{Binding, Scope, parse_expr};
 use crate::graph::{Builder, Graph, Node};
 use crate::limits;
+use crate::point::skip_declaration;
 
 /// A predicate read from a definition file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,7 +50,7 @@ pub struct Position {
 }
 
 impl Position {
-    fn of(span: Span) -> Self {
+    pub(crate) fn of(span: Span) -> Self {
         let start = span.start();
         Position {
             line: start.line,
@@ -116,7 +118,13 @@ fn parse_source(source: &str) -> Res<Vec<Predicate>> {
     let mut cur = Cursor::new(tokens, None);
     let mut predicates: Vec<Predicate> = Vec::new();
     let mut exacts: Vec<Form> = Vec::new();
+    let mut has_points = false;
     while !cur.at_end() {
+        if cur.peek_word("point") {
+            has_points = true;
+            skip_declaration(&mut cur)?;
+            continue;
+        }
         let form = parse_item(&mut cur)?;
         if form.exact {
             if exacts.iter().any(|e| e.name == form.name) {
@@ -161,7 +169,7 @@ fn parse_source(source: &str) -> Res<Vec<Predicate>> {
         predicate.exact = Some(form.graph);
         predicate.exact_position = Some(Position::of(form.name_span));
     }
-    if predicates.is_empty() {
+    if predicates.is_empty() && !has_points {
         return Err(diag(Span::call_site(), "no predicate definitions found"));
     }
     Ok(predicates)
@@ -239,7 +247,7 @@ const KEYWORDS: [&str; 53] = [
 /// Whether `name` can be the name of the module, and of the file, that the
 /// generator writes for a predicate: an identifier that is not a keyword and
 /// not a raw identifier.
-fn can_name_a_module(name: &str) -> bool {
+pub(crate) fn can_name_a_module(name: &str) -> bool {
     !name.starts_with("r#") && !KEYWORDS.contains(&name)
 }
 
