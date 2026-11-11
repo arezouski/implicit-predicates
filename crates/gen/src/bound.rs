@@ -116,22 +116,7 @@ pub fn filter_bound(
     file: &str,
     position: Position,
 ) -> Result<FilterBound, Error> {
-    if let Some(&degree) = graph.degrees.iter().filter(|&&g| g > MAX_DEGREE).max() {
-        return Err(Error::at(file, position, overflow_message(degree)));
-    }
-    if coefficient_bits(graph) > MAX_COEFFICIENT_BITS {
-        return Err(Error::at(
-            file,
-            position,
-            format!(
-                "the expression is too large for the error bound of the filter: its exact \
-                 coefficients would take more than 2^{} bits in all; a long sum written as \
-                 one chain is the usual cause, and the same terms summed in a balanced \
-                 tree with `let` need far fewer",
-                MAX_COEFFICIENT_BITS.ilog2()
-            ),
-        ));
-    }
+    check_budget(graph, file, position)?;
     let u = Dyadic::pow2(-53);
     let one = Dyadic::integer(1);
     let one_plus_u = &one + &u;
@@ -182,18 +167,15 @@ pub fn filter_bound(
     // Every node takes at least 55 bits, so the budget allows fewer than
     // 2^19 nodes.
     let products = u32::try_from(products).expect("fewer than 2^32 products");
-    let d_max_exponent = d_max_exponent(&nodes)
+    let d_max_exponent = d_max_exponent(nodes.iter().map(|n| (&n.c, n.degree)))
         .map_err(|degree| Error::at(file, position, overflow_message(degree)))?;
-    let d_min_exponent = d_min_exponent(&nodes, root, products).ok_or_else(|| {
-        Error::at(
-            file,
-            position,
-            format!(
-                "the degree {degree} is too high for the floating-point filter: \
-                 no scale of the inputs below 1 keeps its error bound clear of underflow"
-            ),
-        )
-    })?;
+    let c_max = nodes
+        .iter()
+        .map(|n| &n.c)
+        .max()
+        .expect("a graph has a root");
+    let d_min_exponent = d_min_exponent(&root.alpha, c_max, degree, products)
+        .ok_or_else(|| Error::at(file, position, underflow_message(degree)))?;
     Ok(FilterBound {
         degree,
         epsilon_in_u: (&root.alpha * &Dyadic::pow2(53)).fraction(),
@@ -228,6 +210,36 @@ fn coefficient_bits(graph: &DiffGraph) -> u64 {
         });
     }
     bits.iter().fold(0u64, |total, &b| total.saturating_add(b))
+}
+
+/// Checks, before any coefficient is computed, the two limits that do not
+/// depend on the coefficients: the degree of every node and the size of
+/// the exact coefficients.
+fn check_budget(graph: &DiffGraph, file: &str, position: Position) -> Result<(), Error> {
+    if let Some(&degree) = graph.degrees.iter().filter(|&&g| g > MAX_DEGREE).max() {
+        return Err(Error::at(file, position, overflow_message(degree)));
+    }
+    if coefficient_bits(graph) > MAX_COEFFICIENT_BITS {
+        return Err(Error::at(
+            file,
+            position,
+            format!(
+                "the expression is too large for the error bound of the filter: its exact \
+                 coefficients would take more than 2^{} bits in all; a long sum written as \
+                 one chain is the usual cause, and the same terms summed in a balanced \
+                 tree with `let` need far fewer",
+                MAX_COEFFICIENT_BITS.ilog2()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn underflow_message(degree: u32) -> String {
+    format!(
+        "the degree {degree} is too high for the floating-point filter: \
+         no scale of the inputs below 1 keeps its error bound clear of underflow"
+    )
 }
 
 fn overflow_message(degree: u32) -> String {
@@ -283,16 +295,15 @@ impl FilterBound {
 /// and not the result overflows. An overflow in the evaluation of the bound
 /// itself gives an infinite bound, which only makes the filter abstain.
 ///
-/// Returns the degree of a node that overflows for every `j >= 1` if there is
-/// no such `j`.
-fn d_max_exponent(nodes: &[NodeBound]) -> Result<i64, u32> {
+/// The nodes are given as their `c` and their degree `g`. Returns the degree
+/// of a node that overflows for every `j >= 1` if there is no such `j`.
+fn d_max_exponent<'a>(nodes: impl Iterator<Item = (&'a Dyadic, u32)>) -> Result<i64, u32> {
     // `c_x * 2^(j g) <= 2^1022` iff `j g <= 1022 - s` with `s` the
     // smallest integer such that `c_x <= 2^s`.
     let (j, degree) = nodes
-        .iter()
-        .map(|n| {
-            let j = (OVERFLOW_EXPONENT - n.c.ceil_log2()).div_euclid(i64::from(n.degree));
-            (j, n.degree)
+        .map(|(c, degree)| {
+            let j = (OVERFLOW_EXPONENT - c.ceil_log2()).div_euclid(i64::from(degree));
+            (j, degree)
         })
         .min()
         .expect("a graph has a root");
@@ -357,17 +368,11 @@ fn d_max_exponent(nodes: &[NodeBound]) -> Result<i64, u32> {
 ///   `(1 + 2^-31) * B`, which exceeds the error `(1 + 2^-32) * B`.
 ///
 /// Returns `None` if no `j <= -1` satisfies both.
-fn d_min_exponent(nodes: &[NodeBound], root: &NodeBound, products: u32) -> Option<i64> {
-    let epsilon = &root.alpha;
-    let c_max = nodes
-        .iter()
-        .map(|n| &n.c)
-        .max()
-        .expect("a graph has a root");
-    let factor = Dyadic::integer(u64::from(products) * u64::from(root.degree));
+fn d_min_exponent(epsilon: &Dyadic, c_max: &Dyadic, degree: u32, products: u32) -> Option<i64> {
+    let factor = Dyadic::integer(u64::from(products) * u64::from(degree));
     let underflow = &(&factor * c_max) * &Dyadic::pow2(-1074 + 32);
     let normal = Dyadic::pow2(-1021);
-    let k = i64::from(root.degree);
+    let k = i64::from(degree);
     let covers = |j: i64| {
         let scaled = epsilon * &Dyadic::pow2(j * k);
         scaled >= underflow && scaled >= normal
@@ -390,3 +395,7 @@ fn close_above(value: &Dyadic, target: &Dyadic) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+mod axis;
+
+pub use axis::{AxisBound, AxisConstants, FilterForm, filter_form};

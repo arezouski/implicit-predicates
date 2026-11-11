@@ -44,6 +44,53 @@ pub struct DiffGraph {
     pub degrees: Vec<u32>,
 }
 
+impl DiffGraph {
+    /// The degree of the form in the differences of each axis, if the form
+    /// is multihomogeneous: every sum and difference combines nodes of the
+    /// same degree in x, in y and in z, so every term of the result has the
+    /// returned degrees. Returns `None` otherwise, as for a sum of squares
+    /// over the three axes.
+    ///
+    /// The test is on the graph as written: a form whose expansion is
+    /// multihomogeneous but that sums nodes of different degree vectors on
+    /// the way is reported as `None`, which only keeps it on the global
+    /// form of the filter bound.
+    pub fn axis_degrees(&self) -> Option<[u32; 3]> {
+        self.node_axis_degrees()?.get(self.root).copied()
+    }
+
+    /// The degree in each axis of every node, if the form is
+    /// multihomogeneous (see [`DiffGraph::axis_degrees`]).
+    pub(crate) fn node_axis_degrees(&self) -> Option<Vec<[u32; 3]>> {
+        let mut degrees: Vec<[u32; 3]> = Vec::with_capacity(self.nodes.len());
+        for node in &self.nodes {
+            let g = match *node {
+                DiffNode::Leaf { axis, .. } => {
+                    let mut g = [0; 3];
+                    *g.get_mut(usize::from(axis))? = 1;
+                    g
+                }
+                DiffNode::Neg(x) => *degrees.get(x)?,
+                DiffNode::Add(x, y) | DiffNode::Sub(x, y) => {
+                    let (gx, gy) = (*degrees.get(x)?, *degrees.get(y)?);
+                    if gx != gy {
+                        return None;
+                    }
+                    gx
+                }
+                DiffNode::Mul(x, y) => {
+                    let (gx, gy) = (*degrees.get(x)?, *degrees.get(y)?);
+                    // Each component is at most the total degree, which
+                    // `difference_graph` keeps within `u32`.
+                    [0, 1, 2].map(|k| gx[k].saturating_add(gy[k]))
+                }
+            };
+            degrees.push(g);
+        }
+        Some(degrees)
+    }
+}
+
 /// What a node of the source graph became.
 #[derive(Clone, Copy)]
 enum Mapped {

@@ -70,7 +70,11 @@
 //! `(epsilon * D + kappa * E) * D^(k - 1)`, where `k` is the degree.
 //! [`FilterBound::constants`] gives `epsilon` and `kappa` rounded up to `f64`,
 //! and the range of `D`, between two powers of two, in which overflow and
-//! underflow cannot invalidate the bound.
+//! underflow cannot invalidate the bound. [`filter_form`] chooses the
+//! per-axis form instead when every term has the same degree in each axis
+//! ([`DiffGraph::axis_degrees`]): an [`AxisBound`] keeps one size and one
+//! uncertainty per axis, with the same `epsilon`, one `kappa` per axis that
+//! add up to the global `kappa`, and the same range for each axis.
 //!
 //! [`exact_plan_raw`] and [`exact_plan_differences`] derive, for each exact
 //! stage, the range of input magnitudes for which every exact product of the
@@ -94,7 +98,9 @@ mod point;
 mod polynomial;
 mod range;
 
-pub use bound::{FilterBound, FilterConstants, filter_bound};
+pub use bound::{
+    AxisBound, AxisConstants, FilterBound, FilterConstants, FilterForm, filter_bound, filter_form,
+};
 pub use differences::{DiffGraph, DiffNode, difference_graph};
 pub use emit::{Generated, generate};
 pub use error::Error;
