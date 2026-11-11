@@ -434,6 +434,11 @@ pub fn expansions_untranslated(p: [&[f64; 3]; 4]) -> Option<Sign> {
 /// [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude
 /// outside [`SPANS_TRANSLATED_RANGE`] or not finite.
 ///
+/// Requirement: every coordinate is a valid expansion of `scratch`: nonzero
+/// components of strictly increasing magnitude that do not overlap, as
+/// [`Point::exact`](implicit_predicates_core::Point::exact) writes them. This
+/// is not checked, and the result is unspecified otherwise.
+///
 /// The arena is left as it was, on success and on error.
 ///
 /// # Errors
@@ -501,6 +506,11 @@ pub fn expansions_translated_in(
 /// other than [`Weight::One`], or some coordinate has more than
 /// [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude
 /// outside [`SPANS_UNTRANSLATED_RANGE`] or not finite.
+///
+/// Requirement: every coordinate is a valid expansion of `scratch`: nonzero
+/// components of strictly increasing magnitude that do not overlap, as
+/// [`Point::exact`](implicit_predicates_core::Point::exact) writes them. This
+/// is not checked, and the result is unspecified otherwise.
 ///
 /// The arena is left as it was, on success and on error.
 ///

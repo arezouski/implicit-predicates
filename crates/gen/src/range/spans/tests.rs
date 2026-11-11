@@ -1,5 +1,6 @@
-use super::{Arena, MAX_COORD_COMPONENTS};
+use super::{Arena, MAX_COORD_COMPONENTS, MAX_OPERATIONS};
 use crate::differences::difference_graph;
+use crate::dyadic::Dyadic;
 use crate::parse::parse;
 use crate::range::shape::{difference_ops, raw_ops};
 
@@ -118,4 +119,45 @@ fn the_operation_counts_follow_the_evaluation() {
     let (lengths, counts) = arena.fit_with_counts(m, big_m, HIGH).unwrap();
     let product = 16 * (3 * 16 + 2 * (lengths[3] + 32));
     assert_eq!(counts, [0, 0, 0, product, product + 2 * lengths[3]]);
+}
+
+/// `d = a.x - b.x`, `q0 = d * d` and `q_k = q_(k-1) + q_(k-1)` up to
+/// `q_n`: each doubling counts its operand twice, so the count of the root
+/// doubles with every level.
+fn doublings(n: usize) -> String {
+    let mut body = String::from("let q0 = (a.x - b.x) * (a.x - b.x); ");
+    for k in 1..=n {
+        body += &format!("let q{k} = q{} + q{}; ", k - 1, k - 1);
+    }
+    format!("fn p(a: Point3, b: Point3) -> Sign {{ {body}q{n} }}")
+}
+
+#[test]
+fn the_operation_limit_keeps_the_rounding_factor_below_seven_quarters() {
+    // `6 u T <= 3/4` with `u = 2^-53`, so `B = (1 + 6 u T) S < 2 S`: the
+    // step that caps the lengths.
+    let six_u_t = &Dyadic::new(6, -53) * &Dyadic::integer(MAX_OPERATIONS);
+    assert!(six_u_t <= Dyadic::new(3, -2));
+    assert_eq!(MAX_OPERATIONS, 1 << 50);
+}
+
+#[test]
+fn a_plan_whose_count_passes_the_limit_is_narrowed() {
+    // With 32 doublings the count at the top of the range is within the
+    // limit; with 33 it is above it, so the range must shrink until the
+    // caps, and with them the count, fit.
+    let at = |n: usize, big_m: i64| translated(&doublings(n)).fit_with_counts(-428, big_m, HIGH);
+    let (_, counts) = at(32, 474).expect("32 doublings fit at 2^474");
+    assert!(*counts.last().unwrap() <= MAX_OPERATIONS);
+    assert!(*counts.last().unwrap() > MAX_OPERATIONS / 2);
+    let plan = translated(&doublings(32)).plan(LOW, HIGH).unwrap();
+    assert_eq!(exponent(plan.range.max), 474);
+    assert!(
+        at(33, 474).is_none(),
+        "the count of 33 doublings exceeds the limit at 2^474"
+    );
+    match translated(&doublings(33)).plan(LOW, HIGH) {
+        Ok(plan) => assert!(exponent(plan.range.max) < 474, "{plan:?}"),
+        Err(e) => assert!(e.contains("no input range"), "{e}"),
+    }
 }

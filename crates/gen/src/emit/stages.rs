@@ -19,6 +19,12 @@ use crate::range::{ExactRange, MAX_COORD_COMPONENTS};
 /// spans in its place.
 pub(crate) const STACK_LIMIT: usize = 4096;
 
+/// Whether a stage whose temporaries take `total` `f64` is emitted on the
+/// stack: at most [`STACK_LIMIT`].
+pub(crate) fn fits_on_stack(total: usize) -> bool {
+    total <= STACK_LIMIT
+}
+
 /// The forms of a predicate, with the plans of their exact stages. A stage
 /// on the stack is `None` when its temporaries exceed [`STACK_LIMIT`].
 pub(crate) struct Forms<'a> {
@@ -184,6 +190,10 @@ pub(crate) fn write_exact_stages(out: &mut String, points: usize, forms: &Forms)
              than [`Weight::One`], or some coordinate has more than \
              [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude \
              outside [`{range}`] or not finite.\n\n\
+             Requirement: every coordinate is a valid expansion of `scratch`: nonzero \
+             components of strictly increasing magnitude that do not overlap, as \
+             [`Point::exact`](implicit_predicates_core::Point::exact) writes them. This is \
+             not checked, and the result is unspecified otherwise.\n\n\
              The arena is left as it was, on success and on error.\n\n\
              # Errors\n\n\
              [`ScratchExhausted`] if `scratch` runs out of room."

@@ -4,7 +4,7 @@
 
 use super::readback::{function, interpret_span_stage};
 use super::{INSPHERE, NEGATIONS, ORIENT3D, expand};
-use crate::emit::stages::STACK_LIMIT;
+use crate::emit::stages::{STACK_LIMIT, fits_on_stack};
 use crate::parse::parse;
 
 #[test]
@@ -86,4 +86,75 @@ fn a_stage_is_on_the_stack_exactly_when_its_temporaries_fit() {
     // In-sphere needs 4,154 doubles for its exact differences and 122,448
     // for its translated expansions.
     assert_eq!((fit, not), (3 + 3 + 2, 2));
+}
+
+#[test]
+fn a_stage_fits_on_the_stack_up_to_the_limit_included() {
+    assert!(fits_on_stack(0));
+    assert!(fits_on_stack(STACK_LIMIT));
+    assert!(!fits_on_stack(STACK_LIMIT + 1));
+    assert!(!fits_on_stack(usize::MAX));
+}
+
+#[test]
+fn every_stage_over_spans_declines_long_coordinates_and_other_weights() {
+    for source in [ORIENT3D, INSPHERE, NEGATIONS] {
+        for g in super::super::generate(source, "t.pred", "run the tests.").unwrap() {
+            // The helper that every stage over spans calls on each
+            // coordinate it reads.
+            let helper = "fn span_in_range(e: &[f64], range: (f64, f64)) -> bool {\n\
+                          e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| in_range(x, range))\n\
+                          }\n";
+            assert_eq!(g.stages.matches(helper).count(), 1, "{}", g.name);
+            assert!(
+                g.stages
+                    .contains("pub const MAX_COORD_COMPONENTS: usize = 16;")
+            );
+            for stage in ["expansions_translated_in", "expansions_untranslated_in"] {
+                if !g.stages.contains(&format!("pub fn {stage}(")) {
+                    continue;
+                }
+                let code = function(&g.stages, stage);
+                let weights = code
+                    .find("if !p.iter().all(|q| q.w == Weight::One) {\nreturn Ok(None);\n}")
+                    .unwrap_or_else(|| panic!("{} {stage}: no check of the weights", g.name));
+                let range = code
+                    .find(".all(|s| span_in_range(scratch.get(s), SPANS_")
+                    .unwrap_or_else(|| panic!("{} {stage}: no check of the range", g.name));
+                let mark = code.find("let mark = scratch.mark();").unwrap();
+                assert!(weights < mark && range < mark, "{} {stage}", g.name);
+            }
+        }
+    }
+}
+
+#[test]
+fn every_stage_over_spans_states_that_its_coordinates_must_be_valid_expansions() {
+    for source in [ORIENT3D, INSPHERE, NEGATIONS] {
+        for g in super::super::generate(source, "t.pred", "run the tests.").unwrap() {
+            for stage in ["expansions_translated_in", "expansions_untranslated_in"] {
+                let Some(at) = g.stages.find(&format!("pub fn {stage}(")) else {
+                    continue;
+                };
+                let doc_start = g.stages[..at].rfind("\n\n").unwrap();
+                let doc: String = g.stages[doc_start..at]
+                    .lines()
+                    .filter_map(|l| l.strip_prefix("///"))
+                    .collect::<Vec<_>>()
+                    .join("");
+                let doc = doc.split_whitespace().collect::<Vec<_>>().join(" ");
+                assert!(
+                    doc.contains(
+                        "Requirement: every coordinate is a valid expansion of `scratch`: \
+                         nonzero components of strictly increasing magnitude that do not \
+                         overlap, as [`Point::exact`](implicit_predicates_core::Point::exact) \
+                         writes them. This is not checked, and the result is unspecified \
+                         otherwise."
+                    ),
+                    "{} {stage}: {doc}",
+                    g.name
+                );
+            }
+        }
+    }
 }

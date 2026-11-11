@@ -31,8 +31,10 @@ use super::{ExactPlan, ExactRange, OVERFLOW_EXPONENT, domain, first_failure};
 pub const MAX_COORD_COMPONENTS: usize = 16;
 
 /// The upper limit on the number of error-free transformations behind one
-/// node, `2^51`; it keeps `6 u T <= 3/4` in the component bound.
-const MAX_OPERATIONS: u128 = 1 << 51;
+/// node, `2^50`: with `u = 2^-53` it keeps `6 u T <= 3/4`, so the component
+/// bound `B = (1 + 6 u T) S` is below `2 S`, which the cap on the lengths
+/// needs.
+const MAX_OPERATIONS: u128 = 1 << 50;
 
 /// Derives the exact stage over spans of a difference form, each of whose
 /// leaves is the difference of two coordinates of up to `components`
@@ -72,18 +74,21 @@ const MAX_OPERATIONS: u128 = 1 << 51;
 /// `L M` for a coordinate and `2 L M` for the difference of two, which
 /// holds whatever the components are. Every value handled on the way to a
 /// node, the running sums inside `product` included, is at most
-/// `B = (1 + 6 u T) S`, where `T <= 2^51` counts, with multiplicity, the
-/// error-free transformations the node depends on.
+/// `(1 + 3 u)^T S`, where `T <= 2^50` counts, with multiplicity, the
+/// error-free transformations the node depends on. Since `3 u T <= 3/8`,
+/// `(1 + 3 u)^T <= e^(3 u T) <= 1 + 6 u T` (as `e^x <= 1 + 2 x` for
+/// `0 <= x <= 1`), so every such value is at most `B = (1 + 6 u T) S`, and
+/// `6 u T <= 6 * 2^-53 * 2^50 = 3/4` gives `B <= (7/4) S < 2 S`.
 ///
 /// **Lengths.** The counts `T` depend on the lengths of the expansions, and
 /// the lengths of the stack model, `2 l_x l_y` for a product, grow too fast
 /// with leaves of 16 components. Every result of the arena is a valid
 /// expansion: its components are nonzero, of strictly increasing magnitude
 /// and nonoverlapping, so each occupies bit positions that no other one
-/// does. They are multiples of `2^g`, `g` the grid of the node, and below
-/// `B < 2 S <= 2^(c + 1)` with `c` the smallest integer such that
-/// `S <= 2^c`, since `6 u T <= 3/4`; so their bits lie in positions
-/// `g..=c`, and there are at most `c - g + 1` of them. The length `l` of a
+/// does. They are multiples of `2^g`, `g` the grid of the node, and at
+/// most `B < 2 S <= 2^(c + 1)` in magnitude, with `c` the smallest integer
+/// such that `S <= 2^c`; so their bits lie in positions `g..=c`, and there
+/// are at most `c - g + 1` of them. The length `l` of a
 /// node is the smaller of that and of its structural length: `L` or `2 L`
 /// for a leaf, 1 for a nonzero constant, `l_x` for a negation, `l_x + l_y`
 /// for a sum or difference and `2 l_x l_y` for a product. The cap holds for
@@ -94,12 +99,12 @@ const MAX_OPERATIONS: u128 = 1 << 51;
 /// at most `4 L` transformations; a sum or difference at most
 /// `2 (l_x + l_y)`, a negation `2 l_x`; a product with `s` the smaller and
 /// `t` the larger length of its operands scales the longer operand `s`
-/// times, at most `3 t` transformations each, and merges each scaling, of at
+/// times, at most `1 + 3 (t - 1) <= 3 t` transformations each, and merges each scaling, of at
 /// most `2 t` components, into a running sum of at most `l` components, at
 /// most `2 (l + 2 t)` each: `s (7 t + 2 l)` in all. A count is computed from
 /// the lengths, and the cap on the length of a node relies on the count of
-/// that same node being at most `2^51`. That is not circular: the rule
-/// rejects a count above `2^51`, and by induction over the transformations
+/// that same node being at most `2^50`. That is not circular: the rule
+/// rejects a count above `2^50`, and by induction over the transformations
 /// of the node, as long as the count so far is within the computed one every
 /// value is below `B < 2 S`, so every expansion held is within the cap, so
 /// the next merge stays within the count.
@@ -107,7 +112,7 @@ const MAX_OPERATIONS: u128 = 1 << 51;
 /// **Rule.** The range is the widest pair of powers of two within the
 /// product domain such that every product operand has a grid of at least
 /// its bottom and a `B` of at most its top, every node a `T` of at most
-/// `2^51` and a `B` below `2^1020`. The grid condition depends only on `m`;
+/// `2^50` and a `B` below `2^1020`. The grid condition depends only on `m`;
 /// the others depend on `M` and, through the caps, on `m`, and grow with
 /// `M` and shrink with `m`. So `m` is the smallest value that passes the
 /// grid condition, and `M` is found for that `m`, which gives the longest

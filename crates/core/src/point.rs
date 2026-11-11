@@ -21,10 +21,14 @@ use crate::scratch::{Scratch, ScratchExhausted, Span};
 /// - `err()[k]` is not negative (it may be `+∞`) and bounds the distance
 ///   between `approx()[k]` and the exact coordinate `k` that
 ///   [`exact`](Self::exact) writes;
-/// - `err()[k]` is zero only when `approx()[k]` is that exact coordinate.
+/// - `err()[k]` is zero only when `approx()[k]` is that exact coordinate;
+/// - every span of the [`ExactCoords`] that [`exact`](Self::exact) returns
+///   holds a valid expansion (see [`expansion`]: nonzero components of
+///   strictly increasing magnitude that do not overlap), written in the
+///   arena it was given.
 ///
 /// A predicate given a point that breaks this contract can return a wrong
-/// sign.
+/// sign: predicates do not check it.
 ///
 /// # Examples
 ///
@@ -57,7 +61,9 @@ pub trait Point {
     fn is_explicit(&self) -> bool;
 
     /// Writes the exact coordinates as expansions in `scratch`: the point is
-    /// `(x / w, y / w, z / w)`.
+    /// `(x / w, y / w, z / w)`. Every span returned must hold a valid
+    /// expansion of `scratch` (see [`expansion`]); predicates rely on it
+    /// without checking it.
     ///
     /// # Errors
     ///
@@ -75,7 +81,8 @@ pub trait Point {
 
 /// The exact coordinates of a point, in homogeneous form: the point is
 /// `(x / w, y / w, z / w)`. The spans belong to the arena given to
-/// [`Point::exact`].
+/// [`Point::exact`], and each holds a valid expansion (see [`expansion`]);
+/// the predicates that read them do not check it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExactCoords {
     /// The numerator of the first coordinate.

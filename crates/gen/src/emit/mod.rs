@@ -46,7 +46,7 @@ use filter::FilterKind;
 pub use points::generate_points;
 use program::{Program, Step};
 use spans::write_span_in_range;
-use stages::{Forms, STACK_LIMIT, write_constants, write_exact_stages};
+use stages::{Forms, fits_on_stack, write_constants, write_exact_stages};
 pub(crate) use text::{comment, literal, power_of_two};
 
 /// The code generated for one predicate.
@@ -180,7 +180,7 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
     // A stage on the stack is emitted only if its temporaries fit.
     let stack = |leaves| {
         exact_plan_differences(&graph, leaves, file, position, min, max).map(|plan| {
-            (plan.total <= STACK_LIMIT).then(|| {
+            fits_on_stack(plan.total).then(|| {
                 (
                     Program::differences(&graph, leaves, &plan.lengths),
                     plan.range,
@@ -197,7 +197,7 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
             let position = predicate.exact_position.unwrap_or(position);
             let plan = exact_plan_raw(exact, file, position, min, max)?;
             let program = |lengths: &[usize]| Program::raw(exact, lengths);
-            let stack = (plan.total <= STACK_LIMIT).then(|| (program(&plan.lengths), plan.range));
+            let stack = fits_on_stack(plan.total).then(|| (program(&plan.lengths), plan.range));
             let spans = exact_plan_spans_untranslated(
                 exact,
                 MAX_COORD_COMPONENTS,
