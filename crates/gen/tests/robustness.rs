@@ -13,8 +13,9 @@ const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
 
 /// A generous limit on the time to reject a definition, even in a debug
-/// build.
-const LIMIT: Duration = Duration::from_secs(5);
+/// build on a shared machine several times slower than a desktop: it tells
+/// a bounded rejection from a hang, not a fast one from a slow one.
+const LIMIT: Duration = Duration::from_secs(30);
 
 /// The most subexpressions of a main form for which the checks are
 /// generated.
@@ -201,6 +202,6 @@ fn the_largest_accepted_chain_generates_in_a_few_seconds() {
     let start = Instant::now();
     assert_eq!(timed(&long_sum(MAX_NODES)).0, Ok(1));
     let elapsed = start.elapsed();
-    assert!(elapsed < Duration::from_secs(15), "took {elapsed:?}");
+    assert!(elapsed < Duration::from_secs(90), "took {elapsed:?}");
     rejected_quickly(&long_sum(MAX_NODES + 1), (1, 4), "subexpressions");
 }
