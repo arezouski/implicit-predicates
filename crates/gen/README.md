@@ -65,7 +65,8 @@ to exist. The names of points and parameters cannot be Rust keywords, and two
 points cannot share a name.
 
 `parse_points` reads the declarations of a file; `parse` reads its
-predicates and skips them. Each coordinate of a point is held in one graph
+predicates and checks the declarations without returning them (a file of
+only points gives no predicates, not an error). Each coordinate of a point is held in one graph
 of `f64` operations in which equal subexpressions share a node, and the
 clause as a list of comparisons, so that they can be evaluated and emitted
 operation by operation.

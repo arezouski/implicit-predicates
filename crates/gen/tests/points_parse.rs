@@ -401,3 +401,60 @@ fn nesting_is_limited_to_32_brackets() {
     assert_eq!(parse_points(&nested(32), "t.pred").unwrap().len(), 1);
     check(&nested(33), (1, 20 + 33), "nested more than 32 deep");
 }
+
+#[test]
+fn parse_reports_an_invalid_point_instead_of_skipping_it() {
+    let check_parse = |source: &str, (line, column): (usize, usize), fragment: &str| {
+        let e = parse(source, "t.pred").expect_err("the source must be rejected");
+        assert_eq!((e.line, e.column), (line, column), "{source}: {e}");
+        assert!(e.message.contains(fragment), "{source}: {e}");
+    };
+    check_parse(
+        "point A(p: F64x3) = p * p * fn;",
+        (1, 23),
+        "product of two `F64x3`",
+    );
+    check_parse(
+        "point fn orient(a: Point3) -> Sign { a.x - a.x } ;",
+        (1, 7),
+        "cannot be used as the name",
+    );
+    check_parse(
+        "point A(p: F64x3, q: F64x3) = p;\nfn f(a: Point3) -> Sign { a.x }",
+        (1, 19),
+        "unused parameter `q`",
+    );
+    check_parse(
+        "point A(p: F64x3) = p;\npoint A(p: F64x3) = p;\n",
+        (2, 7),
+        "already defined",
+    );
+    check_parse("point A(p: F64x3) = p", (1, 21), "`;`");
+}
+
+#[test]
+fn parse_points_rejects_what_it_would_otherwise_skip_over_a_point() {
+    check("x point A(p: F64x3) = p;", (1, 1), "`point` or `fn`");
+    check(
+        "fn f(a: Point3) -> Sign { a.x }\n;\npoint A(p: F64x3) = p;",
+        (2, 1),
+        "`point` or `fn`",
+    );
+    // A function without a body would swallow the declaration after it.
+    check(
+        "fn f(a: Point3) -> Sign\npoint A(p: F64x3) = p;",
+        (2, 22),
+        "`{`",
+    );
+    check("#[exact]", (1, 2), "`{`");
+}
+
+#[test]
+fn a_point_followed_by_a_predicate_gives_each_its_items() {
+    let source = format!("{POINTS}\n{ORIENT3D}");
+    assert_eq!(parse_points(&source, "t.pred").unwrap().len(), 2);
+    assert_eq!(parse(&source, "t.pred").unwrap().len(), 1);
+    let reversed = format!("{ORIENT3D}\n{POINTS}");
+    assert_eq!(parse_points(&reversed, "t.pred").unwrap().len(), 2);
+    assert_eq!(parse(&reversed, "t.pred").unwrap().len(), 1);
+}

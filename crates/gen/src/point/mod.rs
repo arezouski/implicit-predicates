@@ -31,7 +31,7 @@ mod parse;
 use crate::parse::Position;
 
 pub use parse::parse_points;
-pub(crate) use parse::skip_declaration;
+pub(crate) use parse::read_declaration;
 
 /// The type of a parameter of a point type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

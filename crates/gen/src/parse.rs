@@ -10,7 +10,8 @@
 //! ```
 //!
 //! Expressions are read by [`crate::expr`]. A `point` declaration, read by
-//! [`crate::parse_points`], is skipped up to its `;`.
+//! [`crate::parse_points`], is read as well, so that a malformed one is
+//! reported, and its result is dropped.
 
 use std::collections::HashMap;
 
@@ -21,7 +22,7 @@ use crate::error::{Error, Res, diag};
 use crate::expr::{Binding, Scope, parse_expr};
 use crate::graph::{Builder, Graph, Node};
 use crate::limits;
-use crate::point::skip_declaration;
+use crate::point::read_declaration;
 
 /// A predicate read from a definition file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +98,11 @@ struct Form {
 ///
 /// # Errors
 ///
+/// A `point` declaration is read in full and checked, and its errors are
+/// reported, but it is not returned: see [`crate::parse_points`]. A file of
+/// valid points and no predicates gives an empty list; a file with neither is
+/// an error.
+///
 /// Returns the first problem found: a token that the grammar of definitions
 /// does not allow, a doc comment, a predicate name that cannot name a
 /// module, an undefined or redefined name, an unused parameter, or a
@@ -119,10 +125,11 @@ fn parse_source(source: &str) -> Res<Vec<Predicate>> {
     let mut predicates: Vec<Predicate> = Vec::new();
     let mut exacts: Vec<Form> = Vec::new();
     let mut has_points = false;
+    let mut points = Vec::new();
     while !cur.at_end() {
         if cur.peek_word("point") {
             has_points = true;
-            skip_declaration(&mut cur)?;
+            read_declaration(&mut cur, &mut points)?;
             continue;
         }
         let form = parse_item(&mut cur)?;

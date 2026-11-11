@@ -36,8 +36,11 @@ use crate::parse::{Position, can_name_a_module};
 /// Reads every point type declared in `source`.
 ///
 /// `file` is only used to label errors. Points come in the order of their
-/// declarations. The functions of the file are skipped, without being read:
-/// [`crate::parse`] reads them and reports their errors.
+/// declarations. A file without points gives an empty list. The functions of
+/// the file are skipped without being read, since [`crate::parse`] reads them
+/// and reports their errors; but what is skipped must start with `fn` or
+/// `#`, and reach a `{` body, or it is an error at its position, so no
+/// declaration is lost.
 ///
 /// # Limits
 ///
@@ -71,33 +74,39 @@ fn parse_source(source: &str) -> Res<Vec<PointType>> {
     let mut points: Vec<PointType> = Vec::new();
     while !cur.at_end() {
         if cur.peek_word("point") {
-            let point = parse_declaration(&mut cur, &points)?;
-            points.push(point);
+            read_declaration(&mut cur, &mut points)?;
         } else {
-            // A function, with its attributes: everything up to its body.
-            while let Some(token) = cur.peek() {
-                let is_body =
-                    matches!(token, TokenTree::Group(g) if g.delimiter() == Delimiter::Brace);
-                cur.bump();
-                if is_body {
-                    break;
-                }
-            }
+            skip_function(&mut cur)?;
         }
     }
     Ok(points)
 }
 
-/// Moves past a declaration without reading it.
-pub(crate) fn skip_declaration(cur: &mut Cursor) -> Res<()> {
-    while !cur.peek_punct(';') {
-        if cur.at_end() {
-            return Err(cur.expected("`;`"));
-        }
-        cur.bump();
-    }
-    cur.bump();
+/// Reads the declaration at `cur` and adds it to `points`, which holds the
+/// ones read before it (their names cannot be repeated).
+pub(crate) fn read_declaration(cur: &mut Cursor, points: &mut Vec<PointType>) -> Res<()> {
+    let point = parse_declaration(cur, points)?;
+    points.push(point);
     Ok(())
+}
+
+/// Moves past a function of a predicate, with its attributes, without reading
+/// it: [`crate::parse`] does. Anything that does not start like one is an
+/// error, so a declaration cannot be lost behind a stray token.
+fn skip_function(cur: &mut Cursor) -> Res<()> {
+    if !(cur.peek_word("fn") || cur.peek_punct('#')) {
+        return Err(cur.expected("`point` or `fn`"));
+    }
+    loop {
+        let Some(token) = cur.peek() else {
+            return Err(cur.expected("`{`"));
+        };
+        let is_body = matches!(token, TokenTree::Group(g) if g.delimiter() == Delimiter::Brace);
+        cur.bump();
+        if is_body {
+            return Ok(());
+        }
+    }
 }
 
 fn parse_declaration(cur: &mut Cursor, seen: &[PointType]) -> Res<PointType> {
