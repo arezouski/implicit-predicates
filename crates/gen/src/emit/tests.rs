@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use indirect_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 
 use super::edges::bound_edge_cases;
-use super::filter::{bound_operations, bound_statements, write_filter};
+use super::filter::{bound_operations, bound_rounding_factors, bound_statements, write_filter};
 use super::program::{Program, Scalar, Step};
 use crate::bound::filter_bound;
 use crate::differences::{DiffGraph, DiffNode, difference_graph};
@@ -233,18 +233,24 @@ fn the_filter_has_the_value_of_the_source_polynomial() {
 }
 
 #[test]
-fn the_filter_bound_takes_at_most_2k_plus_8_operations() {
+fn the_filter_bound_has_at_most_2k_plus_8_rounding_factors() {
     for degree in [1, 2, 3, 5, 9, 1022] {
         let statements = bound_statements(degree);
-        let in_code = statements
+        let operations = statements
             .chars()
             .filter(|c| matches!(c, '+' | '-' | '*' | '/'))
             .count();
-        // The caller forms `e` with one more sum.
-        let total = u32::try_from(in_code).unwrap() + 1;
-        assert_eq!(total, bound_operations(degree), "{statements}");
-        assert!(total <= 2 * degree + 8, "{statements}");
-        assert_eq!(statements.matches("* d").count(), degree as usize - 1 + 1);
+        let operations = u32::try_from(operations).unwrap();
+        assert_eq!(operations, bound_operations(degree), "{statements}");
+        assert_eq!(operations, degree + 3, "{statements}");
+        // `d` is computed once and used `degree` times in the bound.
+        let bound = statements.split("let bound").nth(1).unwrap();
+        let uses_of_d = bound.matches(" d").count();
+        assert_eq!(uses_of_d, degree as usize, "{statements}");
+        let factors = operations + (u32::try_from(uses_of_d).unwrap() - 1);
+        assert_eq!(factors, bound_rounding_factors(degree));
+        assert_eq!(factors, 2 * degree + 2);
+        assert!(factors <= 2 * degree + 8, "{statements}");
     }
     assert_eq!(
         bound_statements(3),

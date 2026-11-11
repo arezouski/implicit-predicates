@@ -24,12 +24,16 @@
 //! `D` is in `[D_MIN, D_MAX]` (see [`crate::FilterBound::constants`]).
 //!
 //! The emitted bound is computed in `f64` with round-to-nearest, and each of
-//! its operations can round down by a factor `1 - u`, `u = 2^-53`. The
-//! operations are, for a degree `k`: the sum of the two largest errors of
-//! the points that forms `E`, done by the caller; `delta + e`; `EPSILON *
-//! d`; `KAPPA * e`; their sum; and the `k - 1` products by `d`: `k + 4` in
-//! all, within the `2k + 8` that the constants allow for. `EPSILON` and
-//! `KAPPA` are the exact coefficients times `1 + 2^-30`, rounded up, and
+//! its operations can round down by a factor `1 - u`, `u = 2^-53`. For a
+//! degree `k` the operations are `delta + e`, `EPSILON * d`, `KAPPA * e`,
+//! their sum and the `k - 1` products by `d`: `k + 3` in all. The rounding
+//! of `d` enters the bound once for each of the `k` times `d` is used, so
+//! the computed bound is at least `(1 - u)^(2k + 2)` times its exact value:
+//! one factor per operation and `k - 1` more for the uses of `d` beyond the
+//! first. The caller's sum that forms `e` adds none, because `e` must be
+//! rounded up, so that it is at least `E`. That is within the `2k + 8`
+//! factors that the constants allow for: `EPSILON` and `KAPPA` are the
+//! exact coefficients times `1 + 2^-30`, rounded up, and
 //! `(1 + 2^-30)(1 - u)^(2k + 8) >= 1 + 2^-31` for every degree the
 //! generator accepts, so the computed bound is at least `(1 + 2^-31) B`,
 //! above the error. The partial results are formed from the largest one
@@ -63,12 +67,19 @@ use super::statements::{node_name, node_statements};
 use crate::differences::{DiffGraph, DiffNode};
 use crate::graph::NodeId;
 
-/// The number of `f64` operations that form the emitted bound of a filter
-/// of degree `degree`, including the sum of the two largest errors done by
-/// the caller.
+/// The number of `f64` operations in [`bound_statements`] for a filter of
+/// degree `degree`: `d`, `EPSILON * d`, `KAPPA * e`, their sum, and the
+/// `degree - 1` products by `d`.
 pub(crate) fn bound_operations(degree: u32) -> u32 {
-    // E, d, EPSILON * d, KAPPA * e, the sum, and the products by d.
-    1 + 1 + 3 + (degree - 1)
+    4 + (degree - 1)
+}
+
+/// The number of factors `1 - u` by which the rounding can shrink the
+/// emitted bound of a filter of degree `degree`: one per operation, and one
+/// more for each use of `d` beyond the first, since the rounding of `d`
+/// enters the bound each time `d` is used.
+pub(crate) fn bound_rounding_factors(degree: u32) -> u32 {
+    bound_operations(degree) + (degree - 1)
 }
 
 /// The statements that compute `d` and `bound`.
@@ -136,8 +147,10 @@ pub(crate) fn write_filter(
         "//",
         4,
         &format!(
-            "The bound takes {} f64 operations, counting the sum that forms `e`.",
-            bound_operations(degree)
+            "The bound takes {} f64 operations; with the rounding of `d` counted at each \
+             of its {degree} uses, at most {} roundings reach it.",
+            bound_operations(degree),
+            bound_rounding_factors(degree)
         ),
     );
     out.push_str(&bound_statements(degree));

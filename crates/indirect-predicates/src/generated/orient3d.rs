@@ -87,7 +87,8 @@ pub fn filter(p: [&[f64; 3]; 4], e: f64) -> Option<Sign> {
     let delta = max(delta, t6.abs());
     let delta = max(delta, t7.abs());
     let delta = max(delta, t8.abs());
-    // The bound takes 7 f64 operations, counting the sum that forms `e`.
+    // The bound takes 6 f64 operations; with the rounding of `d` counted at
+    // each of its 3 uses, at most 8 roundings reach it.
     let d = delta + e;
     let bound = (EPSILON * d + KAPPA * e) * d * d;
     let decided = (e >= 0.0) & (D_MIN..=D_MAX).contains(&d) & (det.abs() > bound);

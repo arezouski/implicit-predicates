@@ -279,8 +279,8 @@ impl FilterBound {
 ///
 /// For `D <= d_max` every computed node then has magnitude at most
 /// `c_x * D^(g_x) <= 2^1022` (for `D < 1`, `D^(g_x) <= 1 < d_max^(g_x)`),
-/// half the overflow threshold, so no intermediate value and not the
-/// result overflows. An overflow in the evaluation of the bound itself
+/// a quarter of the overflow threshold `2^1024`, so no intermediate value
+/// and not the result overflows. An overflow in the evaluation of the bound itself
 /// gives an infinite bound, which only makes the filter abstain.
 ///
 /// Returns the degree of a node that overflows for every `j >= 1` if there is
@@ -325,8 +325,10 @@ fn d_max_exponent(nodes: &[NodeBound]) -> Result<i64, u32> {
 ///   coefficients and degree at most `k / g_x`, since degrees add along
 ///   products, so `c_x p'(c_x) <= (k / g_x) p(c_x)`; with `c_x >= 1` and
 ///   `g_x >= 2` the derivative is at most `k * c_max * D^(k - g_x)`.
-///   Terms of second order in these errors are below `2^-2000` and are
-///   absorbed by the slack below.
+///   Terms of second order in these errors are products of two such
+///   errors, each at most `2^-1074` times factors bounded as above, so they
+///   are smaller than the first-order terms by a factor of about `2^-1000`
+///   and are absorbed by the slack of `2^-32` of the bound below.
 /// - The total underflow error is therefore
 ///   `U <= N * k * c_max * 2^-1074 * max(1, D^k)`. For `d_min <= D <= 1`,
 ///   condition 1 gives `U <= 2^-32 * epsilon * d_min^k
@@ -335,15 +337,24 @@ fn d_max_exponent(nodes: &[NodeBound]) -> Result<i64, u32> {
 ///   value of the form errs by at most `(1 + 2^-32) * B`.
 /// - The emitted constants are at least `(1 + 2^-30)` times the exact
 ///   ones, so the exact value of the emitted bound is at least
-///   `(1 + 2^-30) * B`. Condition 2 keeps its `f64` evaluation out of the
-///   subnormal range: every partial result built from `epsilon * D` is at
-///   least `epsilon * min(1, D)^k >= 2^-1021`, so each of its about
-///   `k + 2` operations errs by at most a factor `1 + u`, and the term
-///   `kappa * E`, which may underflow, loses at most `2^-1075`, a
-///   fraction `2^-54` of the sum it joins. For `k <= 1022` (higher degrees
-///   are rejected) the computed
-///   bound is at least `(1 + 2^-30)(1 - u)^(k + 4) * B >= (1 + 2^-31) * B`,
-///   which exceeds the error `(1 + 2^-32) * B`.
+///   `(1 + 2^-30) * B`. Its `f64` evaluation, `d = delta + e`, then
+///   `(EPSILON * d + KAPPA * e) * d * ... * d` with `k - 1` products by
+///   `d`, takes `k + 3` operations, each of which can round down by a
+///   factor `1 - u`. The rounding of `d` enters the bound once for each of
+///   the `k` times `d` is used, so the computed bound is at least
+///   `(1 - u)^(2k + 2)` times its exact value: `k + 3` factors for the
+///   operations and `k - 1` more for the uses of `d` beyond the first
+///   (`e` is an upper bound on `E`, rounded up by the caller, so it adds
+///   none; a caller that rounded it to nearest instead would add one factor
+///   for each use of `e` and of `d`, `3k + 3` in all, within `2k + 8` only
+///   for `k <= 5`). That holds while no partial result is subnormal: condition 2
+///   keeps every partial result built from `EPSILON * d` at least
+///   `epsilon * min(1, D)^k >= 2^-1021`, and the term `KAPPA * e`, which
+///   may underflow, loses at most `2^-1075`, a fraction `2^-54` of the sum
+///   it joins. The constants were derived for up to `2k + 8` such factors,
+///   and `(1 + 2^-30)(1 - u)^(2k + 8) >= 1 + 2^-31` for `k <= 1022` (higher
+///   degrees are rejected), so the computed bound is at least
+///   `(1 + 2^-31) * B`, which exceeds the error `(1 + 2^-32) * B`.
 ///
 /// Returns `None` if no `j <= -1` satisfies both.
 fn d_min_exponent(nodes: &[NodeBound], root: &NodeBound, products: u32) -> Option<i64> {
