@@ -53,4 +53,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `&[f64; 3]` points, does not allocate and works without `std`. The result
   is provisionally an `Option<Sign>`: `None` when a coordinate is not finite
   or, if the earlier stages cannot decide, when a nonzero coordinate is
-  outside `2^-188..=2^239`.
+  outside `2^-188..=2^239`. `indirect_predicates::Sign` re-exports the `Sign`
+  of `indirect-predicates-core`.

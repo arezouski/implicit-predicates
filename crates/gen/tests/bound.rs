@@ -61,6 +61,15 @@ fn insphere_has_the_expected_constants() {
 }
 
 #[test]
+fn the_range_of_the_filter_is_pinned_for_both_fixtures() {
+    for (source, d_min, d_max) in [(ORIENT3D, -324, 339), (INSPHERE, -195, 203)] {
+        let c = bound(source).constants();
+        assert_eq!(c.d_min, 2f64.powi(d_min), "{source}");
+        assert_eq!(c.d_max, 2f64.powi(d_max), "{source}");
+    }
+}
+
+#[test]
 fn emitted_constants_round_up() {
     for (source, eps_in_u, kappa) in [(ORIENT3D, 46.0, 18.0), (INSPHERE, 1122.0, 360.0)] {
         let c = bound(source).constants();

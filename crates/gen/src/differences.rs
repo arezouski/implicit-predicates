@@ -39,7 +39,8 @@ pub struct DiffGraph {
     /// The node holding the value of the whole expression.
     pub root: NodeId,
     /// Degree of each node: 1 for a leaf, the sum for a product, the common
-    /// degree for a sum or difference.
+    /// degree for a sum or difference, and the degree of its operand for a
+    /// negation.
     pub degrees: Vec<u32>,
 }
 
@@ -59,7 +60,8 @@ enum Mapped {
 ///
 /// A leaf is a difference of the same coordinate of two different points.
 /// A leaf used twice is one node; `a.x - d.x` and `d.x - a.x` are different
-/// leaves. A negation is `0 - x`, kept as a `Neg` node. The graph is walked iteratively in node order.
+/// leaves. A negation is `0 - x`, kept as a `Neg` node. The graph is walked
+/// iteratively in node order.
 ///
 /// # Errors
 ///
