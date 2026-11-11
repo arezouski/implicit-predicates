@@ -67,16 +67,24 @@ pub fn coplanar4() -> impl Strategy<Value = Points4> {
         })
 }
 
-/// Points from [`coplanar4`] with one to three coordinates moved by one to
-/// three units in the last place, up or down.
+/// Points from [`coplanar4`] with one to three distinct coordinates each
+/// moved by one to three units in the last place, up or down.
+///
+/// The moved coordinates are distinct, so the steps never cancel each
+/// other; the result is still exactly coplanar when every moved coordinate
+/// happens not to change the determinant.
 pub fn near_coplanar4() -> impl Strategy<Value = Points4> {
-    let change = (0usize..4, 0usize..3, prop_oneof![-3i32..=-1, 1i32..=3]);
-    (coplanar4(), prop::collection::vec(change, 1..=3)).prop_map(|(mut p, changes)| {
-        for (point, axis, ulps) in changes {
-            p[point][axis] = step_ulps(p[point][axis], ulps);
-        }
-        p
-    })
+    let coordinates = prop::sample::subsequence((0..12).collect::<Vec<usize>>(), 1..=3);
+    let ulps = prop_oneof![-3i32..=-1, 1i32..=3];
+    (coplanar4(), coordinates, [ulps.clone(), ulps.clone(), ulps]).prop_map(
+        |(mut p, coordinates, ulps)| {
+            for (index, ulps) in coordinates.into_iter().zip(ulps) {
+                let (point, axis) = (index / 3, index % 3);
+                p[point][axis] = step_ulps(p[point][axis], ulps);
+            }
+            p
+        },
+    )
 }
 
 /// Points from [`random4`] or [`grid4`] in which one point is a copy of

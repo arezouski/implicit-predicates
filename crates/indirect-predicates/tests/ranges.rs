@@ -14,7 +14,8 @@ mod common;
 use common::generated::exact;
 use common::{Points, Stage, refs};
 use indirect_predicates::stages::orient3d as stages;
-use indirect_predicates_test_support::{config, leaf};
+use indirect_predicates_oracle::Dyadic;
+use indirect_predicates_test_support::{config, leaf, sample};
 use proptest::prelude::*;
 
 /// The binary exponent of a power of two.
@@ -160,5 +161,71 @@ proptest! {
                 prop_assert_eq!(stage(refs(&p)), None, "{} on {:?}", name, p);
             }
         }
+    }
+}
+
+/// Twelve magnitudes in the two binades `[2^(top - 2), 2^top)`, each with a
+/// full 53-bit significand, from fixed-seed random bits.
+fn magnitudes(top: i32, count: usize) -> Vec<[f64; 12]> {
+    sample(prop::array::uniform12(any::<u64>()), count)
+        .into_iter()
+        .map(|bits| {
+            bits.map(|b| {
+                // The top bit picks the binade; the lowest significand bit
+                // is set, so the significand has 53 bits.
+                let exponent = top - 1 - i32::from(b >> 63 == 1);
+                let biased = u64::try_from(exponent + 1023).unwrap();
+                f64::from_bits((biased << 52) | (b & ((1 << 52) - 1)) | 1)
+            })
+        })
+        .collect()
+}
+
+/// Every coordinate jointly at the top, or jointly at the bottom, of
+/// `TRANSLATED_RANGE`, with full significands in its two outermost binades
+/// and every one of the 4096 sign patterns of the twelve coordinates.
+///
+/// Opposite signs across two binades make most differences inexact, so
+/// `two_diff` leaves a nonzero low part. Run in a debug build, no assertion
+/// of the core may fire and the sign must be exact. This test establishes
+/// that the range is safe, not that it is tight: the stage would also be
+/// sound with a somewhat larger upper end.
+#[test]
+fn the_translated_stage_is_exact_with_every_coordinate_at_an_end_of_its_range() {
+    let (min, max) = stages::TRANSLATED_RANGE;
+    let ends = [(exponent(max), "top"), (exponent(min) + 2, "bottom")];
+    for (top, end) in ends {
+        let sets = magnitudes(top, 4096);
+        let mut inexact = 0;
+        for (pattern, magnitudes) in sets.iter().enumerate() {
+            let p: Points = std::array::from_fn(|i| {
+                std::array::from_fn(|axis| {
+                    let k = 3 * i + axis;
+                    let x = magnitudes[k];
+                    if pattern >> k & 1 == 1 { -x } else { x }
+                })
+            });
+            assert!(
+                common::all_in_range(&p, stages::TRANSLATED_RANGE),
+                "{end}: {p:?}"
+            );
+            inexact += (0..3)
+                .flat_map(|i| (0..3).map(move |axis| (i, axis)))
+                .filter(|&(i, axis)| {
+                    let (a, b) = (p[i][axis], p[3][axis]);
+                    Dyadic::from_f64(a - b) != &Dyadic::from_f64(a) - &Dyadic::from_f64(b)
+                })
+                .count();
+            assert_eq!(
+                stages::expansions_translated(refs(&p)),
+                Some(exact(&p)),
+                "{end}: {p:?}"
+            );
+        }
+        // Most differences have a nonzero low part.
+        assert!(
+            inexact > 9 * sets.len() / 4,
+            "{end}: {inexact} inexact differences"
+        );
     }
 }

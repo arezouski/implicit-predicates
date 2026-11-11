@@ -1,127 +1,24 @@
-//! The filter of `orient3d` with uncertain points, at the ends of its range
-//! of scales, and with values that overflow.
+//! The filter of `orient3d` at the ends of its range of scales, with values
+//! that overflow, and with an uncertainty `e` that is not a valid one.
+//!
+//! The tests at the ends of the range read the emitted constants `D_MIN`
+//! and `D_MAX`: they check that the filter honours them, while their values
+//! are guarded by the derivation tests of the generator and by the
+//! regeneration check, not by these tests.
 
 mod common;
 
 use common::generated::exact;
-use common::{Points, STAGES, orient3d, refs};
+use common::{Points, STAGES, orient3d, pow2, refs};
 use indirect_predicates::Sign;
 use indirect_predicates::stages::orient3d as stages;
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{config, coplanar4, grid4, near_coplanar4, random4, sample};
+use indirect_predicates_test_support::{config, random4, sample};
 use proptest::prelude::*;
-
-/// `2^exponent`, for `exponent` in `-1074..=1023`.
-fn pow2(exponent: i32) -> f64 {
-    assert!((-1074..=1023).contains(&exponent), "2^{exponent}");
-    if exponent >= -1022 {
-        f64::from_bits(u64::try_from(exponent + 1023).unwrap() << 52)
-    } else {
-        f64::from_bits(1 << (exponent + 1074))
-    }
-}
-
-/// `x` rounded up to an `f64` that is at least the exact value `exact`, of
-/// which `x` is the rounding to nearest.
-fn at_least(x: f64, exact: &Dyadic) -> f64 {
-    if Dyadic::from_f64(x) < *exact {
-        x.next_up()
-    } else {
-        x
-    }
-}
-
-/// `|x|`, exactly.
-fn abs(x: &Dyadic) -> Dyadic {
-    if x.sign() < 0 { -x } else { x.clone() }
-}
-
-/// The binary exponent of the largest magnitude among the coordinates, or
-/// `None` if they are all zero.
-fn top_exponent(p: &Points) -> Option<i32> {
-    let max = p.iter().flatten().fold(0.0f64, |m, x| m.max(x.abs()));
-    (max > 0.0).then(|| max.log2().floor() as i32)
-}
-
-/// `p` scaled by a power of two so that its largest coordinate is in
-/// `[2^exponent, 2^(exponent + 1))`.
-fn scaled_to(p: &Points, exponent: i32) -> Points {
-    let factor = top_exponent(p).map_or(1.0, |top| pow2(exponent - top));
-    p.map(|point| point.map(|x| x * factor))
-}
-
-/// The exponents of the scales: around 1 and near both ends of the range
-/// `D_MIN..=D_MAX` of the filter.
-fn scale() -> impl Strategy<Value = i32> {
-    let (low, high) = (stages::D_MIN.log2() as i32, stages::D_MAX.log2() as i32);
-    prop_oneof![
-        2 => -4i32..=4,
-        1 => low - 2..=low + 6,
-        1 => high - 8..=high - 1,
-    ]
-}
-
-/// The perturbation of one point: the exponent of its size relative to the
-/// largest coordinate, a factor `2^extra` by which its error bound exceeds
-/// the perturbation, and the offset of each coordinate in units of the size.
-fn perturbation() -> impl Strategy<Value = (i32, i32, [f64; 3])> {
-    (
-        prop_oneof![0i32..=60, Just(1000)],
-        prop_oneof![3 => Just(0i32), 1 => 0i32..=8, 1 => 30i32..=60],
-        [-1.0..=1.0f64, -1.0..=1.0f64, -1.0..=1.0f64],
-    )
-}
 
 proptest! {
     #![proptest_config(config())]
 
-    #[test]
-    fn the_filter_with_uncertainty_is_never_wrong(
-        base in prop_oneof![random4(), coplanar4(), near_coplanar4(), grid4()],
-        exponent in scale(),
-        perturbations in [perturbation(), perturbation(), perturbation(), perturbation()],
-    ) {
-        // The true points, and approximations of them within known errors.
-        let truth = scaled_to(&base, exponent);
-        let top = top_exponent(&truth).unwrap_or(exponent);
-        let mut approximation = truth;
-        let mut errors = [0.0f64; 4];
-        for (i, (size, extra, offsets)) in perturbations.into_iter().enumerate() {
-            let unit = pow2((top - size).max(-1074));
-            let mut error = 0.0f64;
-            for axis in 0..3 {
-                approximation[i][axis] = truth[i][axis] + offsets[axis] * unit;
-                let exact = abs(&(&Dyadic::from_f64(approximation[i][axis])
-                    - &Dyadic::from_f64(truth[i][axis])));
-                let rounded = (approximation[i][axis] - truth[i][axis]).abs();
-                error = error.max(at_least(rounded, &exact));
-            }
-            errors[i] = error * pow2(extra);
-            prop_assume!(errors[i].is_finite());
-        }
-        // `e` is the sum of the two largest errors, rounded up, as a caller
-        // computes it.
-        errors.sort_by(|a, b| b.total_cmp(a));
-        let e = at_least(
-            errors[0] + errors[1],
-            &(&Dyadic::from_f64(errors[0]) + &Dyadic::from_f64(errors[1])),
-        );
-        let expected = exact(&truth);
-        if let Some(sign) = stages::filter(refs(&approximation), e) {
-            prop_assert_eq!(
-                sign,
-                expected,
-                "approximation {:?}, e = {:e}, truth {:?}",
-                approximation,
-                e,
-                truth
-            );
-        }
-        if expected == Sign::Zero {
-            prop_assert_eq!(stages::filter(refs(&approximation), e), None);
-        }
-    }
-
+    /// `D` just outside `D_MIN..=D_MAX`, as emitted, with `e` zero or not.
     #[test]
     fn the_filter_does_not_decide_outside_d_min_and_d_max(
         d in prop_oneof![
@@ -142,6 +39,8 @@ proptest! {
         prop_assert_eq!(stages::filter(refs(&points), e), None, "{:?} e = {:e}", points, e);
     }
 
+    /// `D` at the emitted `D_MIN` and `D_MAX` and just inside them, with
+    /// coordinates whose products underflow near `D_MIN`.
     #[test]
     fn the_filter_is_right_just_inside_the_limits(
         d in prop_oneof![

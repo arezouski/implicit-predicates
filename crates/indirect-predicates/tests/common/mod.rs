@@ -63,3 +63,13 @@ pub fn edges() -> Vec<f64> {
     );
     vec![d.0, d.1, t.0, t.1, u.0, u.1, stages::D_MIN, stages::D_MAX]
 }
+
+/// `2^exponent`, for `exponent` in `-1074..=1023`, built from its bits.
+pub fn pow2(exponent: i32) -> f64 {
+    assert!((-1074..=1023).contains(&exponent), "2^{exponent}");
+    if exponent >= -1022 {
+        f64::from_bits(u64::try_from(exponent + 1023).unwrap() << 52)
+    } else {
+        f64::from_bits(1 << (exponent + 1074))
+    }
+}

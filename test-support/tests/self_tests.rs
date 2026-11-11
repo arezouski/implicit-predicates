@@ -5,9 +5,9 @@
 use indirect_predicates_core::{Scratch, eft};
 use indirect_predicates_oracle::Dyadic;
 use indirect_predicates_test_support::{
-    ArenaOp, arena_op, assert_valid_expansion, bit_pattern_expansion, bit_pattern_pair,
-    correlated_pair, expansion, has_adjacent_components, near_equal, product_domain_bits,
-    product_operand, sample, value,
+    ArenaOp, Points4, arena_op, assert_valid_expansion, bit_pattern_expansion, bit_pattern_pair,
+    coplanar4, correlated_pair, expansion, has_adjacent_components, near_coplanar4, near_equal,
+    product_domain_bits, product_operand, repeated4, sample, value,
 };
 
 #[test]
@@ -252,4 +252,42 @@ fn arena_sequences_run_every_kind_of_operation() {
         multi_component_products >= 50,
         "only {multi_component_products} multi-component products ran"
     );
+}
+
+/// The exact determinant of `[a - d; b - d; c - d]`.
+fn orientation(p: &Points4) -> Dyadic {
+    let row = |i: usize| -> [Dyadic; 3] {
+        std::array::from_fn(|axis| &Dyadic::from_f64(p[i][axis]) - &Dyadic::from_f64(p[3][axis]))
+    };
+    let (a, b, c) = (row(0), row(1), row(2));
+    let minor = |x: usize, y: usize| &(&b[x] * &c[y]) - &(&b[y] * &c[x]);
+    &(&(&a[0] * &minor(1, 2)) - &(&a[1] * &minor(0, 2))) + &(&a[2] * &minor(0, 1))
+}
+
+#[test]
+fn coplanar_points_are_exactly_coplanar() {
+    for p in sample(coplanar4(), 2000) {
+        assert!(orientation(&p).is_zero(), "{p:?}");
+    }
+}
+
+#[test]
+fn nearly_coplanar_points_are_rarely_coplanar() {
+    let cases = sample(near_coplanar4(), 2000);
+    let coplanar = cases.iter().filter(|p| orientation(p).is_zero()).count();
+    // Only when every moved coordinate has a zero cofactor, as when it
+    // belongs to a repeated point.
+    assert!(
+        coplanar * 10 < cases.len(),
+        "{coplanar} of {} coplanar",
+        cases.len()
+    );
+}
+
+#[test]
+fn repeated_points_repeat_a_point() {
+    for p in sample(repeated4(), 2000) {
+        let repeats = (0..4).any(|i| (i + 1..4).any(|j| p[i] == p[j]));
+        assert!(repeats, "{p:?}");
+    }
 }
