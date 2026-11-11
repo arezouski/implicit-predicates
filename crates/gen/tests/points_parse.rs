@@ -170,7 +170,11 @@ fn explicit_means_one_vector_returned_as_is() {
     assert!(!is_explicit("point A(a: F64x3) = a + a;"));
     assert!(!is_explicit("point A(a: F64x3) = -a;"));
     assert!(!is_explicit("point A(a: F64x3, t: f64) = a * t;"));
-    assert!(!is_explicit("point A(a: F64x3) = a where 0 <= 1;"));
+    // A `where` clause names an `f64` parameter, which the expression must
+    // use, so a type with one is never explicit.
+    assert!(!is_explicit(
+        "point A(a: F64x3, t: f64) = a * t where 0 <= t;"
+    ));
 }
 
 #[test]
@@ -340,6 +344,20 @@ fn a_where_clause_must_be_well_formed() {
         "point A(p: F64x3, t: f64) = p * t where 1.5 <= t;",
         (1, 41),
         "float",
+    );
+}
+
+#[test]
+fn a_comparison_without_parameters_is_an_error_at_its_start() {
+    check(
+        "point A(p: F64x3, t: f64) = p * t where 0 <= t, 0 <= 1;",
+        (1, 49),
+        "names no parameter",
+    );
+    check(
+        "point A(a: F64x3) = a where 1 + 2 <= 3;",
+        (1, 29),
+        "names no parameter",
     );
 }
 

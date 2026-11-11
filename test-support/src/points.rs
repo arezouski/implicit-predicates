@@ -4,6 +4,8 @@
 //! The exact relationships (coplanar, repeated) are built on a grid of small
 //! integers times a power of two, where every operation used to build them
 //! is exact in `f64`.
+//!
+//! [`lnc_params`] gives the parents and the parameter of a point on a line.
 
 use proptest::prelude::*;
 
@@ -148,4 +150,101 @@ pub fn extreme4(edges: &[f64]) -> impl Strategy<Value = Points4> + use<> {
     .boxed();
     let point = [value.clone(), value.clone(), value];
     [point.clone(), point.clone(), point.clone(), point]
+}
+
+/// The parents `p`, `q` and the parameter `t` of a point on the line
+/// through them, `q + t (p - q)`.
+pub type LncParams = (Point3, Point3, f64);
+
+/// Parents and parameters of points on a line, mixing with equal weights:
+///
+/// - generic parents in `[-1, 1)^3` and `t` in `[0, 1]`;
+/// - parents that share one to three coordinates;
+/// - `t` at the ends of `[0, 1]` or just inside them, and tiny;
+/// - `t` outside `[0, 1]`;
+/// - coordinates of every magnitude, as in [`extreme4`], with `t` of every
+///   magnitude too;
+/// - tiny parents and parameters whose products underflow, with one parent
+///   often zero, so that the only error is that of the product;
+/// - parents a few units in the last place apart.
+///
+/// Every value is finite.
+pub fn lnc_params() -> impl Strategy<Value = LncParams> {
+    let unit = || 0.0..=1.0f64;
+    let generic = (point3(), point3(), unit());
+    let shared = (
+        point3(),
+        point3(),
+        unit(),
+        [any::<bool>(), any::<bool>(), any::<bool>()],
+    )
+        .prop_map(|(p, mut q, t, shared)| {
+            for k in 0..3 {
+                if shared[k] {
+                    q[k] = p[k];
+                }
+            }
+            (p, q, t)
+        });
+    let ends = prop::sample::select(vec![
+        0.0,
+        -0.0,
+        1.0,
+        1.0f64.next_down(),
+        f64::MIN_POSITIVE,
+        f64::from_bits(1),
+        2f64.powi(-600),
+        2f64.powi(-53),
+    ]);
+    let outside = prop::sample::select(vec![
+        -1.5,
+        2.0,
+        1e10,
+        -1e-5,
+        1.0f64.next_up(),
+        -f64::from_bits(1),
+        -1.0,
+        3.5e300,
+    ]);
+    let value = || {
+        prop_oneof![
+            any_finite(),
+            leaf(-1074, -1023, 52),
+            leaf(-1010, -990, 53),
+            leaf(990, 1010, 53),
+            prop_oneof![
+                Just(0.0),
+                Just(-0.0),
+                Just(f64::MAX),
+                Just(f64::MIN_POSITIVE)
+            ],
+        ]
+        .boxed()
+    };
+    let extreme_point = || [value(), value(), value()];
+    let extreme = (
+        extreme_point(),
+        extreme_point(),
+        prop_oneof![value(), unit(), leaf(-1074, 0, 53)],
+    );
+    let tiny = || prop_oneof![leaf(-1074, -500, 53), Just(0.0), Just(-0.0)];
+    let underflow = (
+        [tiny(), tiny(), tiny()],
+        [tiny(), tiny(), tiny()],
+        leaf(-700, -1, 53),
+    );
+    let ulps = || -3i32..=3;
+    let close = (point3(), [ulps(), ulps(), ulps()], unit()).prop_map(|(p, steps, t)| {
+        let q = std::array::from_fn(|k| step_ulps(p[k], steps[k]));
+        (p, q, t)
+    });
+    prop_oneof![
+        generic,
+        shared,
+        (point3(), point3(), ends),
+        (point3(), point3(), outside),
+        extreme,
+        underflow,
+        close,
+    ]
 }

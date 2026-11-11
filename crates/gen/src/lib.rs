@@ -41,6 +41,10 @@
 //! [`PointGraph`] of `f64` operations in which equal subexpressions share a
 //! node, and the clause as a list of [`Constraint`]s. The limit on brackets
 //! and the guarantee of never panicking are those of [`parse`].
+//! [`generate_points`] emits the module of the point types of a file, with
+//! their constructors, their error bounds and their exact coordinates;
+//! [`error_bound`] derives the rule of the error bound of each coordinate,
+//! and documents why it is an upper bound.
 //!
 //! The only limit of [`parse`] is the nesting of brackets, at most 32 deep,
 //! which keeps the stack small: sums, products and runs of unary minus are
@@ -102,12 +106,13 @@ pub use bound::{
     AxisBound, AxisConstants, FilterBound, FilterConstants, FilterForm, filter_bound, filter_form,
 };
 pub use differences::{DiffGraph, DiffNode, difference_graph};
-pub use emit::{Generated, generate};
+pub use emit::{Generated, generate, generate_points};
 pub use error::Error;
 pub use graph::{Graph, Node, NodeId};
 pub use parse::{Position, Predicate, parse};
 pub use point::{
-    Constraint, LinearSum, ParamType, PointGraph, PointNode, PointParam, PointType, parse_points,
+    Constraint, ErrorBound, LinearSum, MAX_ROUNDS, ParamType, PointGraph, PointNode, PointParam,
+    PointType, error_bound, parse_points,
 };
 pub use polynomial::{Polynomial, canonical, canonical_of_differences, check_same_polynomial};
 pub use range::{ExactPlan, ExactRange, Leaves, exact_plan_differences, exact_plan_raw};

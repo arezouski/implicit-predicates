@@ -285,6 +285,13 @@ fn parse_constraints(cur: &mut Cursor, scope: &Scope) -> Res<Vec<Constraint>> {
         cur.bump();
         cur.bump();
         let rhs = parse_sum(cur, scope)?;
+        if lhs.params.is_empty() && rhs.params.is_empty() {
+            return Err(diag(
+                start,
+                "this comparison names no parameter, so it constrains nothing: \
+                 a `where` clause compares `f64` parameters",
+            ));
+        }
         constraints.push(Constraint {
             lhs,
             rhs,

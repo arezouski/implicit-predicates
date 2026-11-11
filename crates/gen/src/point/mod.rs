@@ -25,11 +25,14 @@
 //! between two [`LinearSum`]s of `f64` parameters, named by index, and an
 //! integer constant: the form `a + b + 3`, ready to be emitted as code.
 
+mod error_bound;
 mod expr;
 mod parse;
 
 use crate::parse::Position;
 
+pub use error_bound::{ErrorBound, MAX_ROUNDS, error_bound};
+pub(crate) use error_bound::{ErrorProgram, Term};
 pub use parse::parse_points;
 pub(crate) use parse::read_declaration;
 

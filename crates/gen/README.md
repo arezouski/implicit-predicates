@@ -5,7 +5,8 @@ Code generator for
 the definition of a predicate into specialized Rust code.
 
 > **Status: early development.** The generator handles predicates over
-> explicit points and reads declarations of point types; its API may change.
+> explicit points and emits the point types declared next to them; its API
+> may change.
 
 ## Definitions
 
@@ -66,10 +67,39 @@ points cannot share a name.
 
 `parse_points` reads the declarations of a file; `parse` reads its
 predicates and checks the declarations without returning them (a file of
-only points gives no predicates, not an error). Each coordinate of a point is held in one graph
-of `f64` operations in which equal subexpressions share a node, and the
-clause as a list of comparisons, so that they can be evaluated and emitted
-operation by operation.
+only points gives no predicates, not an error). Each coordinate of a point
+is held in one graph of `f64` operations in which equal subexpressions share
+a node, and the clause as a list of comparisons, so that they can be
+evaluated and emitted operation by operation.
+
+`generate_points` emits the module `points` of the point types of a file:
+
+- `PointError`, the error of the constructors;
+- for each type, a struct with `new`, which rejects inputs that are not
+  finite and parameters outside the `where` clause, `new_unchecked`, which
+  accepts anything, and an implementation of the `Point` trait of
+  `implicit-predicates-core`. An explicit type (one `F64x3` returned as is)
+  wraps `[f64; 3]`. Every other type also has one accessor per parameter and
+  stores the coordinates computed in `f64` with a bound on the error of
+  each one; `Point::exact` writes its exact coordinates as expansions;
+- `AnyPoint`, an enum with one variant per type, which implements `Point`
+  too.
+
+The error bound is computed operation by operation, by a rule that
+`error_bound` documents together with the proof that the result is an upper
+bound: a sum adds the errors of its operands and `2^-53` times its value, a
+product propagates the errors of its factors and adds `2^-53` times its
+value plus `2^-1074`, each rounding term only when no operand is zero, and
+a slack factor derived from the number of roundings of the computation
+covers the rounding of the computation itself. A coordinate that is exact,
+such as one shared by the parents of a point on a line, gets an error of
+exactly zero.
+
+For now a `where` comparison must reduce, once the parameters on both sides
+cancel, to one parameter against an integer of magnitude at most `2^53`, so
+that it is checked exactly; a comparison that names no parameter is an
+error. The checks module of the point types holds `exact_<name>`, the exact
+coordinates of each type that is not explicit.
 
 ## What the generator checks
 
@@ -136,7 +166,8 @@ implicit-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
 
 reads every `.pred` file in `<pred-dir>` and writes `<name>.rs` for each
 predicate to the `--stages` directory, and the module of its checks to the
-`--checks` directory. The output is formatted with `rustfmt --edition 2024`,
+`--checks` directory; the point types, which only one file of the directory
+may declare, are written as `points.rs` to both. The output is formatted with `rustfmt --edition 2024`,
 which must be installed; the text can depend on the rustfmt version, and the
 files committed in this repository are produced with the stable toolchain's
 rustfmt. The header of each file gives the command that wrote it, with its

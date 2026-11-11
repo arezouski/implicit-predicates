@@ -21,7 +21,7 @@ use shape::{MAX_LENGTH, Shape};
 /// The exponent of the overflow limit of the arithmetic core: every
 /// component and scalar operand of its expansion functions has magnitude
 /// below `2^1020`.
-const OVERFLOW_EXPONENT: i64 = 1020;
+pub(crate) const OVERFLOW_EXPONENT: i64 = 1020;
 
 /// The magnitudes of leaves for which an exact stage is valid: every
 /// nonzero leaf `x` must satisfy `min <= |x| <= max`. Both are powers of two.

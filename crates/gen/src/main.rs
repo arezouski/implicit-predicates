@@ -1,6 +1,7 @@
 //! The command line tool: generates the stages and the checks of every
-//! predicate defined in a directory and writes them, formatted with rustfmt,
-//! or checks that the files already there are up to date.
+//! predicate defined in a directory, and the module of its point types and
+//! its checks, and writes them, formatted with rustfmt, or checks that the
+//! files already there are up to date.
 //!
 //! ```text
 //! implicit-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
@@ -19,7 +20,7 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
-use implicit_predicates_gen::generate;
+use implicit_predicates_gen::{Generated, generate, generate_points};
 
 const USAGE: &str =
     "usage: implicit-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]";
@@ -136,19 +137,18 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
         let source = fs::read_to_string(&path)
             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let label = label_dir.join(path.file_name().expect("a file"));
-        let generated =
-            generate(&source, &label.to_string_lossy(), &regenerate).map_err(|mut e| {
-                e.file = path.display().to_string();
-                e.to_string()
-            })?;
+        let in_file = |mut e: implicit_predicates_gen::Error| {
+            e.file = path.display().to_string();
+            e.to_string()
+        };
+        let label = label.to_string_lossy();
+        let mut generated = generate(&source, &label, &regenerate).map_err(in_file)?;
+        // The point types of a file are one module, `points`, so only one
+        // file may declare them; the check on names below reports a second.
+        generated.extend(generate_points(&source, &label, &regenerate).map_err(in_file)?);
         for g in generated {
             if let Some((_, other)) = names.iter().find(|(name, _)| *name == g.name) {
-                return Err(format!(
-                    "{}: the predicate `{}` is also defined in {}",
-                    path.display(),
-                    g.name,
-                    other.display()
-                ));
+                return Err(duplicate(&path, &g, other));
             }
             names.push((g.name.clone(), path.clone()));
             let file = format!("{}.rs", g.name);
@@ -167,6 +167,29 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
     }
     Ok(outputs)
 }
+
+/// The message for `g`, generated from `path`, whose module is also
+/// generated from `other`.
+fn duplicate(path: &Path, g: &Generated, other: &Path) -> String {
+    if g.name == POINTS {
+        format!(
+            "{}: point types are declared here and in {}, or a predicate is named `{POINTS}`; \
+             the point types of a directory are declared in one file",
+            path.display(),
+            other.display()
+        )
+    } else {
+        format!(
+            "{}: the predicate `{}` is also defined in {}",
+            path.display(),
+            g.name,
+            other.display()
+        )
+    }
+}
+
+/// The name of the module of the point types.
+const POINTS: &str = "points";
 
 /// The text of the header that tells how to regenerate the files: this
 /// command, with the arguments it was given except `--check`, to be run from
