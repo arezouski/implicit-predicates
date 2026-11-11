@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-11-11
+
+First release: early development, published so that the crates can be
+tried. The API is incomplete and will change.
+
 ### Added
 
 - `Sign`, the exact sign of a predicate: negative, zero or positive, ordered
