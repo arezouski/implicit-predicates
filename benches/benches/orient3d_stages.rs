@@ -15,9 +15,9 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use indirect_predicates::Sign;
-use indirect_predicates::stages::orient3d;
-use indirect_predicates_benches::predicates::{Orient3dInput, orient3d_sets};
+use implicit_predicates::Sign;
+use implicit_predicates::stages::orient3d;
+use implicit_predicates_benches::predicates::{Orient3dInput, orient3d_sets};
 
 /// A stage of `orient3d`, as a function of the four points.
 type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;

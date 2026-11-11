@@ -3,7 +3,7 @@
 //! determinant, the corner of the boxes that moves it furthest, `e` as a
 //! caller computes it, and the extremal coplanar configuration.
 
-use indirect_predicates_oracle::Dyadic;
+use implicit_predicates_oracle::Dyadic;
 
 use super::Points;
 

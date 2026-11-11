@@ -241,40 +241,40 @@ dependencies = [
 ]
 
 [[package]]
-name = "indirect-predicates-core"
+name = "implicit-predicates-core"
 version = "0.0.0"
 
 [[package]]
-name = "indirect-predicates-corpus"
+name = "implicit-predicates-corpus"
 version = "0.0.0"
 dependencies = [
- "indirect-predicates-oracle",
+ "implicit-predicates-oracle",
 ]
 
 [[package]]
-name = "indirect-predicates-ffi-ref"
+name = "implicit-predicates-ffi-ref"
 version = "0.0.0"
 dependencies = [
  "cc",
  "criterion",
- "indirect-predicates-corpus",
- "indirect-predicates-oracle",
- "indirect-predicates-test-support",
+ "implicit-predicates-corpus",
+ "implicit-predicates-oracle",
+ "implicit-predicates-test-support",
 ]
 
 [[package]]
-name = "indirect-predicates-oracle"
+name = "implicit-predicates-oracle"
 version = "0.0.0"
 dependencies = [
  "num-bigint",
 ]
 
 [[package]]
-name = "indirect-predicates-test-support"
+name = "implicit-predicates-test-support"
 version = "0.0.0"
 dependencies = [
- "indirect-predicates-core",
- "indirect-predicates-oracle",
+ "implicit-predicates-core",
+ "implicit-predicates-oracle",
  "proptest",
 ]
 

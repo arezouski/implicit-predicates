@@ -64,7 +64,7 @@ use output::Output;
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let mut out = [0.0; 1];
 /// assert_eq!(expansion::from_f64(2.5, &mut out), 1);
@@ -89,7 +89,7 @@ pub fn from_f64(a: f64, out: &mut [f64]) -> usize {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let mut out = [0.0; 2];
 /// let len = expansion::from_two_sum(1.0, 1e-20, &mut out);
@@ -107,7 +107,7 @@ pub fn from_two_sum(a: f64, b: f64, out: &mut [f64]) -> usize {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let mut out = [0.0; 2];
 /// let len = expansion::from_two_diff(1.0, 1e-20, &mut out);
@@ -127,7 +127,7 @@ pub fn from_two_diff(a: f64, b: f64, out: &mut [f64]) -> usize {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let a = 1.0 + f64::EPSILON;
 /// let mut out = [0.0; 2];
@@ -149,7 +149,7 @@ pub fn from_two_product(a: f64, b: f64, out: &mut [f64]) -> usize {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let mut out = [0.0; 3];
 /// let len = expansion::grow(&[1e-20, 1.0], 1e20, &mut out);
@@ -182,7 +182,7 @@ pub fn grow(e: &[f64], b: f64, out: &mut [f64]) -> usize {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let mut out = [0.0; 4];
 /// let len = expansion::sum(&[1e-20, 1.0], &[-1e-20, 2.0], &mut out);
@@ -203,7 +203,7 @@ pub fn sum(e: &[f64], f: &[f64], out: &mut [f64]) -> usize {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let mut out = [0.0; 4];
 /// let len = expansion::diff(&[1e-20, 1.0], &[1e-20, 2.0], &mut out);
@@ -225,7 +225,7 @@ pub fn diff(e: &[f64], f: &[f64], out: &mut [f64]) -> usize {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let mut out = [0.0; 4];
 /// let len = expansion::scale(&[0.25, 4.0], 3.0, &mut out);
@@ -258,7 +258,7 @@ pub fn scale(e: &[f64], b: f64, out: &mut [f64]) -> usize {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// let mut e = [1e-20, -1.0];
 /// expansion::negate(&mut e);
@@ -277,7 +277,7 @@ pub fn negate(e: &mut [f64]) {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::{Sign, expansion};
+/// use implicit_predicates_core::{Sign, expansion};
 ///
 /// assert_eq!(expansion::sign(&[1e-20, -1.0]), Sign::Negative);
 /// assert_eq!(expansion::sign(&[]), Sign::Zero);
@@ -294,7 +294,7 @@ pub fn sign(e: &[f64]) -> Sign {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::expansion;
+/// use implicit_predicates_core::expansion;
 ///
 /// assert_eq!(expansion::estimate(&[1e-20, 1.0]), 1.0);
 /// assert_eq!(expansion::estimate(&[]), 0.0);

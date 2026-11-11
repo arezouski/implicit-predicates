@@ -7,7 +7,7 @@
 //!
 //! Both modules have the same API. Points are built in C++ and owned by a
 //! `Points` value; predicates take the `PointId`s it returned. Signs are
-//! returned in the convention of `indirect_predicates_corpus::exact`,
+//! returned in the convention of `implicit_predicates_corpus::exact`,
 //! whatever the convention of the library.
 //!
 //! The libraries are LGPL licensed and are not part of this repository; see
@@ -18,7 +18,7 @@
 /// insphere signs into ours.
 macro_rules! reference_points {
     ($version:ty, $orient3d_factor:expr, $insphere_factor:expr) => {
-        use indirect_predicates_corpus::{Corpus, PointDef};
+        use implicit_predicates_corpus::{Corpus, PointDef};
 
         /// Factor from the library's orient3d sign to ours.
         const ORIENT3D_FACTOR: i8 = $orient3d_factor;

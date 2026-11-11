@@ -2,7 +2,7 @@
 //! reset, marks above the top, invalid expansions pushed, and operands
 //! outside the product domain.
 
-use indirect_predicates_core::Scratch;
+use implicit_predicates_core::Scratch;
 
 #[cfg(debug_assertions)]
 #[test]
@@ -90,7 +90,7 @@ fn scale_checks_the_domain_in_debug_builds() {
     let mut buf = [0.0; 8];
     let mut s = Scratch::borrowed(&mut buf);
     let a = s.push(&[1.0]).unwrap();
-    let _ = s.scale(a, indirect_predicates_core::eft::PRODUCT_OPERAND_MIN / 2.0);
+    let _ = s.scale(a, implicit_predicates_core::eft::PRODUCT_OPERAND_MIN / 2.0);
 }
 
 #[cfg(debug_assertions)]
@@ -102,7 +102,7 @@ fn product_checks_the_domain_in_debug_builds() {
     let a = s
         .push(&[
             1.0,
-            indirect_predicates_core::eft::PRODUCT_OPERAND_MAX * 2.0,
+            implicit_predicates_core::eft::PRODUCT_OPERAND_MAX * 2.0,
         ])
         .unwrap();
     let b = s.push(&[0.5, 3.0]).unwrap();

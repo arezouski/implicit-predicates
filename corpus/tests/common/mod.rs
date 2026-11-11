@@ -1,10 +1,10 @@
 //! Helpers shared by the integration tests.
 #![allow(dead_code)]
 
-use indirect_predicates_corpus::exact::{
+use implicit_predicates_corpus::exact::{
     REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR, coordinates, insphere, orient3d,
 };
-use indirect_predicates_corpus::{
+use implicit_predicates_corpus::{
     Call, Corpus, CounterKey, PointDef, Predicate, Sampling, Stage, Stratum,
 };
 use std::collections::BTreeMap;

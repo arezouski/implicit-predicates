@@ -4,7 +4,7 @@
 mod common;
 
 use common::{Five, exact_call_sign, exact_insphere, exact_orient3d, generated, sample_corpora};
-use indirect_predicates_ffi_ref::{current, legacy};
+use implicit_predicates_ffi_ref::{current, legacy};
 
 /// Mismatches of one module on every call of the sample corpora, as
 /// printable lines, and the number of calls compared.
@@ -21,10 +21,10 @@ macro_rules! sample_mismatches {
                     .map(|&i| ids[i as usize].unwrap())
                     .collect();
                 let got = match call.predicate {
-                    indirect_predicates_corpus::Predicate::Orient3d => {
+                    implicit_predicates_corpus::Predicate::Orient3d => {
                         points.orient3d(p[0], p[1], p[2], p[3])
                     }
-                    indirect_predicates_corpus::Predicate::InSphere => {
+                    implicit_predicates_corpus::Predicate::InSphere => {
                         points.insphere(p[0], p[1], p[2], p[3], p[4])
                     }
                 };

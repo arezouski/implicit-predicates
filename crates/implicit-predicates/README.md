@@ -1,4 +1,4 @@
-# indirect-predicates
+# implicit-predicates
 
 Exact geometric predicates in Rust for explicit points and for *implicit*
 points: points defined by an unevaluated construction, such as a point on an
@@ -11,7 +11,7 @@ edge or inside a triangle.
 ## Example
 
 ```rust
-use indirect_predicates::{Sign, orient3d};
+use implicit_predicates::{Sign, orient3d};
 
 let (a, b, c) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
 // a, b and c appear counter-clockwise from (1, 1, 1), above the plane.

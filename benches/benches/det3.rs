@@ -4,11 +4,11 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use indirect_predicates_benches::{
+use implicit_predicates_benches::{
     DET3_CAPACITY, MATRICES_SEED, det3_sign, near_singular_matrices, random_matrices,
     singular_matrices,
 };
-use indirect_predicates_core::{Scratch, Sign};
+use implicit_predicates_core::{Scratch, Sign};
 
 fn det3(c: &mut Criterion) {
     let mut buf = vec![0.0; DET3_CAPACITY];

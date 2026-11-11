@@ -1,7 +1,7 @@
 //! The requirements of the expansion primitives that debug builds check:
 //! the product domain, finite values and the output capacity.
 
-use indirect_predicates_core::expansion;
+use implicit_predicates_core::expansion;
 
 #[cfg(debug_assertions)]
 #[test]
@@ -9,7 +9,7 @@ use indirect_predicates_core::expansion;
 fn product_constructor_checks_the_domain_in_debug_builds() {
     let mut out = [0.0; 2];
     let _ = expansion::from_two_product(
-        indirect_predicates_core::eft::PRODUCT_OPERAND_MAX * 2.0,
+        implicit_predicates_core::eft::PRODUCT_OPERAND_MAX * 2.0,
         1.0,
         &mut out,
     );
@@ -22,7 +22,7 @@ fn scale_checks_its_components_in_debug_builds() {
     let mut out = [0.0; 4];
     let _ = expansion::scale(
         &[
-            indirect_predicates_core::eft::PRODUCT_OPERAND_MIN / 2.0,
+            implicit_predicates_core::eft::PRODUCT_OPERAND_MIN / 2.0,
             1.0,
         ],
         3.0,
@@ -37,7 +37,7 @@ fn scale_checks_its_factor_in_debug_builds() {
     let mut out = [0.0; 4];
     let _ = expansion::scale(
         &[0.25, 1.0],
-        indirect_predicates_core::eft::PRODUCT_OPERAND_MAX * 2.0,
+        implicit_predicates_core::eft::PRODUCT_OPERAND_MAX * 2.0,
         &mut out,
     );
 }

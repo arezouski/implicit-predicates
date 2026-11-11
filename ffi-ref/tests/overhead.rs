@@ -1,6 +1,6 @@
 //! The no-op call that measures the cost of the C interface itself.
 
-use indirect_predicates_ffi_ref::{current, legacy};
+use implicit_predicates_ffi_ref::{current, legacy};
 
 /// The no-op answers 0 on any four points and checks its indices like a
 /// predicate call.

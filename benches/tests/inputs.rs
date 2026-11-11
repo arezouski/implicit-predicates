@@ -4,15 +4,15 @@
 //!
 //! The checks use the same seeds and lengths as the benchmarks.
 
-use indirect_predicates_benches::{
+use implicit_predicates_benches::{
     DET3_CAPACITY, FIRST_OPERAND_SEED, LENGTHS, MATRICES_SEED, Matrix3, PAIR_COUNT, PAIRS_SEED,
     PRODUCT_LENGTHS, SCALE_SEED, SECOND_OPERAND_SEED, det3_sign, near_singular_matrices,
     product_capacity, product_operands, product_pairs, random_matrices, scale_factor,
     singular_matrices, valid_expansion,
 };
-use indirect_predicates_core::{Scratch, Sign, eft, expansion};
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::assert_valid_expansion;
+use implicit_predicates_core::{Scratch, Sign, eft, expansion};
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::assert_valid_expansion;
 
 #[test]
 fn inputs_are_valid_expansions_of_the_stated_length() {

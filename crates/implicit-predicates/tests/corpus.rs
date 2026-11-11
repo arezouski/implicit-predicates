@@ -9,7 +9,7 @@
 //!
 //! The versioned samples are checked by default. The generated corpus is
 //! large and not versioned; its tests are ignored, and are meant to be run
-//! in release mode with `cargo test -p indirect-predicates --release --
+//! in release mode with `cargo test -p implicit-predicates --release --
 //! --ignored --nocapture`, which also shows the counts they print.
 
 mod common;
@@ -19,11 +19,11 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use common::{CHAIN, Points, all_in_range, first_deciding};
-use indirect_predicates::Sign;
-use indirect_predicates::stages::orient3d as stages;
-use indirect_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
-use indirect_predicates_corpus::weighted::weights;
-use indirect_predicates_corpus::{Call, Corpus, PointDef, Predicate};
+use implicit_predicates::Sign;
+use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
+use implicit_predicates_corpus::weighted::weights;
+use implicit_predicates_corpus::{Call, Corpus, PointDef, Predicate};
 
 /// The directory of the versioned sample corpora.
 fn samples_dir() -> PathBuf {

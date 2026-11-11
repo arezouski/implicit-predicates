@@ -1,6 +1,6 @@
 //! Tests for reading predicate definitions.
 
-use indirect_predicates_gen::{Error, Graph, Node, parse};
+use implicit_predicates_gen::{Error, Graph, Node, parse};
 
 const ORIENT3D: &str = "\
 fn orient3d(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {

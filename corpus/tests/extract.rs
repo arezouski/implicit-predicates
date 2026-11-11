@@ -3,9 +3,9 @@
 mod common;
 
 use common::{UNSTORED, sampled};
-use indirect_predicates_corpus::exact::coordinates;
-use indirect_predicates_corpus::verify::verify;
-use indirect_predicates_corpus::{Corpus, PointDef, Predicate, Stratum};
+use implicit_predicates_corpus::exact::coordinates;
+use implicit_predicates_corpus::verify::verify;
+use implicit_predicates_corpus::{Corpus, PointDef, Predicate, Stratum};
 
 fn stratum(predicate: Predicate, implicit: u8, zero: bool) -> Stratum {
     Stratum {
@@ -16,7 +16,7 @@ fn stratum(predicate: Predicate, implicit: u8, zero: bool) -> Stratum {
 }
 
 /// The exact coordinates of the points of every call.
-fn call_coordinates(c: &Corpus) -> Vec<Vec<[indirect_predicates_oracle::Dyadic; 3]>> {
+fn call_coordinates(c: &Corpus) -> Vec<Vec<[implicit_predicates_oracle::Dyadic; 3]>> {
     c.calls
         .iter()
         .map(|call| {

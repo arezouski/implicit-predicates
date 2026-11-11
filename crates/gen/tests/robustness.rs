@@ -4,7 +4,7 @@
 
 use std::time::{Duration, Instant};
 
-use indirect_predicates_gen::{Error, canonical, difference_graph, filter_bound, generate, parse};
+use implicit_predicates_gen::{Error, canonical, difference_graph, filter_bound, generate, parse};
 
 /// How the tests say to regenerate the code.
 const REGENERATE: &str = "run the tests.";

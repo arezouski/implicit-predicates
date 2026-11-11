@@ -1,6 +1,6 @@
 //! Tests for the ranges and buffer sizes of the exact stages.
 
-use indirect_predicates_gen::{
+use implicit_predicates_gen::{
     Error, ExactPlan, Leaves, canonical, difference_graph, exact_plan_differences, exact_plan_raw,
     parse,
 };

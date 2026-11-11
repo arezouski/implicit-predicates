@@ -1,9 +1,9 @@
 //! The scratch arena: its operations agree with the slice primitives, and
 //! its accounting of used space, marks and exhaustion is exact.
 
-use indirect_predicates_core::{Scratch, ScratchExhausted, Sign, Span, expansion};
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{
+use implicit_predicates_core::{Scratch, ScratchExhausted, Sign, Span, expansion};
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::{
     Applied, ArenaOp, arena_op, assert_valid_expansion, config, expansion, product_operand,
     product_working_space, value,
 };

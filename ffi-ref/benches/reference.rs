@@ -6,7 +6,7 @@
 //!   by number of implicit points (`0`, `1`, `2`, `3+`), on points built
 //!   beforehand. Each bucket holds as many calls as the corpora store for
 //!   it, drawn from them by deterministic weighted resampling
-//!   (`indirect_predicates_corpus::weighted`, seed [`SEED`]): each stored
+//!   (`implicit_predicates_corpus::weighted`, seed [`SEED`]): each stored
 //!   call weighs `total / kept` of its stratum, so a bucket reflects the mix
 //!   of calls of the recording runs, not the stratified sample of the files;
 //! - `<version>/overhead`: a call that does everything an orient3d call
@@ -27,9 +27,9 @@ use std::hint::black_box;
 use std::path::{Path, PathBuf};
 
 use criterion::{BenchmarkGroup, Criterion, SamplingMode, Throughput, measurement::WallTime};
-use indirect_predicates_corpus::weighted::weighted_sample;
-use indirect_predicates_corpus::{Call, Corpus, PointDef, Predicate};
-use indirect_predicates_ffi_ref::{current, legacy};
+use implicit_predicates_corpus::weighted::weighted_sample;
+use implicit_predicates_corpus::{Call, Corpus, PointDef, Predicate};
+use implicit_predicates_ffi_ref::{current, legacy};
 
 /// The environment variable naming a directory of corpus files to use
 /// instead of the versioned samples.

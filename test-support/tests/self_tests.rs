@@ -2,9 +2,9 @@
 //! must reject each kind of invalid input, and the generators must produce
 //! the kinds of inputs they promise.
 
-use indirect_predicates_core::{Scratch, eft};
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{
+use implicit_predicates_core::{Scratch, eft};
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::{
     ArenaOp, Points4, arena_op, assert_valid_expansion, bit_pattern_expansion, bit_pattern_pair,
     coplanar4, correlated_pair, expansion, has_adjacent_components, near_coplanar4, near_equal,
     product_domain_bits, product_operand, repeated4, sample, value,

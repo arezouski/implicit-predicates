@@ -283,7 +283,7 @@ touch the network. The end-to-end tests of the recording mesher are in Rust
 and need the built executables and the downloaded example models:
 
 ```sh
-cargo test -p indirect-predicates-corpus -- --ignored recorded
+cargo test -p implicit-predicates-corpus -- --ignored recorded
 ```
 
 For every example model they check that the original and the recording

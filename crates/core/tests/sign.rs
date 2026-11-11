@@ -2,7 +2,7 @@
 
 use core::cmp::Ordering;
 
-use indirect_predicates_core::Sign::{self, *};
+use implicit_predicates_core::Sign::{self, *};
 
 #[test]
 fn of_classifies_including_negative_zero() {

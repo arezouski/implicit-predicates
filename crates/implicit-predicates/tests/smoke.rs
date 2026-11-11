@@ -1,7 +1,7 @@
 //! Basic cases of `orient3d` whose sign is known by hand.
 
-use indirect_predicates::stages::orient3d as stages;
-use indirect_predicates::{Sign, orient3d};
+use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates::{Sign, orient3d};
 
 type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;
 

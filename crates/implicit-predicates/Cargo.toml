@@ -1,5 +1,5 @@
 [package]
-name = "indirect-predicates"
+name = "implicit-predicates"
 description = "Exact geometric predicates over explicit and implicit points"
 readme = "README.md"
 version.workspace = true
@@ -17,13 +17,13 @@ default = ["std"]
 std = []
 
 [dependencies]
-indirect-predicates-core.workspace = true
+implicit-predicates-core.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-indirect-predicates-corpus = { path = "../../corpus" }
-indirect-predicates-oracle = { path = "../oracle" }
-indirect-predicates-test-support = { path = "../../test-support" }
+implicit-predicates-corpus = { path = "../../corpus" }
+implicit-predicates-oracle = { path = "../oracle" }
+implicit-predicates-test-support = { path = "../../test-support" }
 proptest = "1"

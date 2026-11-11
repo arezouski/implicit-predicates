@@ -12,7 +12,7 @@ use core::ops::{Mul, Neg};
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::Sign;
+/// use implicit_predicates_core::Sign;
 ///
 /// assert_eq!(Sign::Negative as i8, -1);
 /// assert_eq!(Sign::Zero as i8, 0);
@@ -39,7 +39,7 @@ impl Sign {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Sign;
+    /// use implicit_predicates_core::Sign;
     ///
     /// assert_eq!(Sign::of(2.5), Sign::Positive);
     /// assert_eq!(Sign::of(-2.5), Sign::Negative);
@@ -62,7 +62,7 @@ impl Sign {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Sign;
+    /// use implicit_predicates_core::Sign;
     ///
     /// assert!(Sign::Zero.is_zero());
     /// assert!(!Sign::Positive.is_zero());
@@ -77,7 +77,7 @@ impl Sign {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Sign;
+    /// use implicit_predicates_core::Sign;
     ///
     /// assert!(Sign::Positive.is_positive());
     /// assert!(!Sign::Zero.is_positive());
@@ -92,7 +92,7 @@ impl Sign {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Sign;
+    /// use implicit_predicates_core::Sign;
     ///
     /// assert!(Sign::Negative.is_negative());
     /// assert!(!Sign::Zero.is_negative());
@@ -111,7 +111,7 @@ impl Neg for Sign {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Sign;
+    /// use implicit_predicates_core::Sign;
     ///
     /// assert_eq!(-Sign::Positive, Sign::Negative);
     /// assert_eq!(-Sign::Zero, Sign::Zero);
@@ -134,7 +134,7 @@ impl Mul for Sign {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Sign;
+    /// use implicit_predicates_core::Sign;
     ///
     /// assert_eq!(Sign::Negative * Sign::Negative, Sign::Positive);
     /// assert_eq!(Sign::Negative * Sign::Positive, Sign::Negative);
@@ -155,7 +155,7 @@ impl From<Sign> for i8 {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Sign;
+    /// use implicit_predicates_core::Sign;
     ///
     /// assert_eq!(i8::from(Sign::Negative), -1);
     /// assert_eq!(i8::from(Sign::Positive), 1);
@@ -172,7 +172,7 @@ impl From<Ordering> for Sign {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Sign;
+    /// use implicit_predicates_core::Sign;
     ///
     /// assert_eq!(Sign::from(3.cmp(&5)), Sign::Negative);
     /// assert_eq!(Sign::from(5.cmp(&5)), Sign::Zero);

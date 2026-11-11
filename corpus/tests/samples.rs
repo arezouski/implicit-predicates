@@ -1,7 +1,7 @@
 //! Tests of the recorded samples versioned in `corpus/samples/`.
 
-use indirect_predicates_corpus::verify::verify;
-use indirect_predicates_corpus::{Corpus, PointDef, Predicate};
+use implicit_predicates_corpus::verify::verify;
+use implicit_predicates_corpus::{Corpus, PointDef, Predicate};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};

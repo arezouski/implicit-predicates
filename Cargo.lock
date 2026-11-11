@@ -247,58 +247,58 @@ dependencies = [
 ]
 
 [[package]]
-name = "indirect-predicates"
+name = "implicit-predicates"
 version = "0.0.0"
 dependencies = [
- "indirect-predicates-core",
- "indirect-predicates-corpus",
- "indirect-predicates-oracle",
- "indirect-predicates-test-support",
+ "implicit-predicates-core",
+ "implicit-predicates-corpus",
+ "implicit-predicates-oracle",
+ "implicit-predicates-test-support",
  "proptest",
 ]
 
 [[package]]
-name = "indirect-predicates-benches"
+name = "implicit-predicates-benches"
 version = "0.0.0"
 dependencies = [
  "criterion",
  "geometry-predicates",
- "indirect-predicates",
- "indirect-predicates-core",
- "indirect-predicates-corpus",
- "indirect-predicates-oracle",
- "indirect-predicates-test-support",
+ "implicit-predicates",
+ "implicit-predicates-core",
+ "implicit-predicates-corpus",
+ "implicit-predicates-oracle",
+ "implicit-predicates-test-support",
  "robust",
 ]
 
 [[package]]
-name = "indirect-predicates-core"
+name = "implicit-predicates-core"
 version = "0.0.0"
 dependencies = [
- "indirect-predicates-oracle",
- "indirect-predicates-test-support",
+ "implicit-predicates-oracle",
+ "implicit-predicates-test-support",
  "proptest",
 ]
 
 [[package]]
-name = "indirect-predicates-corpus"
+name = "implicit-predicates-corpus"
 version = "0.0.0"
 dependencies = [
- "indirect-predicates-oracle",
+ "implicit-predicates-oracle",
 ]
 
 [[package]]
-name = "indirect-predicates-gen"
+name = "implicit-predicates-gen"
 version = "0.0.0"
 dependencies = [
- "indirect-predicates-core",
+ "implicit-predicates-core",
  "num-bigint",
  "proc-macro2",
  "quote",
 ]
 
 [[package]]
-name = "indirect-predicates-oracle"
+name = "implicit-predicates-oracle"
 version = "0.0.0"
 dependencies = [
  "num-bigint",
@@ -306,11 +306,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "indirect-predicates-test-support"
+name = "implicit-predicates-test-support"
 version = "0.0.0"
 dependencies = [
- "indirect-predicates-core",
- "indirect-predicates-oracle",
+ "implicit-predicates-core",
+ "implicit-predicates-oracle",
  "proptest",
 ]
 

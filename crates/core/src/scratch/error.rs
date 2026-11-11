@@ -8,7 +8,7 @@ use core::fmt;
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::{Scratch, ScratchExhausted};
+/// use implicit_predicates_core::{Scratch, ScratchExhausted};
 ///
 /// let mut buf = [0.0; 1];
 /// let mut scratch = Scratch::borrowed(&mut buf);

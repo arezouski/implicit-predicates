@@ -3,11 +3,11 @@
 //! They need the executables built by `python3 corpus/tools/corpus.py build`
 //! and the example models downloaded by `fetch-reference`, so they are
 //! ignored by default. Run them with
-//! `cargo test -p indirect-predicates-corpus -- --ignored recorded`.
+//! `cargo test -p implicit-predicates-corpus -- --ignored recorded`.
 
-use indirect_predicates_corpus::exact::{REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR};
-use indirect_predicates_corpus::verify::verify_with;
-use indirect_predicates_corpus::{Corpus, Predicate};
+use implicit_predicates_corpus::exact::{REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR};
+use implicit_predicates_corpus::verify::verify_with;
+use implicit_predicates_corpus::{Corpus, Predicate};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -3,8 +3,8 @@
 mod common;
 
 use common::corpus_from;
-use indirect_predicates_corpus::stats::Stats;
-use indirect_predicates_corpus::{Corpus, CounterKey, Predicate, Sampling, Stage, Stratum};
+use implicit_predicates_corpus::stats::Stats;
+use implicit_predicates_corpus::{Corpus, CounterKey, Predicate, Sampling, Stage, Stratum};
 
 fn key(implicit: u8, sign: i8, stage: Stage) -> CounterKey {
     CounterKey {

@@ -1,9 +1,9 @@
 //! Exactness and validity of the expansion primitives, checked against the
 //! oracle.
 
-use indirect_predicates_core::{Sign, eft, expansion};
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{
+use implicit_predicates_core::{Sign, eft, expansion};
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::{
     any_finite, assert_valid_expansion, bit_pattern_expansion, bit_pattern_pair,
     cancellation_that_rounds, config, correlated_pair, expansion, expansion_with, leaf, near_equal,
     product_domain_bits, product_operand, value,

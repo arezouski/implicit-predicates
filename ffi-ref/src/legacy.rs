@@ -2,9 +2,9 @@
 //! corpus files were recorded with.
 //!
 //! It returns the opposite of our sign for both orient3d and insphere: the
-//! factors recorded in `indirect_predicates_corpus::exact`.
+//! factors recorded in `implicit_predicates_corpus::exact`.
 
-use indirect_predicates_corpus::exact::{REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR};
+use implicit_predicates_corpus::exact::{REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR};
 
 reference_points!(
     crate::sys::Legacy,

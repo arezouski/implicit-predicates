@@ -7,7 +7,7 @@ mod readback;
 
 use std::collections::BTreeMap;
 
-use indirect_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
+use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 
 use super::edges::bound_edge_cases;
 use super::filter::{bound_operations, bound_rounding_factors, bound_statements, write_filter};

@@ -1,6 +1,6 @@
 [package]
-name = "indirect-predicates-corpus"
-description = "Binary file format for recorded geometric predicate calls, used by tests and benchmarks of the indirect-predicates workspace"
+name = "implicit-predicates-corpus"
+description = "Binary file format for recorded geometric predicate calls, used by tests and benchmarks of the implicit-predicates workspace"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-indirect-predicates-oracle = { path = "../crates/oracle" }
+implicit-predicates-oracle = { path = "../crates/oracle" }
 
 [lints]
 workspace = true

@@ -1,6 +1,6 @@
 //! Random sequences of operations on a `Scratch` arena.
 
-use indirect_predicates_core::{Scratch, ScratchExhausted, Span, eft};
+use implicit_predicates_core::{Scratch, ScratchExhausted, Span, eft};
 use proptest::prelude::*;
 
 use crate::{bit_pattern_expansion, expansion_with, leaf};

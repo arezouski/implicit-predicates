@@ -1,4 +1,4 @@
-//! Shared test infrastructure for the `indirect-predicates` workspace: the
+//! Shared test infrastructure for the `implicit-predicates` workspace: the
 //! proptest configuration, input generators (values, expansions and sets of
 //! points), structural checks of expansions, and exact values from the
 //! oracle.
@@ -9,9 +9,9 @@
 //! The structural check ([`assert_valid_expansion`]) and the bit-pattern
 //! generators ([`bit_pattern_expansion`], [`bit_pattern_pair`]) read and
 //! write bit patterns directly and never call the arithmetic of
-//! `indirect-predicates-core`, since they are what that arithmetic is judged
+//! `implicit-predicates-core`, since they are what that arithmetic is judged
 //! against. The other expansion generators are built with
-//! `indirect-predicates-core` and check every intermediate result.
+//! `implicit-predicates-core` and check every intermediate result.
 
 mod arena;
 mod bit_patterns;
@@ -33,7 +33,7 @@ pub use values::{
     product_domain_bits, product_operand,
 };
 
-use indirect_predicates_oracle::Dyadic;
+use implicit_predicates_oracle::Dyadic;
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::{Config as ProptestConfig, TestRunner};
 

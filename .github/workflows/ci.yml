@@ -33,10 +33,10 @@ jobs:
         with:
           components: rustfmt
       - run: >-
-          cargo run -p indirect-predicates-gen --
-          crates/indirect-predicates/predicates
-          --stages crates/indirect-predicates/src/generated
-          --checks crates/indirect-predicates/tests/generated
+          cargo run -p implicit-predicates-gen --
+          crates/implicit-predicates/predicates
+          --stages crates/implicit-predicates/src/generated
+          --checks crates/implicit-predicates/tests/generated
           --check
 
   clippy:
@@ -60,7 +60,7 @@ jobs:
       - run: cargo test --workspace
       - run: cargo test --workspace --all-features
       - run: cargo test --workspace --all-features --release
-      - run: cargo bench -p indirect-predicates-benches --no-run
+      - run: cargo bench -p implicit-predicates-benches --no-run
 
   test-fma:
     # The x86_64 fused multiply-add path is compiled only with the `fma`
@@ -109,10 +109,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: thumbv7em-none-eabihf, wasm32-unknown-unknown
-      - run: cargo build -p indirect-predicates-core --target thumbv7em-none-eabihf
-      - run: cargo build -p indirect-predicates --no-default-features --target thumbv7em-none-eabihf
-      - run: cargo build -p indirect-predicates --target wasm32-unknown-unknown
-      - run: cargo build -p indirect-predicates-core --features alloc --target wasm32-unknown-unknown
+      - run: cargo build -p implicit-predicates-core --target thumbv7em-none-eabihf
+      - run: cargo build -p implicit-predicates --no-default-features --target thumbv7em-none-eabihf
+      - run: cargo build -p implicit-predicates --target wasm32-unknown-unknown
+      - run: cargo build -p implicit-predicates-core --features alloc --target wasm32-unknown-unknown
 
   reference:
     # The bindings to the third-party reference libraries, outside the

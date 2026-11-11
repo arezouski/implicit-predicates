@@ -5,10 +5,10 @@ mod common;
 
 use common::generated::exact;
 use common::{Points, STAGES, all_finite, all_in_range, edges, first_deciding, orient3d, refs};
-use indirect_predicates::Sign;
-use indirect_predicates::stages::orient3d as stages;
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{
+use implicit_predicates::Sign;
+use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::{
     config, coplanar4, extreme4, grid4, near_coplanar4, random4, repeated4, signed_zeros4,
 };
 use proptest::prelude::*;
@@ -166,7 +166,7 @@ proptest! {
     fn the_generated_evaluator_matches_the_handwritten_one(families in families()) {
         for (family, p) in families {
             let [a, b, c, d] = p.map(|point| point.map(Dyadic::from_f64));
-            let handwritten = match indirect_predicates_corpus::exact::orient3d(&a, &b, &c, &d) {
+            let handwritten = match implicit_predicates_corpus::exact::orient3d(&a, &b, &c, &d) {
                 -1 => Sign::Negative,
                 0 => Sign::Zero,
                 1 => Sign::Positive,

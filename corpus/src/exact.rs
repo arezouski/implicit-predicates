@@ -4,7 +4,7 @@
 //! evaluated with no approximation at all.
 
 use crate::PointDef;
-use indirect_predicates_oracle::Dyadic;
+use implicit_predicates_oracle::Dyadic;
 
 /// The recorded orient3d sign equals this factor times the exact sign
 /// computed by [`orient3d`]: the reference mesher uses the opposite

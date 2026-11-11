@@ -1,21 +1,21 @@
 //! Checks that the predicate benchmark inputs are what the benchmarks claim,
-//! and that the baseline libraries and `indirect-predicates` agree with the
+//! and that the baseline libraries and `implicit-predicates` agree with the
 //! exact signs on them.
 
-use indirect_predicates_benches::predicates::{
+use implicit_predicates_benches::predicates::{
     InSphereInput, InputSet, Orient3dInput, SET_SIZE, geometry_insphere_sign,
-    geometry_orient3d_sign, indirect_predicates_orient3d_sign, insphere_sets, naive_insphere,
+    geometry_orient3d_sign, implicit_predicates_orient3d_sign, insphere_sets, naive_insphere,
     naive_orient3d, orient3d_sets, robust_insphere_sign, robust_orient3d_sign,
 };
-use indirect_predicates_corpus::exact;
+use implicit_predicates_corpus::exact;
 
 fn exact_orient3d(p: &Orient3dInput) -> i8 {
-    let [a, b, c, d] = p.map(|q| q.map(indirect_predicates_oracle::Dyadic::from_f64));
+    let [a, b, c, d] = p.map(|q| q.map(implicit_predicates_oracle::Dyadic::from_f64));
     exact::orient3d(&a, &b, &c, &d)
 }
 
 fn exact_insphere(p: &InSphereInput) -> i8 {
-    let [a, b, c, d, e] = p.map(|q| q.map(indirect_predicates_oracle::Dyadic::from_f64));
+    let [a, b, c, d, e] = p.map(|q| q.map(implicit_predicates_oracle::Dyadic::from_f64));
     exact::insphere(&a, &b, &c, &d, &e)
 }
 
@@ -109,14 +109,14 @@ fn robust_and_geometry_predicates_match_the_exact_sign_on_every_set() {
             // The benchmark wrapper expects a decided sign: every case of
             // every set must be inside the range where the chain decides.
             assert!(
-                indirect_predicates::orient3d(a, b, c, d).is_some(),
-                "indirect-predicates undecided {}: {case:?}",
+                implicit_predicates::orient3d(a, b, c, d).is_some(),
+                "implicit-predicates undecided {}: {case:?}",
                 s.name
             );
             assert_eq!(
-                indirect_predicates_orient3d_sign(case),
+                implicit_predicates_orient3d_sign(case),
                 exact,
-                "indirect-predicates {}: {case:?}",
+                "implicit-predicates {}: {case:?}",
                 s.name
             );
             assert_eq!(
@@ -175,7 +175,7 @@ fn naive_determinants_have_the_exact_sign_on_random_inputs() {
 
 #[test]
 fn the_stages_of_orient3d_decide_the_sets_they_are_benchmarked_on() {
-    use indirect_predicates::stages::orient3d as stages;
+    use implicit_predicates::stages::orient3d as stages;
     let sets = orient3d_sets();
     let decided = |name: &str, stage: fn([&[f64; 3]; 4]) -> bool| {
         let cases = &set(&sets, name).cases;

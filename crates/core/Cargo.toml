@@ -1,6 +1,6 @@
 [package]
-name = "indirect-predicates-core"
-description = "Arithmetic building blocks for exact geometric predicates: the no_std core of indirect-predicates"
+name = "implicit-predicates-core"
+description = "Arithmetic building blocks for exact geometric predicates: the no_std core of implicit-predicates"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
@@ -23,6 +23,6 @@ all-features = true
 workspace = true
 
 [dev-dependencies]
-indirect-predicates-oracle = { path = "../oracle" }
-indirect-predicates-test-support = { path = "../../test-support" }
+implicit-predicates-oracle = { path = "../oracle" }
+implicit-predicates-test-support = { path = "../../test-support" }
 proptest = "1"

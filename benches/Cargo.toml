@@ -1,6 +1,6 @@
 [package]
-name = "indirect-predicates-benches"
-description = "Benchmarks for the arithmetic core of indirect-predicates"
+name = "implicit-predicates-benches"
+description = "Benchmarks for the arithmetic core of implicit-predicates"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,15 +11,15 @@ publish = false
 workspace = true
 
 [dependencies]
-indirect-predicates = { path = "../crates/indirect-predicates" }
-indirect-predicates-core = { path = "../crates/core" }
-indirect-predicates-corpus = { path = "../corpus" }
+implicit-predicates = { path = "../crates/implicit-predicates" }
+implicit-predicates-core = { path = "../crates/core" }
+implicit-predicates-corpus = { path = "../corpus" }
 geometry-predicates = "0.3.0"
 robust = "1.2.0"
 
 [dev-dependencies]
-indirect-predicates-oracle = { path = "../crates/oracle" }
-indirect-predicates-test-support = { path = "../test-support" }
+implicit-predicates-oracle = { path = "../crates/oracle" }
+implicit-predicates-test-support = { path = "../test-support" }
 criterion = { version = "0.8", default-features = false }
 
 [[bench]]

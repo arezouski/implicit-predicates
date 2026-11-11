@@ -3,7 +3,7 @@
 //! or checks that the files already there are up to date.
 //!
 //! ```text
-//! indirect-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
+//! implicit-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
 //! ```
 //!
 //! The header of every file written gives the command that regenerates it:
@@ -19,10 +19,10 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
-use indirect_predicates_gen::generate;
+use implicit_predicates_gen::generate;
 
 const USAGE: &str =
-    "usage: indirect-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]";
+    "usage: implicit-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]";
 
 /// The parsed command line.
 struct Options {

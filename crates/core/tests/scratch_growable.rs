@@ -2,8 +2,8 @@
 //! room, keeps its spans valid, and agrees with a borrowed arena.
 #![cfg(feature = "alloc")]
 
-use indirect_predicates_core::{Scratch, Span};
-use indirect_predicates_test_support::{ArenaOp, arena_op, config, value};
+use implicit_predicates_core::{Scratch, Span};
+use implicit_predicates_test_support::{ArenaOp, arena_op, config, value};
 use proptest::prelude::*;
 
 /// Applies `op` to `scratch`, picking operands among `spans`, and records

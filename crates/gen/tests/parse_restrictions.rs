@@ -2,7 +2,7 @@
 //! Rust reads as attributes, and predicate names that cannot name the
 //! module of a generated file.
 
-use indirect_predicates_gen::parse;
+use implicit_predicates_gen::parse;
 
 /// Asserts that `source` is rejected at `(line, column)` of `t.pred` with a
 /// message containing `fragment`.

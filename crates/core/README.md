@@ -1,7 +1,7 @@
-# indirect-predicates-core
+# implicit-predicates-core
 
 The `no_std`, dependency-free core of
-[`indirect-predicates`](https://crates.io/crates/indirect-predicates): the
+[`implicit-predicates`](https://crates.io/crates/implicit-predicates): the
 arithmetic building blocks shared by the predicates and by generated code.
 
 > **Status: early development.** The API is incomplete and may change.
@@ -24,7 +24,7 @@ The optional `alloc` feature adds `Scratch::growable`, an arena that grows on
 the heap so the exact arithmetic can always complete. Without it the crate
 never allocates.
 
-Most users should depend on `indirect-predicates` instead.
+Most users should depend on `implicit-predicates` instead.
 
 ## License
 

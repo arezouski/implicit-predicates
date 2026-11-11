@@ -1,16 +1,16 @@
-//! A long comparison of `indirect_predicates::orient3d` with
+//! A long comparison of `implicit_predicates::orient3d` with
 //! `robust::orient3d`, which is exact while its arithmetic neither
 //! overflows nor underflows, on inputs whose coordinates span many binades.
 //!
 //! The run is ignored by default; run it in release mode with
-//! `cargo test -p indirect-predicates-benches --release -- --ignored
+//! `cargo test -p implicit-predicates-benches --release -- --ignored
 //! --nocapture`, which also shows the counts it prints.
 
-use indirect_predicates::stages::orient3d::UNTRANSLATED_RANGE;
-use indirect_predicates_benches::Rng;
-use indirect_predicates_benches::predicates::{Orient3dInput, robust_orient3d_sign};
-use indirect_predicates_corpus::exact;
-use indirect_predicates_oracle::Dyadic;
+use implicit_predicates::stages::orient3d::UNTRANSLATED_RANGE;
+use implicit_predicates_benches::Rng;
+use implicit_predicates_benches::predicates::{Orient3dInput, robust_orient3d_sign};
+use implicit_predicates_corpus::exact;
+use implicit_predicates_oracle::Dyadic;
 
 /// Number of cases of the long run.
 const CASES: usize = 10_000_000;
@@ -110,7 +110,7 @@ fn orient3d_matches_robust_on_a_long_run() {
         let p = case(&mut rng, index);
         assert!(p.iter().flatten().all(|&x| in_range(x)), "{p:?}");
         let [a, b, c, d] = &p;
-        let ours = indirect_predicates::orient3d(a, b, c, d)
+        let ours = implicit_predicates::orient3d(a, b, c, d)
             .unwrap_or_else(|| panic!("case {index} undecided: {p:?}"));
         let ours = i8::from(ours);
         let theirs = robust_orient3d_sign(&p);

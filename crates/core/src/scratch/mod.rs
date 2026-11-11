@@ -40,7 +40,7 @@
 //! # Examples
 //!
 //! ```
-//! use indirect_predicates_core::{Scratch, Sign};
+//! use implicit_predicates_core::{Scratch, Sign};
 //!
 //! let mut buf = [0.0; 16];
 //! let mut scratch = Scratch::borrowed(&mut buf);
@@ -57,7 +57,7 @@
 //! scratch.reset(mark);
 //! assert_eq!(scratch.used(), 3);
 //! assert_eq!(scratch.get(a), &[1e-20, 1.0]);
-//! # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+//! # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
 //! ```
 
 mod error;
@@ -94,7 +94,7 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 64];
     /// let scratch = Scratch::borrowed(&mut buf);
@@ -116,7 +116,7 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 4];
     /// let mut scratch = Scratch::borrowed(&mut buf);
@@ -125,7 +125,7 @@ impl<'a> Scratch<'a> {
     /// scratch.push(&[2.0])?;
     /// scratch.reset(mark);
     /// assert_eq!(scratch.used(), 1);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     #[must_use]
     pub fn mark(&self) -> Mark {
@@ -142,7 +142,7 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 4];
     /// let mut scratch = Scratch::borrowed(&mut buf);
@@ -151,7 +151,7 @@ impl<'a> Scratch<'a> {
     /// scratch.reset(mark);
     /// assert_eq!(scratch.used(), 0);
     /// assert_eq!(scratch.high_water(), 2);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     pub fn reset(&mut self, m: Mark) {
         debug_assert!(
@@ -171,13 +171,13 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 4];
     /// let mut scratch = Scratch::borrowed(&mut buf);
     /// let s = scratch.push(&[1e-20, 1.0])?;
     /// assert_eq!(scratch.get(s), &[1e-20, 1.0]);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     #[must_use]
     pub fn get(&self, s: Span) -> &[f64] {
@@ -190,13 +190,13 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 4];
     /// let mut scratch = Scratch::borrowed(&mut buf);
     /// scratch.push(&[1e-20, 1.0])?;
     /// assert_eq!(scratch.used(), 2);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     #[must_use]
     pub fn used(&self) -> usize {
@@ -209,7 +209,7 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 8];
     /// assert_eq!(Scratch::borrowed(&mut buf).capacity(), 8);
@@ -227,7 +227,7 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 8];
     /// let mut scratch = Scratch::borrowed(&mut buf);
@@ -236,7 +236,7 @@ impl<'a> Scratch<'a> {
     /// assert!(zero.is_empty());
     /// assert_eq!(scratch.used(), 2);
     /// assert_eq!(scratch.high_water(), 6);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     #[must_use]
     pub fn high_water(&self) -> usize {
@@ -257,13 +257,13 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 2];
     /// let mut scratch = Scratch::borrowed(&mut buf);
     /// let s = scratch.push(&[1e-20, 1.0])?;
     /// assert_eq!(scratch.get(s), &[1e-20, 1.0]);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     pub fn push(&mut self, e: &[f64]) -> Result<Span, ScratchExhausted> {
         debug_assert!(
@@ -290,7 +290,7 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 8];
     /// let mut scratch = Scratch::borrowed(&mut buf);
@@ -298,7 +298,7 @@ impl<'a> Scratch<'a> {
     /// let b = scratch.push(&[-1e-20, 2.0])?;
     /// let s = scratch.sum(a, b)?;
     /// assert_eq!(scratch.get(s), &[3.0]);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     pub fn sum(&mut self, a: Span, b: Span) -> Result<Span, ScratchExhausted> {
         let worst_case = u64::from(a.len) + u64::from(b.len);
@@ -318,7 +318,7 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 8];
     /// let mut scratch = Scratch::borrowed(&mut buf);
@@ -326,7 +326,7 @@ impl<'a> Scratch<'a> {
     /// let b = scratch.push(&[1e-20, 2.0])?;
     /// let d = scratch.diff(a, b)?;
     /// assert_eq!(scratch.get(d), &[-1.0]);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     pub fn diff(&mut self, a: Span, b: Span) -> Result<Span, ScratchExhausted> {
         let worst_case = u64::from(a.len) + u64::from(b.len);
@@ -347,14 +347,14 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 8];
     /// let mut scratch = Scratch::borrowed(&mut buf);
     /// let a = scratch.push(&[0.25, 4.0])?;
     /// let s = scratch.scale(a, 3.0)?;
     /// assert_eq!(scratch.get(s), &[12.75]);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     pub fn scale(&mut self, a: Span, b: f64) -> Result<Span, ScratchExhausted> {
         let worst_case = 2 * u64::from(a.len);
@@ -367,13 +367,13 @@ impl<'a> Scratch<'a> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::{Scratch, Sign};
+    /// use implicit_predicates_core::{Scratch, Sign};
     ///
     /// let mut buf = [0.0; 2];
     /// let mut scratch = Scratch::borrowed(&mut buf);
     /// let a = scratch.push(&[1e-20, -1.0])?;
     /// assert_eq!(scratch.sign(a), Sign::Negative);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     #[must_use]
     pub fn sign(&self, a: Span) -> Sign {

@@ -5,8 +5,8 @@ mod common;
 
 use common::generated::exact;
 use common::{Points, STAGES, all_in_range, edges, generated, orient3d, refs};
-use indirect_predicates::stages::orient3d as stages;
-use indirect_predicates_test_support::{
+use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates_test_support::{
     config, coplanar4, extreme4, grid4, near_coplanar4, random4, repeated4, signed_zeros4,
 };
 use proptest::prelude::*;

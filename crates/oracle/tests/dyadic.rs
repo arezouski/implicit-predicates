@@ -1,13 +1,13 @@
 //! Behavior of the exact dyadic number.
 
-use indirect_predicates_oracle::Dyadic;
+use implicit_predicates_oracle::Dyadic;
 use proptest::prelude::*;
 use proptest::test_runner::Config as ProptestConfig;
 
 /// Proptest configuration: the number of cases comes from the
 /// `PROPTEST_CASES` environment variable, defaulting to 2000, as in the
 /// rest of the workspace. The shared test-support crate depends on
-/// `indirect-predicates-core`, which the oracle must stay independent of,
+/// `implicit-predicates-core`, which the oracle must stay independent of,
 /// so this small piece is repeated here.
 fn config() -> ProptestConfig {
     let cases = match std::env::var("PROPTEST_CASES") {

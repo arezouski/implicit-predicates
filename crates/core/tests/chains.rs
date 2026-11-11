@@ -46,9 +46,9 @@
 //! evaluator still asserts the domain before every product, so that a flaw
 //! in this argument would fail loudly.
 
-use indirect_predicates_core::{Scratch, Span, eft, expansion};
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{
+use implicit_predicates_core::{Scratch, Span, eft, expansion};
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::{
     assert_valid_expansion, config, leaf, near_equal, sample, value,
 };
 use proptest::prelude::*;

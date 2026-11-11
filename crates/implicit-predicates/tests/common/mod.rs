@@ -11,9 +11,9 @@ pub mod generated;
 
 pub mod boxes;
 
-use indirect_predicates::Sign;
-use indirect_predicates::stages::orient3d as stages;
-pub use indirect_predicates_test_support::Points4 as Points;
+use implicit_predicates::Sign;
+use implicit_predicates::stages::orient3d as stages;
+pub use implicit_predicates_test_support::Points4 as Points;
 
 /// A stage of the chain, as a function of the four points.
 pub type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;
@@ -55,7 +55,7 @@ pub fn refs(p: &Points) -> [&[f64; 3]; 4] {
 
 /// `orient3d` on the four points.
 pub fn orient3d(p: &Points) -> Option<Sign> {
-    indirect_predicates::orient3d(&p[0], &p[1], &p[2], &p[3])
+    implicit_predicates::orient3d(&p[0], &p[1], &p[2], &p[3])
 }
 
 /// The condition of the range checks of the generated stages: `x` is zero

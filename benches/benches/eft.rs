@@ -3,8 +3,8 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use indirect_predicates_benches::{PAIRS_SEED, product_pairs};
-use indirect_predicates_core::eft;
+use implicit_predicates_benches::{PAIRS_SEED, product_pairs};
+use implicit_predicates_core::eft;
 
 /// Applies `product` to every pair and stores each result in `out`.
 ///

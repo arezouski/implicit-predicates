@@ -15,7 +15,7 @@ use num_bigint::{BigInt, Sign};
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_oracle::Dyadic;
+/// use implicit_predicates_oracle::Dyadic;
 ///
 /// let tenth = Dyadic::from_f64(0.1);
 /// let three_tenths = &(&tenth + &tenth) + &tenth;
@@ -39,7 +39,7 @@ impl Dyadic {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_oracle::Dyadic;
+    /// use implicit_predicates_oracle::Dyadic;
     ///
     /// let two = &Dyadic::from_f64(1.0) + &Dyadic::from_f64(1.0);
     /// assert_eq!(two, Dyadic::from_f64(2.0));
@@ -75,7 +75,7 @@ impl Dyadic {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_oracle::Dyadic;
+    /// use implicit_predicates_oracle::Dyadic;
     ///
     /// assert_eq!(Dyadic::sum_of(&[1.0, 2.0, 4.0]), Dyadic::from_f64(7.0));
     /// assert!(Dyadic::sum_of(&[]).is_zero());
@@ -90,7 +90,7 @@ impl Dyadic {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_oracle::Dyadic;
+    /// use implicit_predicates_oracle::Dyadic;
     ///
     /// assert_eq!(Dyadic::from_f64(-3.5).sign(), -1);
     /// assert_eq!(Dyadic::from_f64(0.0).sign(), 0);
@@ -109,7 +109,7 @@ impl Dyadic {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_oracle::Dyadic;
+    /// use implicit_predicates_oracle::Dyadic;
     ///
     /// assert!(Dyadic::from_f64(-0.0).is_zero());
     /// assert!(!Dyadic::from_f64(1e-300).is_zero());

@@ -1,6 +1,6 @@
 //! Tests for canonical polynomials.
 
-use indirect_predicates_gen::{
+use implicit_predicates_gen::{
     Graph, Polynomial, Position, Predicate, canonical, check_same_polynomial, parse,
 };
 

@@ -1,4 +1,4 @@
-//! Slow, exact reference implementation used to test `indirect-predicates`.
+//! Slow, exact reference implementation used to test `implicit-predicates`.
 //!
 //! Meant for tests only, not for production use.
 //!

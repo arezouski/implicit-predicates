@@ -1,4 +1,4 @@
-# indirect-predicates-ffi-ref
+# implicit-predicates-ffi-ref
 
 Rust bindings to two versions of a third-party C++ library of indirect
 geometric predicates, used as a reference by the tests and benchmarks of
@@ -61,7 +61,7 @@ point at a fixed address until the whole store is freed, so a parent always
 outlives its children. `Points` is not `Send`: the libraries keep
 thread-local memory pools.
 
-Signs are returned in the convention of `indirect_predicates_corpus::exact`
+Signs are returned in the convention of `implicit_predicates_corpus::exact`
 (orient3d is the sign of `det[a - d; b - d; c - d]`, insphere the sign of the
 lifted 4x4 determinant with rows `(p - e, |p - e|^2)`). Both libraries return
 the opposite sign for both predicates; each module applies its factor in one

@@ -33,7 +33,7 @@ impl Scratch<'_> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let tiny = 2f64.powi(-60);
     /// let mut buf = [0.0; 32];
@@ -44,7 +44,7 @@ impl Scratch<'_> {
     /// assert_eq!(scratch.get(p), &[-tiny * tiny, 1.0]); // 1 - 2^-120
     /// assert_eq!(scratch.used(), 4 + p.len());
     /// assert_eq!(scratch.high_water(), 4 + 4 * 2 * 2 + 2 * 2);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     pub fn product(&mut self, a: Span, b: Span) -> Result<Span, ScratchExhausted> {
         let needed = working_space(a.len, b.len).ok_or(ScratchExhausted)?;

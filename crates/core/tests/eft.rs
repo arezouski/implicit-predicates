@@ -1,8 +1,8 @@
 //! Exactness of the error-free transformations, checked against the oracle.
 
-use indirect_predicates_core::eft;
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{
+use implicit_predicates_core::eft;
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::{
     any_finite, cancellation_that_rounds, config, correlated_pair, near_cancelling,
     product_operand, value,
 };

@@ -4,8 +4,8 @@
 mod common;
 
 use common::{generated, sample_corpora};
-use indirect_predicates_corpus::Predicate;
-use indirect_predicates_ffi_ref::{current, legacy};
+use implicit_predicates_corpus::Predicate;
+use implicit_predicates_ffi_ref::{current, legacy};
 use std::hint::black_box;
 use std::sync::Mutex;
 

@@ -1,7 +1,7 @@
 //! Arithmetic building blocks for exact geometric predicates.
 //!
-//! This is the `no_std`, dependency-free core of the `indirect-predicates`
-//! crates. Most users should depend on `indirect-predicates` instead.
+//! This is the `no_std`, dependency-free core of the `implicit-predicates`
+//! crates. Most users should depend on `implicit-predicates` instead.
 //!
 //! Currently it provides:
 //!

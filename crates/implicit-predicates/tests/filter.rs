@@ -10,9 +10,9 @@ mod common;
 
 use common::generated::exact;
 use common::{Points, STAGES, orient3d, pow2, refs};
-use indirect_predicates::Sign;
-use indirect_predicates::stages::orient3d as stages;
-use indirect_predicates_test_support::{config, random4, sample};
+use implicit_predicates::Sign;
+use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates_test_support::{config, random4, sample};
 use proptest::prelude::*;
 
 proptest! {

@@ -1,6 +1,6 @@
 [package]
-name = "indirect-predicates-oracle"
-description = "Slow exact reference implementation used to test indirect-predicates"
+name = "implicit-predicates-oracle"
+description = "Slow exact reference implementation used to test implicit-predicates"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true

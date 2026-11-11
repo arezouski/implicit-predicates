@@ -17,7 +17,7 @@
 // transformation here.
 #[cfg(all(target_arch = "x86", not(target_feature = "sse2")))]
 compile_error!(
-    "indirect-predicates-core needs SSE2 on 32-bit x86: x87 floating-point arithmetic \
+    "implicit-predicates-core needs SSE2 on 32-bit x86: x87 floating-point arithmetic \
      uses excess precision, which breaks the error-free transformations"
 );
 
@@ -63,7 +63,7 @@ macro_rules! fma_target {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::HAS_FMA;
+/// use implicit_predicates_core::eft::HAS_FMA;
 ///
 /// if HAS_FMA {
 ///     // `two_product` and `two_square` use `two_product_fma`.
@@ -77,7 +77,7 @@ pub const HAS_FMA: bool = fma_target!(has);
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::PRODUCT_OPERAND_MIN;
+/// use implicit_predicates_core::eft::PRODUCT_OPERAND_MIN;
 ///
 /// assert_eq!(PRODUCT_OPERAND_MIN, 2f64.powi(-480));
 /// ```
@@ -89,7 +89,7 @@ pub const PRODUCT_OPERAND_MIN: f64 = f64::from_bits((1023 - 480) << 52);
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::PRODUCT_OPERAND_MAX;
+/// use implicit_predicates_core::eft::PRODUCT_OPERAND_MAX;
 ///
 /// assert_eq!(PRODUCT_OPERAND_MAX, 2f64.powi(480));
 /// ```
@@ -110,7 +110,7 @@ pub const PRODUCT_OPERAND_MAX: f64 = f64::from_bits((1023 + 480) << 52);
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN, in_product_domain};
+/// use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN, in_product_domain};
 ///
 /// assert!(in_product_domain(-0.0));
 /// assert!(in_product_domain(PRODUCT_OPERAND_MIN) && in_product_domain(-PRODUCT_OPERAND_MAX));
@@ -135,7 +135,7 @@ const SPLITTER: f64 = 134_217_729.0;
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::two_sum;
+/// use implicit_predicates_core::eft::two_sum;
 ///
 /// let (x, y) = two_sum(1.0, 1e-20);
 /// assert_eq!(x, 1.0);
@@ -160,7 +160,7 @@ pub fn two_sum(a: f64, b: f64) -> (f64, f64) {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::fast_two_sum;
+/// use implicit_predicates_core::eft::fast_two_sum;
 ///
 /// let (x, y) = fast_two_sum(1.0, 1e-20);
 /// assert_eq!(x, 1.0);
@@ -181,7 +181,7 @@ pub fn fast_two_sum(a: f64, b: f64) -> (f64, f64) {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::two_diff;
+/// use implicit_predicates_core::eft::two_diff;
 ///
 /// let (x, y) = two_diff(1.0, 1e-20);
 /// assert_eq!(x, 1.0);
@@ -203,7 +203,7 @@ pub fn two_diff(a: f64, b: f64) -> (f64, f64) {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::two_product_dekker;
+/// use implicit_predicates_core::eft::two_product_dekker;
 ///
 /// let a = 1.0 + f64::EPSILON;
 /// let (x, y) = two_product_dekker(a, a);
@@ -240,7 +240,7 @@ fma_target! {
     /// ```
     /// # #[cfg(any(all(target_arch = "x86_64", target_feature = "fma"), all(target_arch = "aarch64", target_feature = "neon")))]
     /// # {
-    /// use indirect_predicates_core::eft::two_product_fma;
+    /// use implicit_predicates_core::eft::two_product_fma;
     ///
     /// let a = 1.0 + f64::EPSILON;
     /// let (x, y) = two_product_fma(a, a);
@@ -290,7 +290,7 @@ fma_target! {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::two_product;
+/// use implicit_predicates_core::eft::two_product;
 ///
 /// let a = 1.0 + f64::EPSILON;
 /// let (x, y) = two_product(a, 1.0 - f64::EPSILON);
@@ -313,7 +313,7 @@ pub fn two_product(a: f64, b: f64) -> (f64, f64) {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::eft::two_square;
+/// use implicit_predicates_core::eft::two_square;
 ///
 /// let a = 1.0 + f64::EPSILON;
 /// let (x, y) = two_square(a);

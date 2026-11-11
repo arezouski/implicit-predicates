@@ -1,4 +1,4 @@
-//! Benchmarks for the arithmetic core of `indirect-predicates`.
+//! Benchmarks for the arithmetic core of `implicit-predicates`.
 //!
 //! The benchmark files live in `benches/`, one per group:
 //!
@@ -10,7 +10,7 @@
 //!   nearly singular and exactly singular matrices, which shows what the
 //!   fused multiply-add changes in a realistic workload;
 //! - `predicates`: `orient3d` and `insphere` on explicit points, for
-//!   `indirect-predicates`, the `robust` and `geometry-predicates` crates and
+//!   `implicit-predicates`, the `robust` and `geometry-predicates` crates and
 //!   an unprotected `f64` determinant, over random, nearly degenerate,
 //!   exactly degenerate and recorded inputs. Adding a contender is adding a
 //!   row to the table in that file;
@@ -24,13 +24,13 @@
 //! every run and the measured computation is the one that is verified.
 //! Nothing here is part of the published crates.
 //!
-//! Run everything with `cargo bench -p indirect-predicates-benches`, and
+//! Run everything with `cargo bench -p implicit-predicates-benches`, and
 //! with `RUSTFLAGS="-C target-cpu=native"` to enable the fused
 //! multiply-add on a CPU that has it.
 
 pub mod predicates;
 
-use indirect_predicates_core::{Scratch, Sign, Span, expansion};
+use implicit_predicates_core::{Scratch, Sign, Span, expansion};
 
 /// Expansion lengths of the `sum` and `scale` benchmarks.
 pub const LENGTHS: [usize; 6] = [2, 4, 8, 16, 32, 64];

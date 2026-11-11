@@ -1,6 +1,6 @@
 //! Tests of the corpus file format.
 
-use indirect_predicates_corpus::{Corpus, CorpusError, CounterKey, PointDef, Predicate, Stage};
+use implicit_predicates_corpus::{Corpus, CorpusError, CounterKey, PointDef, Predicate, Stage};
 
 mod common;
 

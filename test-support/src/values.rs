@@ -1,7 +1,7 @@
 //! Generators of floating-point values and of pairs of values with a given
 //! relationship.
 
-use indirect_predicates_core::eft;
+use implicit_predicates_core::eft;
 use proptest::prelude::*;
 
 /// Any finite `f64`, including subnormals and both zeros.

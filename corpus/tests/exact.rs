@@ -3,12 +3,12 @@
 mod common;
 
 use common::{call, corpus_from};
-use indirect_predicates_corpus::exact::{
+use implicit_predicates_corpus::exact::{
     REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR, coordinates, insphere, orient3d,
 };
-use indirect_predicates_corpus::verify::{Mismatch, verify, verify_with};
-use indirect_predicates_corpus::{PointDef, Predicate, Stage};
-use indirect_predicates_oracle::Dyadic;
+use implicit_predicates_corpus::verify::{Mismatch, verify, verify_with};
+use implicit_predicates_corpus::{PointDef, Predicate, Stage};
+use implicit_predicates_oracle::Dyadic;
 
 fn pt(x: f64, y: f64, z: f64) -> [Dyadic; 3] {
     [x, y, z].map(Dyadic::from_f64)

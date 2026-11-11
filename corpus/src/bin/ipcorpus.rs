@@ -11,9 +11,9 @@
 //!
 //! Usage errors and unreadable files exit with status 2.
 
-use indirect_predicates_corpus::stats::Stats;
-use indirect_predicates_corpus::verify::verify;
-use indirect_predicates_corpus::{Corpus, CorpusError};
+use implicit_predicates_corpus::stats::Stats;
+use implicit_predicates_corpus::verify::verify;
+use implicit_predicates_corpus::{Corpus, CorpusError};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::process::ExitCode;

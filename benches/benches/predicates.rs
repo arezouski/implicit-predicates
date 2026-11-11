@@ -1,4 +1,4 @@
-//! `orient3d` and `insphere` on explicit points: `indirect-predicates`
+//! `orient3d` and `insphere` on explicit points: `implicit-predicates`
 //! (`orient3d` only, so far), the `robust` and `geometry-predicates` crates
 //! and an unprotected `f64` determinant, over
 //! random, nearly degenerate, exactly degenerate and recorded inputs.
@@ -8,15 +8,15 @@
 //! call is its inverse. Every contender is called through a function
 //! pointer, at the same cost for all; it is most of the time of the
 //! unprotected determinant. The `corpus` sets are a weighted resample of the
-//! stored calls (see `indirect_predicates_benches::predicates`). To add a
+//! stored calls (see `implicit_predicates_benches::predicates`). To add a
 //! contender, add a row to [`ORIENT3D`] and [`INSPHERE`].
 
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use indirect_predicates_benches::predicates::{
+use implicit_predicates_benches::predicates::{
     InSphereInput, InputSet, Orient3dInput, geometry_insphere_sign, geometry_orient3d_sign,
-    indirect_predicates_orient3d_sign, insphere_sets, naive_insphere_sign, naive_orient3d_sign,
+    implicit_predicates_orient3d_sign, insphere_sets, naive_insphere_sign, naive_orient3d_sign,
     orient3d_sets, robust_insphere_sign, robust_orient3d_sign,
 };
 
@@ -25,7 +25,7 @@ type Contender<T> = (&'static str, fn(&T) -> i8);
 
 /// The `orient3d` contenders.
 const ORIENT3D: &[Contender<Orient3dInput>] = &[
-    ("indirect-predicates", indirect_predicates_orient3d_sign),
+    ("implicit-predicates", implicit_predicates_orient3d_sign),
     ("robust", robust_orient3d_sign),
     ("geometry-predicates", geometry_orient3d_sign),
     ("naive", naive_orient3d_sign),

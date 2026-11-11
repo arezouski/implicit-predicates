@@ -1,7 +1,7 @@
 //! The checks of a predicate: code for its tests, not for its users.
 //!
 //! The generated module holds `exact`, the main form evaluated with the
-//! exact dyadic numbers of `indirect-predicates-oracle`, one statement per
+//! exact dyadic numbers of `implicit-predicates-oracle`, one statement per
 //! node of the difference form as in the filter, and `bound_edge_cases`,
 //! inputs on either side of the error bound of the filter, built by
 //! [`super::edges`] and written as bit patterns so that they read back as
@@ -39,7 +39,7 @@ pub(crate) fn write_checks(
             predicate.name
         ),
     );
-    out.push_str("\nuse indirect_predicates::Sign;\nuse indirect_predicates_oracle::Dyadic;\n\n");
+    out.push_str("\nuse implicit_predicates::Sign;\nuse implicit_predicates_oracle::Dyadic;\n\n");
     comment(
         out,
         "///",

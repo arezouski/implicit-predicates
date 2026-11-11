@@ -1,5 +1,5 @@
 [package]
-name = "indirect-predicates-ffi-ref"
+name = "implicit-predicates-ffi-ref"
 description = "Bindings to third-party reference predicate libraries, for local tests and benchmarks only"
 version = "0.0.0"
 edition = "2024"
@@ -8,14 +8,14 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-indirect-predicates-corpus = { path = "../corpus" }
+implicit-predicates-corpus = { path = "../corpus" }
 
 [build-dependencies]
 cc = "1.2"
 
 [dev-dependencies]
-indirect-predicates-oracle = { path = "../crates/oracle" }
-indirect-predicates-test-support = { path = "../test-support" }
+implicit-predicates-oracle = { path = "../crates/oracle" }
+implicit-predicates-test-support = { path = "../test-support" }
 criterion = { version = "0.8", default-features = false }
 
 [[bench]]

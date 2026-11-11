@@ -1,7 +1,7 @@
-# indirect-predicates-oracle
+# implicit-predicates-oracle
 
 Slow, exact reference implementation used to test
-[`indirect-predicates`](https://crates.io/crates/indirect-predicates). It is
+[`implicit-predicates`](https://crates.io/crates/implicit-predicates). It is
 meant for tests only, not for production use.
 
 > **Status: early development.** The API is limited to `Dyadic`, an exact

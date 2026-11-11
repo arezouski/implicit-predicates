@@ -1,6 +1,6 @@
 //! Tests for the filter bound.
 
-use indirect_predicates_gen::{Error, FilterBound, difference_graph, filter_bound, parse};
+use implicit_predicates_gen::{Error, FilterBound, difference_graph, filter_bound, parse};
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");

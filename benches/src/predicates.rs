@@ -5,7 +5,7 @@
 //! the versioned sample corpora whose points are all explicit, weighted by
 //! how many calls of the recording run each stored call stands for.
 //!
-//! The contenders are `indirect-predicates` (`orient3d` only, so far), the
+//! The contenders are `implicit-predicates` (`orient3d` only, so far), the
 //! `robust` and `geometry-predicates` crates and an unprotected `f64`
 //! determinant ([`naive_orient3d`], [`naive_insphere`]), the cost of the
 //! arithmetic a floating-point filter cannot avoid. The
@@ -14,7 +14,7 @@
 //! that call, which is the same for every contender.
 //!
 //! Every contender is exposed through a function that returns the sign in
-//! the convention of the exact computation of `indirect-predicates-corpus`:
+//! the convention of the exact computation of `implicit-predicates-corpus`:
 //!
 //! - `orient3d` is the sign of `det[a - d; b - d; c - d]`;
 //! - `insphere` is the sign of the 4x4 determinant whose rows are
@@ -24,15 +24,15 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use indirect_predicates_corpus::weighted::weighted_sample;
-use indirect_predicates_corpus::{Call, Corpus, PointDef, Predicate};
+use implicit_predicates_corpus::weighted::weighted_sample;
+use implicit_predicates_corpus::{Call, Corpus, PointDef, Predicate};
 
 use crate::Rng;
 
 mod contenders;
 
 pub use contenders::{
-    geometry_insphere_sign, geometry_orient3d_sign, indirect_predicates_orient3d_sign,
+    geometry_insphere_sign, geometry_orient3d_sign, implicit_predicates_orient3d_sign,
     naive_insphere, naive_insphere_sign, naive_orient3d, naive_orient3d_sign, robust_insphere_sign,
     robust_orient3d_sign,
 };

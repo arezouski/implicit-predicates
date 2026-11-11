@@ -5,11 +5,11 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use geometry_predicates::predicates::{fast_expansion_sum_zeroelim, scale_expansion_zeroelim};
-use indirect_predicates_benches::{
+use implicit_predicates_benches::{
     FIRST_OPERAND_SEED, LENGTHS, PRODUCT_LENGTHS, SCALE_SEED, SECOND_OPERAND_SEED,
     product_capacity, product_operands, scale_factor, valid_expansion,
 };
-use indirect_predicates_core::{Scratch, expansion};
+use implicit_predicates_core::{Scratch, expansion};
 
 fn sum(c: &mut Criterion) {
     let mut group = c.benchmark_group("sum");

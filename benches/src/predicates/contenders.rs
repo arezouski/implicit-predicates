@@ -63,7 +63,7 @@ pub fn geometry_orient3d_sign(p: &Orient3dInput) -> i8 {
     GEOMETRY_ORIENT3D_FACTOR * sign(geometry_predicates::orient3d(a, b, c, d))
 }
 
-/// `orient3d` of `indirect-predicates`.
+/// `orient3d` of `implicit-predicates`.
 ///
 /// # Panics
 ///
@@ -71,9 +71,9 @@ pub fn geometry_orient3d_sign(p: &Orient3dInput) -> i8 {
 /// outside the range where `orient3d` is documented to decide; no benchmark
 /// set has such a case.
 #[must_use]
-pub fn indirect_predicates_orient3d_sign(p: &Orient3dInput) -> i8 {
+pub fn implicit_predicates_orient3d_sign(p: &Orient3dInput) -> i8 {
     let [a, b, c, d] = p;
-    let sign = indirect_predicates::orient3d(a, b, c, d)
+    let sign = implicit_predicates::orient3d(a, b, c, d)
         .expect("benchmark inputs are inside the range where orient3d decides");
     i8::from(sign)
 }

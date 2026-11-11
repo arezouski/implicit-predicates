@@ -2,8 +2,8 @@
 //! left at the previous top and the working space accounted for in the
 //! high-water mark.
 
-use indirect_predicates_core::{Mark, Scratch, ScratchExhausted, Span};
-use indirect_predicates_test_support::{
+use implicit_predicates_core::{Mark, Scratch, ScratchExhausted, Span};
+use implicit_predicates_test_support::{
     assert_valid_expansion, bit_pattern_expansion, config, expansion_within, product_domain_bits,
     product_working_space, value,
 };

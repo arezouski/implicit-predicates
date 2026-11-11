@@ -1,7 +1,7 @@
-# indirect-predicates-gen
+# implicit-predicates-gen
 
 Code generator for
-[`indirect-predicates`](https://crates.io/crates/indirect-predicates): turns
+[`implicit-predicates`](https://crates.io/crates/implicit-predicates): turns
 the definition of a predicate into specialized Rust code.
 
 > **Status: early development.** The generator handles predicates over
@@ -74,7 +74,7 @@ Each stage returns `None` when it cannot decide.
 For the tests of each predicate it writes a second module, of checks, with:
 
 - `exact`, the main form evaluated with the exact dyadic numbers of
-  `indirect-predicates-oracle`, the reference the stages are tested against;
+  `implicit-predicates-oracle`, the reference the stages are tested against;
 - `bound_edge_cases`, pairs of inputs on either side of the error bound of
   the filter, one representable value apart in one coordinate, built with
   exact arithmetic from points on a grid at scales from just above `D_MIN`
@@ -86,7 +86,7 @@ and giving the command that regenerates them.
 ## Command line
 
 ```sh
-indirect-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
+implicit-predicates-gen <pred-dir> --stages <dir> --checks <dir> [--check]
 ```
 
 reads every `.pred` file in `<pred-dir>` and writes `<name>.rs` for each
@@ -102,14 +102,14 @@ tool compares the files, header included, with what it would write, names
 each one that differs or is missing, and exits with a nonzero status if any
 does, so it must be run with the arguments the files were written with.
 
-The header shows the tool's own name, `indirect-predicates-gen`, followed by
-those arguments. Inside the `indirect-predicates` repository the tool is not
-installed: it is run through `cargo run -p indirect-predicates-gen --`
+The header shows the tool's own name, `implicit-predicates-gen`, followed by
+those arguments. Inside the `implicit-predicates` repository the tool is not
+installed: it is run through `cargo run -p implicit-predicates-gen --`
 followed by the same arguments, from the root of the repository. The
 generated code is regenerated with:
 
 ```sh
-cargo run -p indirect-predicates-gen -- crates/indirect-predicates/predicates --stages crates/indirect-predicates/src/generated --checks crates/indirect-predicates/tests/generated
+cargo run -p implicit-predicates-gen -- crates/implicit-predicates/predicates --stages crates/implicit-predicates/src/generated --checks crates/implicit-predicates/tests/generated
 ```
 
 and checked, stages and checks alike, with the same command followed by

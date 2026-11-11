@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Negative < Zero < Positive`, with conversions to `i8` and from
   `core::cmp::Ordering`.
 - Error-free transformations (`two_sum`, `fast_two_sum`, `two_diff`,
-  `two_product`, `two_square`) in `indirect-predicates-core`, using a hardware
+  `two_product`, `two_square`) in `implicit-predicates-core`, using a hardware
   fused multiply-add for products when the target has one. Both product
   algorithms are available directly as `two_product_dekker` and
   `two_product_fma`, and `HAS_FMA` tells which one `two_product` uses.
@@ -30,9 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Mark`s save the top of the arena, and operations that do not fit return
   `ScratchExhausted`. Debug builds check that `Scratch::push` receives a
   valid expansion.
-- `Dyadic`, an exact dyadic rational number, in `indirect-predicates-oracle`
+- `Dyadic`, an exact dyadic rational number, in `implicit-predicates-oracle`
   for checking results.
-- `indirect-predicates-gen`, a code generator for predicates, with a command
+- `implicit-predicates-gen`, a code generator for predicates, with a command
   line tool. A definition is a `.pred` file in a small subset of Rust: `let`
   bindings and a final expression built from `+`, `-`, `*`, integer
   constants, coordinates `p.x`, `p.y`, `p.z` and earlier bindings, with an
@@ -46,12 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tests, formatted with `rustfmt`. `--check` compares the files with what
   would be written without writing them. Errors carry the file, line and
   column.
-- `orient3d` for explicit points, in `indirect-predicates`, generated from
+- `orient3d` for explicit points, in `implicit-predicates`, generated from
   its definition: a floating-point filter, then exact differences of
   coordinates, then expansions on translated coordinates, then expansions on
   the raw coordinates. The sign is that of Shewchuk's `orient3d`. It takes
   `&[f64; 3]` points, does not allocate and works without `std`. The result
   is provisionally an `Option<Sign>`: `None` when a coordinate is not finite
   or, if the earlier stages cannot decide, when a nonzero coordinate is
-  outside `2^-188..=2^239`. `indirect_predicates::Sign` re-exports the `Sign`
-  of `indirect-predicates-core`.
+  outside `2^-188..=2^239`. `implicit_predicates::Sign` re-exports the `Sign`
+  of `implicit-predicates-core`.

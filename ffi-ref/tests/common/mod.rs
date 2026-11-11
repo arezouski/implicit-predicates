@@ -3,10 +3,10 @@
 
 #![allow(dead_code)] // Each test file uses a different part of this module.
 
-use indirect_predicates_corpus::exact;
-use indirect_predicates_corpus::{Call, Corpus, Predicate};
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{leaf, sample};
+use implicit_predicates_corpus::exact;
+use implicit_predicates_corpus::{Call, Corpus, Predicate};
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::{leaf, sample};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;

@@ -1,6 +1,6 @@
 //! Tests for the difference form.
 
-use indirect_predicates_gen::{
+use implicit_predicates_gen::{
     DiffGraph, DiffNode, Error, canonical, canonical_of_differences, difference_graph, parse,
 };
 

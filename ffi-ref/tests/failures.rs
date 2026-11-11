@@ -4,7 +4,7 @@
 //! Each case runs a test hook in a child process: this test executable,
 //! running only the ignored `child` test with core dumps disabled.
 
-use indirect_predicates_ffi_ref::test_hooks::{self, TestHook};
+use implicit_predicates_ffi_ref::test_hooks::{self, TestHook};
 use std::process::{Command, Output};
 
 /// Names the version and hook the child runs.

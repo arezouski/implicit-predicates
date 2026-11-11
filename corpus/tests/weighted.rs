@@ -3,8 +3,8 @@
 mod common;
 
 use common::{UNSTORED, call, corpus_from, sampled};
-use indirect_predicates_corpus::weighted::{weighted_sample, weights};
-use indirect_predicates_corpus::{Corpus, PointDef, Predicate, Stage, Stratum};
+use implicit_predicates_corpus::weighted::{weighted_sample, weights};
+use implicit_predicates_corpus::{Corpus, PointDef, Predicate, Stage, Stratum};
 
 /// A corpus of `stored` explicit orient3d calls with sign `sign`, recorded
 /// from a run that made `total` such calls.

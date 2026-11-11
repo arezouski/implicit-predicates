@@ -11,14 +11,14 @@ use core::ops::Range;
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::Scratch;
+/// use implicit_predicates_core::Scratch;
 ///
 /// let mut buf = [0.0; 4];
 /// let mut scratch = Scratch::borrowed(&mut buf);
 /// let span = scratch.push(&[1e-20, 1.0])?;
 /// assert_eq!(span.len(), 2);
 /// assert_eq!(scratch.get(span), &[1e-20, 1.0]);
-/// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+/// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
@@ -33,7 +33,7 @@ pub struct Span {
 /// # Examples
 ///
 /// ```
-/// use indirect_predicates_core::Scratch;
+/// use implicit_predicates_core::Scratch;
 ///
 /// let mut buf = [0.0; 4];
 /// let mut scratch = Scratch::borrowed(&mut buf);
@@ -43,7 +43,7 @@ pub struct Span {
 /// scratch.reset(mark);
 /// assert_eq!(scratch.mark(), mark);
 /// assert_eq!(scratch.used(), 0);
-/// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+/// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mark(pub(super) u32);
@@ -54,12 +54,12 @@ impl Span {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 2];
     /// let mut scratch = Scratch::borrowed(&mut buf);
     /// assert_eq!(scratch.push(&[1e-20, 1.0])?.len(), 2);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     #[must_use]
     pub fn len(self) -> usize {
@@ -72,13 +72,13 @@ impl Span {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut buf = [0.0; 6];
     /// let mut scratch = Scratch::borrowed(&mut buf);
     /// let a = scratch.push(&[1e-20, 1.0])?;
     /// assert!(scratch.diff(a, a)?.is_empty());
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     #[must_use]
     pub fn is_empty(self) -> bool {

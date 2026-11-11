@@ -26,13 +26,13 @@ impl Scratch<'static> {
     /// # Examples
     ///
     /// ```
-    /// use indirect_predicates_core::Scratch;
+    /// use implicit_predicates_core::Scratch;
     ///
     /// let mut scratch = Scratch::growable(1);
     /// let a = scratch.push(&[1e-20, 1.0])?; // grows
     /// assert!(scratch.capacity() >= 2);
     /// assert_eq!(scratch.get(a), &[1e-20, 1.0]);
-    /// # Ok::<(), indirect_predicates_core::ScratchExhausted>(())
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
     /// ```
     #[must_use]
     pub fn growable(initial: usize) -> Scratch<'static> {

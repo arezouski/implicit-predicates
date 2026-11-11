@@ -1,7 +1,7 @@
 //! Generators of valid expansions built with the expansion arithmetic of
-//! `indirect-predicates-core`, which checks each intermediate result.
+//! `implicit-predicates-core`, which checks each intermediate result.
 
-use indirect_predicates_core::expansion;
+use implicit_predicates_core::expansion;
 use proptest::prelude::*;
 
 use crate::assert_valid_expansion;

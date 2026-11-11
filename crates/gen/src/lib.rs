@@ -1,7 +1,7 @@
 //! Code generator for exact geometric predicates.
 //!
 //! Turns the definition of a predicate or of a point type into specialized
-//! Rust code for the `indirect-predicates` crates.
+//! Rust code for the `implicit-predicates` crates.
 //!
 //! **Status: early development.** [`generate`] takes the definitions of a
 //! `.pred` file and returns, for each predicate, the Rust module of its
@@ -9,10 +9,10 @@
 //! expansions, and the chain that runs them (see [`generate`] for the items
 //! of the module), and the module of its checks for tests: an exact
 //! evaluator and inputs at the edge of the error bound of the filter. The
-//! `indirect-predicates-gen` command line tool writes those modules for a
+//! `implicit-predicates-gen` command line tool writes those modules for a
 //! directory of definitions, formatted with `rustfmt`, or checks with
 //! `--check` that the files are up to date; its README gives the command
-//! that regenerates the code of the `indirect-predicates` crate.
+//! that regenerates the code of the `implicit-predicates` crate.
 //!
 //! The steps of the generation are public as well. [`parse`] takes a `.pred`
 //! file, written in a small subset of Rust, and returns each [`Predicate`] as

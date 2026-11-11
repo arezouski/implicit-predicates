@@ -26,10 +26,10 @@ use common::boxes::{
 };
 use common::generated::exact;
 use common::{Points, pow2, refs};
-use indirect_predicates::Sign;
-use indirect_predicates::stages::orient3d as stages;
-use indirect_predicates_oracle::Dyadic;
-use indirect_predicates_test_support::{config, coplanar4, grid4, near_coplanar4, random4, sample};
+use implicit_predicates::Sign;
+use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates_oracle::Dyadic;
+use implicit_predicates_test_support::{config, coplanar4, grid4, near_coplanar4, random4, sample};
 use proptest::prelude::*;
 
 /// The binary exponent of the largest magnitude among the coordinates, or

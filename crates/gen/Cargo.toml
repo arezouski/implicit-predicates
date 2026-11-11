@@ -1,5 +1,5 @@
 [package]
-name = "indirect-predicates-gen"
+name = "implicit-predicates-gen"
 description = "Code generator for exact geometric predicates over explicit and implicit points"
 readme = "README.md"
 version.workspace = true
@@ -13,11 +13,11 @@ categories = ["mathematics", "algorithms", "development-tools"]
 workspace = true
 
 [[bin]]
-name = "indirect-predicates-gen"
+name = "implicit-predicates-gen"
 path = "src/main.rs"
 
 [dependencies]
-indirect-predicates-core.workspace = true
+implicit-predicates-core.workspace = true
 num-bigint = "0.5"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 quote = "1"

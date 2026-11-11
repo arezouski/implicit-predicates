@@ -3,7 +3,7 @@
 mod common;
 
 use common::{call, corpus_from, sampled};
-use indirect_predicates_corpus::{Corpus, PointDef, Predicate, Stage};
+use implicit_predicates_corpus::{Corpus, PointDef, Predicate, Stage};
 use std::path::PathBuf;
 use std::process::Command;
 

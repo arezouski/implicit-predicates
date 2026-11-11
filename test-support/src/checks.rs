@@ -2,7 +2,7 @@
 //! components without the arithmetic under test.
 
 /// Panics unless `e` is a valid expansion in the sense of
-/// `indirect_predicates_core::expansion`: every component is finite and
+/// `implicit_predicates_core::expansion`: every component is finite and
 /// nonzero, and the components are sorted by increasing magnitude and
 /// nonoverlapping, that is, the highest set bit of each lies strictly below
 /// the lowest set bit of the next.
