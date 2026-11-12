@@ -10,8 +10,10 @@
 //! ([`uncertainty_max`]).
 //!
 //! Both are on the fast path of every call with implicit points. They do
-//! not allocate. Their comparisons, which keep a NaN, may compile to
-//! branches that depend on the errors: they are not free of branches.
+//! not allocate. Each of their comparisons selects one of its two operands,
+//! and a NaN is tracked apart, so that the compiler can use minimum and
+//! maximum instructions instead of branches that depend on the errors;
+//! whether it does is up to the compiler, and is not guaranteed.
 //! Calls on explicit points do not need them, since every error is zero:
 //! the generated predicates use an uncertainty of zero instead when every
 //! point is explicit ([`Point::is_explicit`](crate::Point::is_explicit)),
@@ -70,64 +72,63 @@ pub fn uncertainty<const N: usize>(errs: [&[f64; 3]; N]) -> [f64; 3] {
 pub fn uncertainty_max<const N: usize>(errs: [&[f64; 3]; N]) -> f64 {
     let mut top = TopTwo::ZERO;
     for err in errs {
-        top.add(max(max(err[0], err[1]), err[2]));
+        let largest = max(max(err[0], err[1]), err[2]);
+        top.add(largest);
+        top.nan |= err[0].is_nan() | err[1].is_nan() | err[2].is_nan();
     }
     top.sum()
 }
 
-/// The two largest of the values added so far, starting from two zeros.
+/// The two largest of the values added so far, starting from two zeros,
+/// and whether a NaN was added.
 #[derive(Clone, Copy)]
 struct TopTwo {
     first: f64,
     second: f64,
+    nan: bool,
 }
 
 impl TopTwo {
     const ZERO: TopTwo = TopTwo {
         first: 0.0,
         second: 0.0,
+        nan: false,
     };
 
-    /// Keeps the two largest of `first`, `second` and `x`. Once a NaN is
-    /// added, both stay NaN.
+    /// Keeps the two largest of `first`, `second` and `x`, and records a
+    /// NaN. Each comparison selects one of its operands, so that the
+    /// compiler can use a minimum or maximum instruction instead of a
+    /// branch; a NaN `x` may be dropped by them, but not from `nan`.
     #[inline]
     fn add(&mut self, x: f64) {
         self.second = max(self.second, min(self.first, x));
         self.first = max(self.first, x);
+        self.nan |= x.is_nan();
     }
 
-    /// `first + second`, rounded up.
+    /// `first + second`, rounded up, or NaN if a NaN was added.
     #[inline]
     fn sum(self) -> f64 {
         let sum = self.first + self.second;
         // The rounding error of the sum, exact as in Dekker's fast-two-sum
         // since `first >= second >= 0`; positive when the sum rounded down.
-        // It is `-∞` when the sum overflows to `+∞`, and NaN with a NaN.
+        // It is `-∞` when the sum overflows to `+∞`. When it is positive the
+        // sum is finite and positive, and the next `f64` up is the next bit
+        // pattern.
         let error = self.second - (sum - self.first);
-        if error > 0.0 { sum.next_up() } else { sum }
+        let up = f64::from_bits(sum.to_bits() + u64::from(error > 0.0));
+        if self.nan { f64::NAN } else { up }
     }
 }
 
-/// The larger of `a` and `b`, or NaN if either is NaN.
+/// The larger of `a` and `b`; `b` if they are unordered.
 #[inline]
 fn max(a: f64, b: f64) -> f64 {
-    if a > b {
-        a
-    } else if b >= a {
-        b
-    } else {
-        a + b
-    }
+    if a > b { a } else { b }
 }
 
-/// The smaller of `a` and `b`, or NaN if either is NaN.
+/// The smaller of `a` and `b`; `b` if they are unordered.
 #[inline]
 fn min(a: f64, b: f64) -> f64 {
-    if a < b {
-        a
-    } else if b <= a {
-        b
-    } else {
-        a + b
-    }
+    if a < b { a } else { b }
 }
