@@ -8,6 +8,7 @@ pub mod exact;
 mod extract;
 mod format;
 mod model;
+pub mod parallel;
 pub mod stats;
 pub mod verify;
 pub mod weighted;

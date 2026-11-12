@@ -77,6 +77,57 @@ fn verify_succeeds_on_a_correct_file_and_fails_on_an_altered_one() {
 }
 
 #[test]
+fn verify_reports_many_files_in_the_order_given_with_any_number_of_jobs() {
+    let good = sampled();
+    let mut bad = good.clone();
+    bad.calls[0].sign = -bad.calls[0].sign;
+    let files: Vec<Temp> = (0..12).map(|i| Temp::new(&format!("many-{i}"))).collect();
+    for (i, file) in files.iter().enumerate() {
+        write(if i == 7 { &bad } else { &good }, file);
+    }
+    let verify = |jobs: &[&str]| {
+        let mut args: Vec<&std::path::Path> = vec!["verify".as_ref()];
+        args.extend(jobs.iter().map(std::path::Path::new));
+        args.extend(files.iter().map(|f| f.0.as_path()));
+        let out = run(&args);
+        assert_eq!(out.status.code(), Some(1), "{jobs:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let serial = verify(&["--jobs", "1"]);
+    let reported: Vec<&str> = serial
+        .lines()
+        .filter(|line| !line.starts_with(' '))
+        .map(|line| line.split(": ").next().unwrap())
+        .collect();
+    let given: Vec<_> = files.iter().map(|f| f.0.to_str().unwrap()).collect();
+    assert_eq!(reported, given);
+    assert_eq!(serial.matches("mismatches 0").count(), 11);
+    assert_eq!(verify(&["--jobs", "5"]), serial);
+    assert_eq!(verify(&[]), serial);
+}
+
+#[test]
+fn verify_rejects_a_bad_number_of_jobs_and_stops_at_an_unreadable_file() {
+    let f = Temp::new("jobs");
+    write(&sampled(), &f);
+    for jobs in ["0", "many", "-1"] {
+        let out = verify_file(&["--jobs", jobs], &f);
+        assert_eq!(out.status.code(), Some(2), "--jobs {jobs}");
+    }
+    let missing = Temp::new("missing");
+    let out = run(&[
+        "verify".as_ref(),
+        f.0.as_path(),
+        missing.0.as_path(),
+        f.0.as_path(),
+    ]);
+    assert_eq!(out.status.code(), Some(2));
+    // The file before the unreadable one is reported; the one after is not.
+    assert_eq!(String::from_utf8(out.stdout).unwrap().lines().count(), 1);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("missing"));
+}
+
+#[test]
 fn verify_fails_on_skipped_calls_unless_they_are_allowed() {
     let f = Temp::new("lpi");
     write(&with_lpi(), &f);

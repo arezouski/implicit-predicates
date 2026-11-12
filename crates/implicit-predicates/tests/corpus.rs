@@ -24,10 +24,12 @@ mod common;
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::BufReader;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use common::corpus_sweep::Tally;
 use implicit_predicates_corpus::Corpus;
+use implicit_predicates_corpus::parallel::{default_jobs, map_ordered};
 
 /// The root of the workspace.
 fn root() -> PathBuf {
@@ -79,6 +81,7 @@ fn orient3d_matches_the_recorded_sign_on_the_samples() {
         total = (total.0 + explicit, total.1 + implicit);
     }
     println!("{}", tally.report("samples"));
+    assert_merging_is_adding(&tally);
     assert_no_mismatch("samples", &tally);
     assert!(
         tally.undecided.is_empty(),
@@ -89,6 +92,42 @@ fn orient3d_matches_the_recorded_sign_on_the_samples() {
         total.0 >= SAMPLE_CALLS.0 && total.1 >= SAMPLE_CALLS.1,
         "the samples check {total:?} calls, fewer than {SAMPLE_CALLS:?}"
     );
+}
+
+/// Fails unless one tally per sample, merged in order, counts what
+/// `expected` does: the tally of the samples added one after another.
+fn assert_merging_is_adding(expected: &Tally) {
+    let mut merged = Tally::default();
+    for name in SAMPLES {
+        let mut of_file = Tally::default();
+        of_file.add_corpus(&read(&root().join("corpus/samples").join(name)));
+        merged.merge(&of_file);
+    }
+    let counts = |t: &Tally| {
+        let buckets: Vec<_> = t
+            .buckets
+            .iter()
+            .map(|b| (b.stored, b.unsupported, b.unchecked))
+            .collect();
+        let points = (
+            t.points_unsupported,
+            t.points_non_finite,
+            t.points_unchecked,
+        );
+        (buckets, points, t.mismatch_count, t.high_water)
+    };
+    assert_eq!(counts(&merged), counts(expected));
+    // The weights are sums of `f64` in another order: equal up to rounding.
+    for (a, b) in merged.buckets.iter().zip(&expected.buckets) {
+        let sums = |x: &common::corpus_sweep::Bucket| {
+            let mut sums = x.columns.to_vec();
+            sums.extend([x.weight, x.recorded_zero]);
+            sums
+        };
+        for (x, y) in sums(a).into_iter().zip(sums(b)) {
+            assert!((x - y).abs() <= 1e-9 * y.abs(), "{x} is not {y}");
+        }
+    }
 }
 
 /// The files listed in `list`, relative to the root of the workspace.
@@ -147,10 +186,22 @@ fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
         let mut tally = Tally::default();
         let files = listed(list);
         let mut checked = (0, 0);
-        for path in &files {
-            let (explicit, implicit) = tally.add_corpus(&read(path));
-            checked = (checked.0 + explicit, checked.1 + implicit);
-        }
+        // One tally per file, on several threads, merged in the order of
+        // the list.
+        map_ordered(
+            &files,
+            default_jobs(),
+            |path| {
+                let mut tally = Tally::default();
+                let checked = tally.add_corpus(&read(path));
+                (tally, checked)
+            },
+            |(of_file, (explicit, implicit))| {
+                tally.merge(&of_file);
+                checked = (checked.0 + explicit, checked.1 + implicit);
+                ControlFlow::<()>::Continue(())
+            },
+        );
         println!("{} files", files.len());
         println!("{}", tally.report(name));
         tallies.push((name, tally, checked, least));

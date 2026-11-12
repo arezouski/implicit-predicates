@@ -250,6 +250,38 @@ impl Tally {
         checked
     }
 
+    /// Adds what another sweep found, as if its corpora had been added
+    /// here after the ones already added.
+    pub fn merge(&mut self, other: &Tally) {
+        for (bucket, added) in self.buckets.iter_mut().zip(&other.buckets) {
+            bucket.add(added);
+        }
+        for &(why, stored, weight) in &other.undecided {
+            match self.undecided.iter_mut().find(|(w, ..)| *w == why) {
+                Some(entry) => {
+                    entry.1 += stored;
+                    entry.2 += weight;
+                }
+                None => self.undecided.push((why, stored, weight)),
+            }
+        }
+        for (why, example) in &other.examples {
+            if self.examples.iter().filter(|(w, _)| w == why).count() < EXAMPLES {
+                self.examples.push((*why, example.clone()));
+            }
+        }
+        self.mismatch_count += other.mismatch_count;
+        let room = MISMATCHES.saturating_sub(self.mismatches.len());
+        self.mismatches
+            .extend(other.mismatches.iter().take(room).cloned());
+        self.points_unsupported += other.points_unsupported;
+        self.points_non_finite += other.points_non_finite;
+        self.points_unchecked += other.points_unchecked;
+        for (high, added) in self.high_water.iter_mut().zip(other.high_water) {
+            *high = (*high).max(added);
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn check_call(
         &mut self,

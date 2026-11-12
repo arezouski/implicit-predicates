@@ -6,21 +6,25 @@
 //! - `verify` checks every stored sign exactly. It exits with status 1 if a
 //!   sign disagrees, and with status 3 if no sign disagrees but some calls
 //!   could not be checked (they use LPI or TPI points), unless
-//!   `--allow-skipped` is given.
+//!   `--allow-skipped` is given. The files are checked on several threads,
+//!   one per hardware thread unless `--jobs` says how many, and reported in
+//!   the order given.
 //! - `extract` writes a small corpus with at most N stored calls per stratum.
 //!
 //! Usage errors and unreadable files exit with status 2.
 
+use implicit_predicates_corpus::parallel::{default_jobs, map_ordered};
 use implicit_predicates_corpus::stats::Stats;
 use implicit_predicates_corpus::verify::verify;
 use implicit_predicates_corpus::{Corpus, CorpusError};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
+use std::ops::ControlFlow;
 use std::process::ExitCode;
 
 const USAGE: &str = "usage:
   ipcorpus stats [--per-file] <file>...
-  ipcorpus verify [--allow-skipped] <file>...
+  ipcorpus verify [--allow-skipped] [--jobs <N>] <file>...
   ipcorpus extract --max-calls <N> <input> <output>";
 
 /// Number of mismatches printed per file.
@@ -67,28 +71,56 @@ fn stats(args: &[String]) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// Splits a leading `--jobs <N>` off `args`: the number of threads, which
+/// is one per hardware thread when the option is absent, and the rest.
+fn jobs(args: &[String]) -> Result<(usize, &[String]), String> {
+    match args {
+        [flag, n, rest @ ..] if flag == "--jobs" => match n.parse() {
+            Ok(n) if n > 0 => Ok((n, rest)),
+            _ => Err(format!("invalid number of jobs: {n}")),
+        },
+        [flag] if flag == "--jobs" => Err(USAGE.to_string()),
+        _ => Ok((default_jobs(), args)),
+    }
+}
+
 fn verify_files(args: &[String]) -> Result<ExitCode, String> {
-    let (allow_skipped, files) = option(args, "--allow-skipped");
+    let (allow_skipped, args) = option(args, "--allow-skipped");
+    let (jobs, files) = jobs(args)?;
     if files.is_empty() {
         return Err(USAGE.to_string());
     }
     let (mut failed, mut skipped) = (false, false);
-    for path in files {
-        let v = verify(&load(path)?);
-        println!(
-            "{path}: checked {}, skipped {}, mismatches {}",
-            v.checked,
-            v.skipped,
-            v.mismatches.len()
-        );
-        for m in v.mismatches.iter().take(MISMATCHES_SHOWN) {
+    // A file that cannot be read ends the run, after the report of the
+    // files before it.
+    let unreadable = map_ordered(
+        files,
+        jobs,
+        |path| load(path).map(|corpus| (path.clone(), verify(&corpus))),
+        |checked| {
+            let (path, v) = match checked {
+                Ok(checked) => checked,
+                Err(message) => return ControlFlow::Break(message),
+            };
             println!(
-                "  call {}: recorded {}, exact {}",
-                m.call, m.recorded, m.exact
+                "{path}: checked {}, skipped {}, mismatches {}",
+                v.checked,
+                v.skipped,
+                v.mismatches.len()
             );
-        }
-        failed |= !v.mismatches.is_empty();
-        skipped |= v.skipped > 0;
+            for m in v.mismatches.iter().take(MISMATCHES_SHOWN) {
+                println!(
+                    "  call {}: recorded {}, exact {}",
+                    m.call, m.recorded, m.exact
+                );
+            }
+            failed |= !v.mismatches.is_empty();
+            skipped |= v.skipped > 0;
+            ControlFlow::Continue(())
+        },
+    );
+    if let Some(message) = unreadable {
+        return Err(message);
     }
     Ok(if failed {
         ExitCode::FAILURE
