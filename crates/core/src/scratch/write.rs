@@ -27,8 +27,10 @@ impl Scratch<'_> {
     ///
     /// # Panics
     ///
-    /// If `f` returns a length greater than `capacity`. The arena is then
-    /// left as it was before the call.
+    /// If `f` returns a length greater than `capacity`. The top of the arena
+    /// and the spans below it are then as they were before the call, but
+    /// [`high_water`](Self::high_water) already counts the `capacity`
+    /// components reserved, and a growable arena may already have grown.
     ///
     /// # Examples
     ///

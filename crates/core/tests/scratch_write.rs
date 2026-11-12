@@ -94,3 +94,16 @@ fn write_of_an_invalid_expansion_is_caught_in_debug_builds() {
     let mut buf = [0.0; 4];
     let _ = Scratch::borrowed(&mut buf).write(2, copy(&[3.0, 5.0]));
 }
+
+#[test]
+fn after_the_panic_the_top_is_back_but_the_high_water_mark_has_risen() {
+    let mut buf = [0.0; 8];
+    let mut s = Scratch::borrowed(&mut buf);
+    let kept = s.push(&[1.0]).unwrap();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = s.write(5, |_| 6);
+    }));
+    assert!(result.is_err());
+    assert_eq!((s.used(), s.high_water()), (1, 6));
+    assert_eq!(s.get(kept), &[1.0]);
+}

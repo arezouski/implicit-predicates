@@ -62,16 +62,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `&slice.try_into().unwrap()`: annotate them as `[f64; 3]`. The generic
   parameters of `orient3d` cannot be named, since they are `impl Point`
   arguments.
-- `orient3d` needs the `std` feature, on by default. Without it, call
-  `orient3d_in`. On explicit points it still does not allocate; with an
+- `orient3d` needs the `std` feature, on by default. This is a breaking
+  change for crates that depend on `implicit-predicates` with
+  `default-features = false`: `orient3d` is gone for them, and
+  `orient3d_in`, which takes the arena, is the entry point without `std`.
+  On explicit points it still does not allocate; with an
   implicit point that the filter cannot decide, the arena of the thread is
   allocated on its first use and grows on the heap when a call needs more.
 - With implicit points, `orient3d` also returns `None` when the exact
   coordinates of a point cannot be computed in the range of its exact
   arithmetic, or when, no stage being able to decide, a nonzero component
   of those exact coordinates lies outside `2^-188..=2^235` or a coordinate
-  has more than 16 components. For explicit points the conditions are
-  unchanged.
+  has more than 16 components, or the exact coordinates of a point of
+  another crate have a weight other than `Weight::One`. The documentation
+  of `orient3d` gives a condition on the inputs of an `Lnc` under which the
+  call is decided. For explicit points the conditions are unchanged.
 - In the generated code, the filter of a predicate with a per-axis bound
   takes the uncertainty of the points as `e: [f64; 3]`, and each predicate
   module also holds `filter_points`, `exact_stages`, `exact_stages_in` and

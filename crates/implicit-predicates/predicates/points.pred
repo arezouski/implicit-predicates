@@ -1,8 +1,8 @@
 // The point types of the library.
 //
 // An explicit point is given by its coordinates. A point of type Lnc lies
-// on the line through the explicit points p and q: it is q for t = 0 and p
-// for t = 1.
+// on the segment between the explicit points p and q: it is q for t = 0 and
+// p for t = 1.
 
 point Explicit(p: F64x3) = p;
 

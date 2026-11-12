@@ -252,6 +252,13 @@ fn non_finite_points_have_infinite_error() {
     assert_eq!(point.err(), &[f64::INFINITY; 3]);
     // Its exact coordinates are outside the range of the exact arithmetic.
     assert_eq!(exact_of(&point), Err(ExactError::OutOfRange));
+    // Every operation of x has a zero operand, so its computed error is
+    // zero, but its approximation, 0 * inf, is NaN: the error is infinite
+    // because of the approximation alone.
+    let point = Lnc::new_unchecked([f64::INFINITY, 0.0, 0.0], [0.0; 3], 0.0);
+    assert!(point.approx()[0].is_nan());
+    assert_eq!(point.err()[0], f64::INFINITY);
+    assert_eq!(&point.err()[1..], &[0.0, 0.0]);
     // For a point on a line the error bound cannot overflow while the
     // approximation is finite: every term is about 2^-53 times finite
     // values. Near the top of the range both stay finite, and the bound

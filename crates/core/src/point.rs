@@ -19,9 +19,11 @@ use crate::scratch::{Scratch, ScratchExhausted, Span};
 /// Implementations must uphold, for each axis `k`:
 ///
 /// - `err()[k]` is not negative (it may be `+∞`) and bounds the distance
-///   between `approx()[k]` and the exact coordinate `k` that
-///   [`exact`](Self::exact) writes;
-/// - `err()[k]` is zero only when `approx()[k]` is that exact coordinate;
+///   between `approx()[k]` and coordinate `k` of the point, `x_k / w`,
+///   where `x_k` is the numerator and `w` the weight that
+///   [`exact`](Self::exact) writes (`x_k` itself when `w` is
+///   [`Weight::One`]);
+/// - `err()[k]` is zero only when `approx()[k]` is that coordinate;
 /// - [`is_explicit`](Self::is_explicit) returns `true` only if `approx()`
 ///   holds the exact coordinates, `err()` is zero on every axis and
 ///   [`exact`](Self::exact) gives [`Weight::One`]: for such points the
@@ -29,7 +31,16 @@ use crate::scratch::{Scratch, ScratchExhausted, Span};
 /// - every span of the [`ExactCoords`] that [`exact`](Self::exact) returns
 ///   holds a valid expansion (see [`expansion`]: nonzero components of
 ///   strictly increasing magnitude that do not overlap), written in the
-///   arena it was given.
+///   arena it was given;
+/// - [`exact`](Self::exact) leaves the arena below the top it had when
+///   `exact` was called as it was: it writes only above that top and never
+///   resets the arena to a mark taken before the call, since a predicate
+///   keeps the exact coordinates of the points it read before there;
+/// - while a predicate runs, which may call each method more than once,
+///   [`approx`](Self::approx), [`err`](Self::err) and
+///   [`is_explicit`](Self::is_explicit) give the same answer every time and
+///   [`exact`](Self::exact) the same coordinates: a type with interior
+///   mutability must not change them in the middle of a call.
 ///
 /// A predicate given a point that breaks this contract can return a wrong
 /// sign: predicates do not check it.
@@ -106,7 +117,9 @@ pub struct ExactCoords {
 pub enum Weight {
     /// The denominator is one: the numerators are the coordinates.
     One,
-    /// The denominator is the expansion at this span.
+    /// The denominator is the expansion at this span. The predicates of the
+    /// `implicit-predicates` crate do not support it yet: they return `None`
+    /// for a point whose exact coordinates have it.
     Expansion(Span),
 }
 
