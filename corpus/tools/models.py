@@ -63,7 +63,8 @@ def model_path(file_id):
 
 
 def export(file_ids):
-    """Write the OFF file of every model in ``file_ids`` that has none yet."""
+    """Write the OFF file of every model in ``file_ids`` that has none yet.
+    A model that is not a triangle mesh with finite coordinates gets none."""
     missing = sorted({i for i in file_ids if not model_path(i).exists()})
     # Keep each command line well under the system limit.
     for start in range(0, len(missing), 500):

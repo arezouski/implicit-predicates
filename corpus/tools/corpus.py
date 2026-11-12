@@ -16,6 +16,23 @@ import sample
 
 MANIFEST = Path(__file__).resolve().parents[1] / "manifest" / "sample.csv"
 
+# The models a run is restricted to, by whether the mesh self-intersects.
+POPULATIONS = {
+    "all": lambda m: True,
+    "valid": lambda m: not m.self_intersecting,
+    "self-intersecting": lambda m: m.self_intersecting,
+}
+
+
+def _corpus_dir(args):
+    """The directory of the corpus files."""
+    return args.corpus_dir or run.CORPUS_OUT_DIR
+
+
+def _run_log(args):
+    """The log of the recording runs, kept next to the corpus files."""
+    return run.RUN_LOG if args.corpus_dir is None else args.corpus_dir / "run.csv"
+
 
 def fetch_reference(_args):
     reference.fetch()
@@ -27,18 +44,23 @@ def build(_args):
 
 
 def _select(args):
-    """Select the sample: a model is valid when the original mesher meshes it
-    and the recording mesher has not failed on it (a recording that writes
-    another output than the original's is a failure).
+    """Select the sample among the models of the population: a model is
+    valid when it has an OFF file, the original mesher meshes it and the
+    recording mesher has not
+    failed on it (a recording that writes another output than the original's
+    is a failure; one that timed out under a shorter limit is not).
 
     Returns the selection and the log of the original runs."""
     if not models.METADATA.exists():
         raise reference.ReferenceError(f"{models.METADATA} is missing; run fetch-models first")
     original = run.read_log(run.VALIDITY_LOG)
-    recording = run.read_log(run.RUN_LOG)
+    recording = run.read_log(_run_log(args))
 
     def check(m):
-        return run.run_original(m.file_id, models.model_path(m.file_id), args.timeout)
+        model = models.model_path(m.file_id)
+        if not model.exists():
+            return run.Outcome(m.file_id, "failed", 0.0, reason="no OFF file")
+        return run.run_original(m.file_id, model, args.timeout)
 
     def valid(batch):
         todo = [m for m in batch
@@ -50,11 +72,12 @@ def _select(args):
         return {
             m.file_id for m in batch
             if run.within(original[m.file_id], args.timeout)
-            and recording.get(m.file_id, original[m.file_id]).status == "ok"
+            and not run.failed(recording.get(m.file_id), args.timeout)
         }
 
-    selection = sample.select(sample.read_metadata(models.METADATA),
-                              args.count, sample.SEED, valid, lookahead=args.jobs)
+    population = [m for m in sample.read_metadata(models.METADATA)
+                  if POPULATIONS[args.population](m)]
+    selection = sample.select(population, args.count, sample.SEED, valid, lookahead=args.jobs)
     sample.write_manifest(args.manifest, selection.models)
     print(f"selected {len(selection.models)} models into {args.manifest} "
           f"({len(selection.invalid)} candidates were not valid)")
@@ -71,8 +94,8 @@ def select(args):
     _select(args)
 
 
-def _corpus_file(file_id):
-    return run.CORPUS_OUT_DIR / f"{file_id}.ipcorpus"
+def _corpus_file(args, file_id):
+    return _corpus_dir(args) / f"{file_id}.ipcorpus"
 
 
 def run_sample(args):
@@ -81,23 +104,23 @@ def run_sample(args):
     remove the corpus files of models that are no longer in the manifest."""
     while True:
         selection, original = _select(args)
-        recording = run.read_log(run.RUN_LOG)
+        recording = run.read_log(_run_log(args))
         todo = [m for m in selection.models
                 if not run.current(recording.get(m.file_id), original[m.file_id])
-                or not _corpus_file(m.file_id).exists()]
+                or not _corpus_file(args, m.file_id).exists()]
         if not todo:
             break
 
         def record(m):
             return run.run_recording(m.file_id, models.model_path(m.file_id), args.timeout,
-                                     _corpus_file(m.file_id), original[m.file_id].digest)
+                                     _corpus_file(args, m.file_id), original[m.file_id].digest)
 
         for outcome in run.run_parallel(record, todo, args.jobs, "recording"):
             recording[outcome.file_id] = outcome
-            run.write_log(run.RUN_LOG, recording)
-    removed = run.reconcile(run.CORPUS_OUT_DIR, {m.file_id for m in selection.models})
+            run.write_log(_run_log(args), recording)
+    removed = run.reconcile(_corpus_dir(args), {m.file_id for m in selection.models})
     failed = [o for o in recording.values() if o.status != "ok"]
-    print(f"recorded {len(selection.models)} models into {run.CORPUS_OUT_DIR}; "
+    print(f"recorded {len(selection.models)} models into {_corpus_dir(args)}; "
           f"{len(failed)} were replaced after failing to record; "
           f"removed the corpus files of {len(removed)} models no longer in the manifest")
 
@@ -127,7 +150,8 @@ COMMANDS = {
     "all": (all_commands, "fetch-reference, build, fetch-models, select and run, in sequence"),
 }
 
-# Commands that run the mesher and take --jobs, --timeout and --count.
+# Commands that run the mesher and take --jobs, --timeout, --count,
+# --population and --corpus-dir.
 RUNNING = {"select", "run", "all"}
 # Commands that read or write the manifest and take --manifest.
 MANIFEST_USERS = RUNNING | {"fetch-models"}
@@ -148,6 +172,12 @@ def parse(argv=None):
                                  help=f"seconds per run (default {run.DEFAULT_TIMEOUT})")
             command.add_argument("--count", type=int, default=sample.TARGET,
                                  help=f"number of sample models (default {sample.TARGET})")
+            command.add_argument("--population", choices=sorted(POPULATIONS), default="all",
+                                 help="models to choose from: all, those that do not "
+                                      "self-intersect (valid), or those that do (default all)")
+            command.add_argument("--corpus-dir", type=Path, default=None,
+                                 help="directory of the corpus files and of their run log "
+                                      "(default: corpus/ in the data directory)")
         if name in MANIFEST_USERS:
             command.add_argument("--manifest", type=Path, default=MANIFEST,
                                  help="manifest file (default: the committed one)")

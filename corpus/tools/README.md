@@ -45,6 +45,24 @@ run, default 600) and `--count N` (number of sample models, default 200).
 They and `fetch-models` take `--manifest FILE` (default: the committed
 `corpus/manifest/sample.csv`).
 
+They also take `--population` (`all`, the default; `valid`, the models that
+do not self-intersect; or `self-intersecting`) and `--corpus-dir DIR`, the
+directory of the corpus files and of the log of their recording runs
+(default: `corpus/` in the data directory). With a count at least as large
+as the population, every valid model is recorded. To record a whole
+population next to the sample, without touching it, give it its own
+manifest and corpus directory; a first pass with a short time limit records
+most models quickly, and a second pass with a longer one runs again only
+the models that timed out:
+
+```sh
+for limit in 60 600; do
+    python3 corpus/tools/corpus.py run --population valid --count 100000 \
+        --timeout $limit --manifest corpus/data/full/manifest.csv \
+        --corpus-dir corpus/data/full/corpus
+done
+```
+
 Everything is downloaded, built and recorded under `corpus/data/`, or under
 the directory named by the environment variable `CORPUS_DATA_DIR`. A second
 data directory can regenerate a small corpus from scratch without touching
@@ -219,10 +237,13 @@ pseudo-random order fixed by the seed `20261110`, and the first valid ones
 are taken. When a stratum runs out of valid candidates, its unfilled share
 goes to the other strata. The same seed and dataset give the same manifest.
 
-A model is valid when the original mesher, within the time limit, exits with
+A model is valid when it has an OFF file (a model that is not a triangle
+mesh with finite coordinates gets none) and the original mesher, within the
+time limit, exits with
 status 0 and writes a non-empty `.tet` file, and the recording mesher has not
 failed on it; a recording run that writes a `.tet` file different from the
-original's is a failure (see Recording). Exit status 0 is not enough: the
+original's is a failure (see Recording), and one that timed out under a
+shorter limit than the current one is run again. Exit status 0 is not enough: the
 mesher's error routine also exits with status 0, without writing the `.tet`
 file.
 

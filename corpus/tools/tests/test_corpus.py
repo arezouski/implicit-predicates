@@ -30,6 +30,13 @@ class ArgumentTests(unittest.TestCase):
         self.assertFalse(hasattr(args, "count"))
 
 
+    def test_the_corpus_directory_and_the_population_can_be_chosen(self):
+        args = corpus.parse(["run"])
+        self.assertEqual((args.corpus_dir, args.population), (None, "all"))
+        args = corpus.parse(["run", "--corpus-dir", "/x/full", "--population", "valid"])
+        self.assertEqual((args.corpus_dir, args.population), (Path("/x/full"), "valid"))
+
+
 class AllTests(unittest.TestCase):
     def test_all_runs_every_step_in_order(self):
         steps = []
@@ -72,6 +79,63 @@ class SelectTests(unittest.TestCase):
         self.assertEqual(calls, {"select": (8, sample.SEED), "write": manifest})
 
 
+    def models(self):
+        return [sample.Model(1, "CC0", 10, 10, True, False),
+                sample.Model(2, "CC0", 10, 10, True, True)]
+
+    def selected(self, *options, original=None, recording=None, unexportable=()):
+        """The file ids `select` keeps with the given options and run logs,
+        when the models in `unexportable` get no OFF file."""
+        corpus.run.write_log(corpus.run.VALIDITY_LOG, original or {})
+        corpus.run.write_log(corpus.run.RUN_LOG, recording or {})
+
+        def run_original(file_id, _model, _timeout):
+            return corpus.run.Outcome(file_id, "ok", 1.0, digest="d" * 64)
+
+        def export(file_ids):
+            for file_id in file_ids:
+                if file_id not in unexportable:
+                    (self.tmp / f"{file_id}.off").write_text("OFF")
+
+        with mock.patch.object(sample, "read_metadata", lambda _path: self.models()), \
+                mock.patch.object(corpus.models, "MODELS_DIR", self.tmp), \
+                mock.patch.object(corpus.models, "export", export), \
+                mock.patch.object(corpus.run, "run_original", run_original):
+            args = corpus.parse(["select", "--jobs", "1", "--manifest", str(self.tmp / "m.csv"),
+                                 *options])
+            selection, _ = corpus._select(args)
+        return [m.file_id for m in selection.models]
+
+    def ok(self, file_id):
+        return corpus.run.Outcome(file_id, "ok", 1.0, digest="d" * 64)
+
+    def test_a_population_keeps_only_its_models(self):
+        original = {1: self.ok(1), 2: self.ok(2)}
+        self.assertEqual(self.selected(original=original), [1, 2])
+        self.assertEqual(self.selected("--population", "valid", original=original), [1])
+        self.assertEqual(self.selected("--population", "self-intersecting", original=original),
+                         [2])
+
+    def test_a_model_without_an_off_file_is_not_valid(self):
+        self.assertEqual(self.selected(unexportable=[1]), [2])
+        logged = corpus.run.read_log(corpus.run.VALIDITY_LOG)
+        self.assertEqual((logged[1].status, logged[1].reason), ("failed", "no OFF file"))
+        self.assertEqual(logged[2].status, "ok")
+
+    def test_a_recording_that_failed_excludes_its_model(self):
+        failed = corpus.run.Outcome(1, "failed", 1.0, reason="output differs")
+        self.assertEqual(self.selected(original={1: self.ok(1), 2: self.ok(2)},
+                                       recording={1: failed}), [2])
+
+    def test_a_recording_that_timed_out_under_a_shorter_limit_is_tried_again(self):
+        original = {1: self.ok(1), 2: self.ok(2)}
+        timeout = corpus.run.Outcome(1, "timeout", 60.0, reason="timeout")
+        self.assertEqual(self.selected("--timeout", "60", original=original,
+                                       recording={1: timeout}), [2])
+        self.assertEqual(self.selected("--timeout", "600", original=original,
+                                       recording={1: timeout}), [1, 2])
+
+
 class RunSampleTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -93,6 +157,7 @@ class RunSampleTests(unittest.TestCase):
 
     def record(self, file_id, _model, _timeout, out, expected):
         self.recorded.append((file_id, expected))
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text("corpus")
         return corpus.run.Outcome(file_id, "ok", 1.0, 7, 5, digest=expected)
 
@@ -113,6 +178,13 @@ class RunSampleTests(unittest.TestCase):
                              {1: corpus.run.Outcome(1, "ok", 1.0, 7, 5, digest="d" * 64)})
         self.run_sample()
         self.assertEqual(self.recorded, [])
+
+    def test_a_chosen_corpus_directory_holds_the_files_and_its_own_log(self):
+        full = self.tmp / "full"
+        with mock.patch.object(corpus.run, "run_recording", self.record):
+            corpus.run_sample(corpus.parse(["run", "--jobs", "1", "--corpus-dir", str(full)]))
+        self.assertEqual(sorted(p.name for p in full.iterdir()), ["1.ipcorpus", "run.csv"])
+        self.assertEqual(list(self.out.iterdir()), [])
 
     def test_corpus_files_of_models_not_in_the_manifest_are_removed(self):
         (self.out / "2.ipcorpus").write_text("replaced model")

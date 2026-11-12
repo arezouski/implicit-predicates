@@ -104,6 +104,14 @@ class RunTests(unittest.TestCase):
         self.assertTrue(run.settled(run.Outcome(1, "ok", 1.0, digest=TET_DIGEST), 10))
         self.assertTrue(run.settled(run.Outcome(1, "failed", 1.0, reason="exit status 3"), 10))
 
+    def test_a_recording_fails_its_model_unless_it_timed_out_under_a_shorter_limit(self):
+        self.assertFalse(run.failed(None, 10))
+        self.assertFalse(run.failed(run.Outcome(1, "ok", 1.0, 7, 5, digest=TET_DIGEST), 10))
+        self.assertTrue(run.failed(run.Outcome(1, "failed", 1.0, reason="output differs"), 10))
+        timeout = run.Outcome(1, "timeout", 60.0, reason="timeout")
+        self.assertTrue(run.failed(timeout, 60))
+        self.assertFalse(run.failed(timeout, 120))
+
     def test_a_recording_is_current_only_with_the_digest_of_the_original(self):
         original = run.Outcome(1, "ok", 1.0, digest=TET_DIGEST)
         self.assertTrue(run.current(run.Outcome(1, "ok", 1.0, 7, 5, digest=TET_DIGEST), original))

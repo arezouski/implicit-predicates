@@ -195,6 +195,12 @@ def settled(outcome, timeout):
     return outcome.status != "timeout" or outcome.seconds >= timeout
 
 
+def failed(recording, timeout):
+    """Whether an earlier recording run rules its model out under ``timeout``:
+    one that did not succeed, unless it timed out under a shorter limit."""
+    return recording is not None and recording.status != "ok" and settled(recording, timeout)
+
+
 def current(recording, original):
     """Whether a recording run succeeded with the output of the original run."""
     return (recording is not None and recording.status == "ok"

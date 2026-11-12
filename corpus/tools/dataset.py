@@ -79,6 +79,7 @@ def export(cache_dir, models_dir, file_ids):
     missing = [i for i in wanted if i not in entries]
     if missing:
         raise SystemExit(f"error: no such models in the dataset: {missing}")
+    skipped = 0
     for file_id in wanted:
         out = models_dir / f"{file_id}.off"
         if out.exists():
@@ -87,11 +88,14 @@ def export(cache_dir, models_dir, file_ids):
         try:
             text = _off_text(vertices, facets)
         except ValueError as error:
-            raise SystemExit(f"error: model {file_id}: {error}") from error
+            # Not a triangle mesh the mesher can read: it gets no OFF file.
+            print(f"skipped model {file_id}: {error}")
+            skipped += 1
+            continue
         partial = out.with_name(out.name + ".partial")
         partial.write_text(text, encoding="ascii")
         partial.replace(out)
-    print(f"exported {len(wanted)} models to {models_dir}")
+    print(f"exported {len(wanted) - skipped} models to {models_dir}; skipped {skipped}")
 
 
 def main(argv):
