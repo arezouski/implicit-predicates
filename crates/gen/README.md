@@ -205,12 +205,16 @@ For the tests of each predicate it writes a second module, of checks, with:
   patterns;
 - for a filter with one uncertainty per axis, `uncertainty_edge_cases`,
   pairs built in the same way on either side of its bound with an
-  uncertainty that is not zero on one axis, for each axis, or on all of
-  them, given with each pair;
+  uncertainty that is not zero on one axis, for each axis of positive
+  degree, or on all of the axes of positive degree, given with each pair;
 - `check_bound_edge_cases` and `check_uncertainty_edge_cases`, which run a
   stage, given as a closure of the coordinates of the points (and of their
   errors), on those cases and check its signs, so that the tests can run
-  them on every stage and on points of any type.
+  them on every stage and on points of any type. With an uncertainty, the
+  sign is checked at every corner of the boxes of the errors for a
+  predicate of at most four points; above that the corners are too many,
+  and only a fixed sample of `2 * (1 + 3 * points)` of them is checked, as
+  the documentation of the emitted function says.
 
 Generated files start with a header saying that they must not be edited
 and giving the command that regenerates them.

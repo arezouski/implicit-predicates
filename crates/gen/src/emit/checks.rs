@@ -138,7 +138,11 @@ pub(crate) fn write_checks(
         let cases = uncertainty_edge_cases(graph, points, constants);
         write_uncertainty_cases(out, &cases, points);
     }
-    check_fns::write_check_fns(out, points, matches!(filter, FilterKind::PerAxis(..)));
+    let degrees = match filter {
+        FilterKind::PerAxis(constants, _) => Some(constants.degrees),
+        FilterKind::Global(_) => None,
+    };
+    check_fns::write_check_fns(out, points, degrees);
 }
 
 /// Writes `uncertainty_edge_cases` and its table, for `points` points.

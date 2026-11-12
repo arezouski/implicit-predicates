@@ -110,3 +110,77 @@ fn edge_cases_with_uncertainty_are_emitted_for_a_per_axis_filter_only() {
     let s = generated(INSPHERE, "predicates/insphere.pred");
     assert!(!s.checks.contains("uncertainty_edge_cases"));
 }
+
+/// The text of `check_uncertainty_edge_cases` in the checks of `source`.
+fn uncertainty_check(source: &str) -> String {
+    let checks = generated(source, "t.pred").checks;
+    let start = checks
+        .rfind("/// Runs `decide` on every case of [`uncertainty_edge_cases`]")
+        .expect("an uncertainty check");
+    checks[start..].to_string()
+}
+
+/// A predicate of `points` points, a multiple of 6, with the same degree in
+/// each axis in every term.
+fn many_points(points: usize) -> String {
+    let params: Vec<String> = (0..points).map(|i| format!("p{i}: Point3")).collect();
+    let terms: Vec<String> = (0..points / 6)
+        .map(|k| {
+            let b = 6 * k;
+            let p = |i: usize| format!("p{}", b + i);
+            format!(
+                "({}.x - {}.x) * ({}.y - {}.y) * ({}.z - {}.z)",
+                p(0),
+                p(1),
+                p(2),
+                p(3),
+                p(4),
+                p(5)
+            )
+        })
+        .collect();
+    format!(
+        "fn many({}) -> Sign {{\n    {}\n}}\n",
+        params.join(", "),
+        terms.join(" - ")
+    )
+}
+
+#[test]
+fn the_uncertainty_check_takes_every_corner_up_to_four_points_and_a_sample_above() {
+    let check = uncertainty_check(ORIENT3D);
+    assert!(
+        check.contains("for corner in 0..1u64 << (3 * 4) {"),
+        "{check}"
+    );
+    assert!(check.contains("each of the `2^12` corners"), "{check}");
+    for points in [6, 24, 60] {
+        let check = uncertainty_check(&many_points(points));
+        assert!(!check.contains("1u64 <<"), "{points}: {check}");
+        let sample = format!("at {} of the `2^{}`", 2 * (1 + 3 * points), 3 * points);
+        assert!(check.contains(&sample), "{points}: {check}");
+        assert!(
+            check.contains("does not show that the sign holds"),
+            "{points}: {check}"
+        );
+    }
+}
+
+#[test]
+fn the_cases_on_every_axis_are_those_of_the_axes_of_positive_degree() {
+    let orient2d = "fn orient2d(a: Point3, b: Point3, c: Point3) -> Sign {\n    \
+                    (a.x - c.x) * (b.y - c.y) - (a.y - c.y) * (b.x - c.x)\n}\n";
+    let check = uncertainty_check(orient2d);
+    assert!(check.contains("[true, true, false] => 3,"), "{check}");
+    assert!(!check.contains("[true, true, true]"), "{check}");
+    assert!(
+        check.contains("every axis of positive degree, x and y"),
+        "{check}"
+    );
+    assert!(uncertainty_check(ORIENT3D).contains("[true, true, true] => 3,"));
+    // One axis of positive degree: its cases are the ones on x only.
+    let flat = "fn flat(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {\n    \
+                (a.x - b.x) * (c.x - d.x)\n}\n";
+    let check = uncertainty_check(flat);
+    assert!(!check.contains("=> 3,"), "{check}");
+}
