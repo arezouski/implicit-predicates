@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "implicit-predicates-core",
  "implicit-predicates-corpus",
@@ -259,7 +259,7 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates-benches"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "criterion",
  "geometry-predicates",
@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates-core"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "implicit-predicates-oracle",
  "implicit-predicates-test-support",
@@ -282,14 +282,14 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates-corpus"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "implicit-predicates-oracle",
 ]
 
 [[package]]
 name = "implicit-predicates-gen"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "implicit-predicates-core",
  "num-bigint",
@@ -299,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates-oracle"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "num-bigint",
  "proptest",
@@ -307,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates-test-support"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "implicit-predicates-core",
  "implicit-predicates-oracle",
