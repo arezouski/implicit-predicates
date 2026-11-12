@@ -155,9 +155,10 @@ fn the_checks_of_a_predicate_of_24_points_compile_and_run() {
 
 #[test]
 fn point_types_with_parameters_named_like_local_names_compile() {
-    // Names that the emitted functions use for their own variables.
-    let source = "point Mix(c: F64x3, s: F64x3, x: f64, scratch: f64, mark: f64) = \
-                  s + x*(c - s) + scratch*mark*c\n    where 0 <= x, x <= 1;\n";
+    // Names that the emitted functions use for their own variables, and
+    // snake case names with digits and underscores.
+    let source = "point Mix(c: F64x3, s: F64x3, x: f64, scratch: f64, mark: f64, \
+                  t__: f64, t_a1: f64) = s + x*(c - s) + scratch*mark*t__*t_a1*c\n    where 0 <= x, x <= 1;\n";
     let g = generate_points(source, "t.pred", REGENERATE)
         .unwrap()
         .unwrap();
@@ -170,12 +171,12 @@ fn point_types_with_parameters_named_like_local_names_compile() {
         "use implicit_predicates_core::{Point, Scratch};\n\n\
          #[test]\n\
          fn the_points_are_built_and_written() {\n\
-         let p = points::Mix::new([1.0, 2.0, 3.0], [0.5, 0.25, 4.0], 0.5, 2.0, 0.125).unwrap();\n\
+         let p = points::Mix::new([1.0, 2.0, 3.0], [0.5, 0.25, 4.0], 0.5, 2.0, 0.125, 1.5, 0.75).unwrap();\n\
          let exact = points_checks::exact_mix(\n\
          [[1.0, 2.0, 3.0], [0.5, 0.25, 4.0]],\n\
-         [0.5, 2.0, 0.125],\n\
+         [0.5, 2.0, 0.125, 1.5, 0.75],\n\
          );\n\
-         let mut buffer = [0.0; 64];\n\
+         let mut buffer = [0.0; 4096];\n\
          let mut scratch = Scratch::borrowed(&mut buffer);\n\
          let coords = p.exact(&mut scratch).unwrap();\n\
          let spans = [coords.x, coords.y, coords.z];\n\

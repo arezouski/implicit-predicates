@@ -98,7 +98,10 @@ Names:
   checked by `exact_<snake case of the name>`;
 - the name of a parameter must start with a lowercase ASCII letter, so that
   it cannot be a type, a constant or a variant that the generated code uses
-  (such as `Ok`, `None`, `UNIT` or `ERR_SLACK`), and cannot be named like a
+  (such as `Ok`, `None`, `UNIT` or `ERR_SLACK`); it must be in snake case,
+  lowercase ASCII letters, digits and underscores without two underscores in
+  a row before the end (`t_a` and `t1`, not `tA` or `t__a`), so that the
+  generated code compiles without warnings; and it cannot be named like a
   field or a function of the generated type: `approx`, `err`, `exact`,
   `is_explicit`, `new`, `new_unchecked`, `evaluate` and `write_exact`.
 

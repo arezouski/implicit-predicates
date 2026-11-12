@@ -379,3 +379,19 @@ fn the_helpers_of_the_error_bound_are_the_documented_ones() {
     assert_eq!(5e-324, f64::from_bits(1));
     assert_eq!(1.1235582092889474e307, 2f64.powi(1020));
 }
+
+#[test]
+fn parameter_names_must_be_snake_case() {
+    // Names that the emitted code would have to allow `non_snake_case` for.
+    for (name, column) in [("tA", 19), ("t__a", 19), ("tAb", 19)] {
+        rejected(
+            &format!("point A(p: F64x3, {name}: f64) = p * {name};"),
+            (1, column),
+            "snake case",
+        );
+    }
+    for name in ["t_a", "t1", "t__", "t_1_"] {
+        let source = format!("point A(p: F64x3, {name}: f64) = p * {name};");
+        assert!(generate_points(&source, "t.pred", "x").is_ok(), "{name}");
+    }
+}

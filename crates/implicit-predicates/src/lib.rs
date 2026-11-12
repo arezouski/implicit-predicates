@@ -129,11 +129,12 @@ use generated::orient3d as orient3d_stages;
 ///
 /// - explicit, with every nonzero coordinate of a magnitude between
 ///   `2^-188` and `2^235`, or
-/// - an [`Lnc`] built with [`Lnc::new`] for which, for some integer
-///   `k >= 0`, `t` is zero or at least `2^-k` and every nonzero coordinate
-///   of `p` and `q` has a magnitude between `2^(k - 84)` and `2^233`: for
-///   example, coordinates between `2^-30` and `2^233` and `t` zero or at
-///   least `2^-54`.
+/// - an [`Lnc`] built with [`Lnc::new`] for which, for some integer `k`
+///   with `0 <= k <= 317`, `t` is zero or at least `2^-k` and every
+///   nonzero coordinate of `p` and `q` has a magnitude between `2^(k - 84)`
+///   and `2^233`: for example, coordinates between `2^-30` and `2^233` and
+///   `t` zero or at least `2^-54`. So `t` is always zero or at least
+///   `2^-317`, even when every coordinate of `p` and `q` is zero.
 ///
 /// For such an [`Lnc`], every coordinate of `p` and `q` is a multiple of
 /// `2^(k - 136)` and `t` one of `2^(-k - 52)`, so every value its
@@ -141,12 +142,14 @@ use generated::orient3d as orient3d_stages;
 /// products of such values, their roundings and their rounding errors. And,
 /// as `0 <= t <= 1`, the components add up in magnitude to at most
 /// `|t| (|p_k| + |q_k|) + |q_k|`, at most `3 * 2^233`, up to a relative
-/// error far below `1/3`, so each is below `2^235`. The condition is
+/// error far below `1/3`, so each is below `2^235`. And `t`, being zero or
+/// between `2^-317` and 1, is in the product domain. The condition is
 /// sufficient, not necessary. For `k >= 1` its lower ends are reached:
 /// with `p_k = 2^(k - 84) (1 + 2^-52)` below the last bit of `q_k` and
 /// `t = 2^-k (1 + 2^-52)`, a component is exactly `2^-188`, and with half
 /// that `p_k` or half that `t` one is below `2^-188`, so a call that only
-/// an exact stage can decide gives `None`. Two inputs outside the condition that give `None`:
+/// an exact stage can decide gives `None`. Three inputs outside the
+/// condition that give `None`:
 ///
 /// ```
 /// use implicit_predicates::{Lnc, orient3d};
@@ -159,6 +162,11 @@ use generated::orient3d as orient3d_stages;
 /// // is below `2^-80`.
 /// let b = [0.1, 3.0, 0.75];
 /// assert_eq!(orient3d(&a, &b, &c, &Lnc::new(a, b, 2f64.powi(-200))?), None);
+/// // Every coordinate is zero, but `t` is below `2^-317`, and below the
+/// // product domain too.
+/// let (a, b, c) = ([1.0, -1.0, 0.0], [0.0, 1.0, -1.0], [1.0, 0.0, -1.0]);
+/// let m = Lnc::new([0.0; 3], [0.0; 3], 2f64.powi(-600))?;
+/// assert_eq!(orient3d(&a, &b, &c, &m), None);
 /// # Ok::<(), implicit_predicates::PointError>(())
 /// ```
 ///

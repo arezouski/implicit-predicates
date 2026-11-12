@@ -84,6 +84,19 @@ pub(crate) fn check_names(point: &PointType, file: &str) -> Result<(), Error> {
                 ),
             ));
         }
+        if !is_snake_case(&param.name) {
+            return Err(Error::at(
+                file,
+                param.position,
+                format!(
+                    "`{}` cannot name a parameter: the name of a parameter must be in snake \
+                     case, lowercase ASCII letters, digits and underscores without two \
+                     underscores in a row before the end, so that the generated code compiles \
+                     without `non_snake_case` warnings",
+                    param.name
+                ),
+            ));
+        }
         if RESERVED_PARAMS.contains(&param.name.as_str()) {
             return Err(Error::at(
                 file,
@@ -96,6 +109,16 @@ pub(crate) fn check_names(point: &PointType, file: &str) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+/// Whether `name`, which starts with a lowercase ASCII letter, is snake case
+/// as Rust's `non_snake_case` lint sees it: only lowercase ASCII letters,
+/// digits and underscores, and no two underscores in a row once the
+/// trailing ones are removed.
+fn is_snake_case(name: &str) -> bool {
+    name.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && !name.trim_end_matches('_').contains("__")
 }
 
 /// Checks that the graph of `point` has at most [`MAX_POINT_NODES`] nodes:

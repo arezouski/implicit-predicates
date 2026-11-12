@@ -1,5 +1,5 @@
 //! The documented condition on the inputs of an `Lnc` under which
-//! `orient3d` decides: `t` zero or at least `2^-k` for some `k >= 0`, and
+//! `orient3d` decides: `t` zero or at least `2^-k` for some `0 <= k <= 317`, and
 //! every nonzero coordinate of `p` and `q` of a magnitude between
 //! `2^(k - 84)` and `2^233`, with every nonzero coordinate of the explicit
 //! points between `2^-188` and `2^235`. Inside it the exact coordinates of
@@ -80,11 +80,14 @@ fn check_condition(p: [f64; 3], q: [f64; 3], t: f64, others: [[f64; 3]; 2]) {
 }
 
 /// A nonzero magnitude in `2^min..=2^max` with a random significand and
-/// sign, or zero; at most `2^max` exactly.
+/// sign, or zero; at most `2^max` exactly. With `min == max`, only zero and
+/// `±2^max`.
 fn coordinate(min: i32, max: i32) -> impl Strategy<Value = f64> {
+    let ends = prop::sample::select(vec![0.0, 2f64.powi(min), -2f64.powi(max), 2f64.powi(max)]);
+    let weight = if min < max { 8 } else { 0 };
     prop_oneof![
-        8 => leaf(min, max - 1, 53),
-        1 => prop::sample::select(vec![0.0, 2f64.powi(min), -2f64.powi(max), 2f64.powi(max)]),
+        weight => leaf(min, (max - 1).max(min), 53),
+        1 => ends,
     ]
 }
 
@@ -97,17 +100,18 @@ fn point(min: i32, max: i32) -> impl Strategy<Value = [f64; 3]> {
     ]
 }
 
-/// `k` in `0..=316`, and `p`, `q` and `t` that meet the condition for it;
-/// `k = 317`, where every nonzero coordinate is `2^233`, is a fixed case.
+/// `k` in `0..=317`, often the largest, and `p`, `q` and `t` that meet the
+/// condition for it, with `p` and `q` often zero.
 fn condition() -> impl Strategy<Value = ([f64; 3], [f64; 3], f64)> {
-    (0i32..=316).prop_flat_map(|k| {
+    prop_oneof![4 => 0i32..=317, 1 => Just(317)].prop_flat_map(|k| {
         let t = prop_oneof![
             1 => prop::sample::select(vec![0.0, 1.0, 1f64.next_down(), 2f64.powi(-k)]),
             4 => (-k..=0, any::<u64>()).prop_map(|(exp, bits)| {
                 (2f64.powi(exp) * (1.0 + (bits >> 12) as f64 / 2f64.powi(52))).min(1.0)
             }),
         ];
-        (point(k - 84, 233), point(k - 84, 233), t)
+        let parent = || prop_oneof![8 => point(k - 84, 233), 1 => Just([0.0; 3])];
+        (parent(), parent(), t)
     })
 }
 
@@ -211,4 +215,22 @@ fn the_lower_ends_of_the_condition_are_reached() {
             assert_eq!(orient3d(&p, &q, &c, &m), None, "k = {k}");
         }
     }
+}
+
+#[test]
+fn the_condition_holds_when_every_coordinate_of_p_and_q_is_zero() {
+    // No coordinate bounds `k` then: only its own bound does.
+    let others = [[1.0, -1.0, 0.0], [0.0, 1.0, -1.0]];
+    for k in [0, 1, 317] {
+        check_condition([0.0; 3], [0.0; 3], 2f64.powi(-k), others);
+    }
+    // Outside the condition but in the product domain: still decided.
+    let (a, b, c) = ([1.0, -1.0, 0.0], [0.0, 1.0, -1.0], [1.0, 0.0, -1.0]);
+    for t in [2f64.powi(-480), 0.0, -0.0] {
+        let m = Lnc::new([0.0; 3], [0.0; 3], t).unwrap();
+        assert_eq!(orient3d(&a, &b, &c, &m), Some(Sign::Zero), "{t:e}");
+    }
+    // The documented example: `t` below the product domain.
+    let m = Lnc::new([0.0; 3], [0.0; 3], 2f64.powi(-600)).unwrap();
+    assert_eq!(orient3d(&a, &b, &c, &m), None);
 }
