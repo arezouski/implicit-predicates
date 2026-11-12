@@ -1,26 +1,45 @@
-//! Each stage of the generated `orient3d` alone: the filter on the `random`
-//! set, which it decides, and each exact stage on the `near_degenerate` and
-//! `degenerate` sets, which the filter cannot decide.
+//! Each stage of the generated `orient3d` alone.
+//!
+//! On explicit points (`[f64; 3]`): the filter on the `random` set, which it
+//! decides, and each exact stage on the `near_degenerate` and `degenerate`
+//! sets, which the filter cannot decide.
+//!
+//! On points of any type (`AnyPoint`): `filter_points`, the filter with the
+//! uncertainty of the errors of the points, on the `random` set as explicit
+//! `AnyPoint` and on the recorded calls with implicit points, as a mix and
+//! by number of implicit points; and the exact stages over arena spans on
+//! the recorded calls that the filter does not decide, by number of
+//! implicit points. `expansions_translated_in` and
+//! `expansions_untranslated_in` are measured on exact coordinates computed
+//! beforehand; `exact_stages_in` computes them, then runs the stages in the
+//! order of the chain.
 //!
 //! As in the `predicates` benchmark, each measurement is one pass over a
 //! whole set, every stage is called through a function pointer, and the
 //! throughput in elements per second is the number of calls per second.
 //! An undecided call counts as zero in the consumed sum. Every stage
-//! decides every case of the sets it is measured on, except
-//! `exact_differences` on `near_degenerate`: the moved coordinate makes most
-//! differences inexact there, and the stage then returns after its check,
-//! so that measurement is mostly the cost of declining. The tests of this
-//! package check these facts.
+//! decides every case of the sets it is measured on, except the filter on
+//! the recorded calls and `exact_differences` on `near_degenerate`: the
+//! moved coordinate makes most differences inexact there, and the stage then
+//! returns after its check, so that measurement is mostly the cost of
+//! declining. The tests of this package check these facts.
 
 use std::hint::black_box;
 
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use implicit_predicates::Sign;
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main};
 use implicit_predicates::stages::orient3d;
-use implicit_predicates_benches::predicates::{Orient3dInput, orient3d_sets};
+use implicit_predicates::{ExactCoords, Scratch, ScratchExhausted, Sign};
+use implicit_predicates_benches::predicates::{
+    ImplicitInput, InputSet, Orient3dInput, any_explicit_sets, exact_sets, implicit_sets,
+    orient3d_sets,
+};
 
 /// A stage of `orient3d`, as a function of the four points.
 type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;
+
+/// A stage over arena spans, as a function of the exact coordinates.
+type SpansStage = fn(&mut Scratch<'_>, [&ExactCoords; 4]) -> Result<Option<Sign>, ScratchExhausted>;
 
 /// The measured stages, each with the sets it is measured on.
 const STAGES: &[(&str, Stage, &[&str])] = &[
@@ -42,27 +61,92 @@ const STAGES: &[(&str, Stage, &[&str])] = &[
     ),
 ];
 
+/// The measured stages over arena spans.
+const SPANS_STAGES: &[(&str, SpansStage)] = &[
+    (
+        "expansions_translated_in",
+        orient3d::expansions_translated_in,
+    ),
+    (
+        "expansions_untranslated_in",
+        orient3d::expansions_untranslated_in,
+    ),
+];
+
 fn points(case: &Orient3dInput) -> [&[f64; 3]; 4] {
     [&case[0], &case[1], &case[2], &case[3]]
 }
 
-fn stages(c: &mut Criterion) {
+/// The consumed value of a result.
+fn value(sign: Option<Sign>) -> i64 {
+    sign.map_or(0, |s| i64::from(i8::from(s)))
+}
+
+/// One measurement of `f` over every case of `cases`.
+fn bench<T>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    name: String,
+    cases: &[T],
+    mut f: impl FnMut(&T) -> Option<Sign>,
+) {
+    group.throughput(Throughput::Elements(cases.len() as u64));
+    group.bench_function(name, |b| {
+        b.iter(|| {
+            let mut sum = 0i64;
+            for case in cases {
+                sum += value(f(black_box(case)));
+            }
+            black_box(sum)
+        })
+    });
+}
+
+fn explicit_stages(group: &mut BenchmarkGroup<'_, WallTime>) {
     let sets = orient3d_sets();
-    let mut group = c.benchmark_group("orient3d_stages");
     for (name, stage, set_names) in STAGES {
         for set in sets.iter().filter(|s| set_names.contains(&s.name)) {
-            group.throughput(Throughput::Elements(set.cases.len() as u64));
-            group.bench_function(format!("{name}/{}", set.name), |b| {
-                b.iter(|| {
-                    let mut sum = 0i64;
-                    for case in &set.cases {
-                        sum += stage(points(black_box(case))).map_or(0, |s| i64::from(i8::from(s)));
-                    }
-                    black_box(sum)
-                })
+            bench(group, format!("{name}/{}", set.name), &set.cases, |c| {
+                stage(points(c))
             });
         }
     }
+}
+
+fn filter_points(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let explicit = any_explicit_sets();
+    let random = explicit.iter().filter(|s| s.name == "random");
+    let sets: Vec<&InputSet<ImplicitInput>> = random.collect();
+    let implicit = implicit_sets();
+    // Through a function pointer, as every other stage.
+    let stage: fn(&ImplicitInput) -> Option<Sign> =
+        |[a, b, c, d]| orient3d::filter_points(a, b, c, d);
+    for set in sets.into_iter().chain(&implicit) {
+        let name = format!("filter_points/{}", set.name);
+        bench(group, name, &set.cases, stage);
+    }
+}
+
+fn spans_stages(group: &mut BenchmarkGroup<'_, WallTime>) {
+    for mut set in exact_sets() {
+        for (name, stage) in SPANS_STAGES {
+            let scratch = &mut set.scratch;
+            bench(group, format!("{name}/{}", set.name), &set.coords, |q| {
+                stage(scratch, q.each_ref()).expect("a growable arena")
+            });
+        }
+        let scratch = &mut set.scratch;
+        let name = format!("exact_stages_in/{}", set.name);
+        bench(group, name, &set.points, |[a, b, c, d]| {
+            orient3d::exact_stages_in(scratch, a, b, c, d).expect("a growable arena")
+        });
+    }
+}
+
+fn stages(c: &mut Criterion) {
+    let mut group = c.benchmark_group("orient3d_stages");
+    explicit_stages(&mut group);
+    filter_points(&mut group);
+    spans_stages(&mut group);
     group.finish();
 }
 

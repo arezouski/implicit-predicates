@@ -12,11 +12,15 @@
 //! - `predicates`: `orient3d` and `insphere` on explicit points, for
 //!   `implicit-predicates`, the `robust` and `geometry-predicates` crates and
 //!   an unprotected `f64` determinant, over random, nearly degenerate,
-//!   exactly degenerate and recorded inputs. Adding a contender is adding a
-//!   row to the table in that file;
+//!   exactly degenerate and recorded inputs, then `orient3d` on points of
+//!   type `AnyPoint`: the same explicit sets and the recorded calls with
+//!   implicit points. Adding a contender is adding a row to the table in
+//!   that file;
 //! - `orient3d_stages`: each stage of the generated `orient3d` alone, the
 //!   filter on the random set and the exact stages on the nearly degenerate
-//!   and exactly degenerate sets.
+//!   and exactly degenerate sets; the filter of points of any type on the
+//!   recorded calls with implicit points, and the exact stages over arena
+//!   spans on those of them that the filter does not decide.
 //!
 //! This library holds the deterministic input builders and the seeds they
 //! use, and the determinant routine, shared by the benchmarks and by the

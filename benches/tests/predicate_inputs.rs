@@ -1,21 +1,26 @@
 //! Checks that the predicate benchmark inputs are what the benchmarks claim,
 //! and that the baseline libraries and `implicit-predicates` agree with the
-//! exact signs on them.
+//! exact signs on them, on explicit points and on points of any type.
 
+use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates::{AnyPoint, Point, Scratch, orient3d_in};
 use implicit_predicates_benches::predicates::{
-    InSphereInput, InputSet, Orient3dInput, SET_SIZE, geometry_insphere_sign,
-    geometry_orient3d_sign, implicit_predicates_orient3d_sign, insphere_sets, naive_insphere,
+    ImplicitInput, InSphereInput, InputSet, MAX_IMPLICIT, Orient3dInput, SET_SIZE,
+    any_explicit_sets, exact_sets, geometry_insphere_sign, geometry_orient3d_sign,
+    implicit_predicates_orient3d_any_sign, implicit_predicates_orient3d_sign,
+    implicit_recorded_signs, implicit_set_name, implicit_sets, insphere_sets, naive_insphere,
     naive_orient3d, orient3d_sets, robust_insphere_sign, robust_orient3d_sign,
 };
 use implicit_predicates_corpus::exact;
+use implicit_predicates_oracle::Dyadic;
 
 fn exact_orient3d(p: &Orient3dInput) -> i8 {
-    let [a, b, c, d] = p.map(|q| q.map(implicit_predicates_oracle::Dyadic::from_f64));
+    let [a, b, c, d] = p.map(|q| q.map(Dyadic::from_f64));
     exact::orient3d(&a, &b, &c, &d)
 }
 
 fn exact_insphere(p: &InSphereInput) -> i8 {
-    let [a, b, c, d, e] = p.map(|q| q.map(implicit_predicates_oracle::Dyadic::from_f64));
+    let [a, b, c, d, e] = p.map(|q| q.map(Dyadic::from_f64));
     exact::insphere(&a, &b, &c, &d, &e)
 }
 
@@ -175,7 +180,6 @@ fn naive_determinants_have_the_exact_sign_on_random_inputs() {
 
 #[test]
 fn the_stages_of_orient3d_decide_the_sets_they_are_benchmarked_on() {
-    use implicit_predicates::stages::orient3d as stages;
     let sets = orient3d_sets();
     let decided = |name: &str, stage: fn([&[f64; 3]; 4]) -> bool| {
         let cases = &set(&sets, name).cases;
@@ -206,4 +210,123 @@ fn the_stages_of_orient3d_decide_the_sets_they_are_benchmarked_on() {
         stages::exact_differences(p).is_some()
     });
     assert!(10 * count < len, "{count} of {len}");
+}
+
+/// The exact coordinates of a point, from its definition: an `Lnc` with
+/// parameters `p`, `q` and `t` is `q + t (p - q)`.
+fn exact_point(point: &AnyPoint) -> [Dyadic; 3] {
+    match point {
+        AnyPoint::Explicit(e) => e.approx().map(Dyadic::from_f64),
+        AnyPoint::Lnc(l) => {
+            let t = Dyadic::from_f64(l.t());
+            std::array::from_fn(|i| {
+                let (p, q) = (Dyadic::from_f64(l.p()[i]), Dyadic::from_f64(l.q()[i]));
+                &q + &(&t * &(&p - &q))
+            })
+        }
+    }
+}
+
+fn exact_orient3d_any(p: &ImplicitInput) -> i8 {
+    let [a, b, c, d] = p.each_ref().map(exact_point);
+    exact::orient3d(&a, &b, &c, &d)
+}
+
+fn implicit_count(p: &ImplicitInput) -> usize {
+    p.iter().filter(|q| !q.is_explicit()).count()
+}
+
+#[test]
+fn implicit_sets_have_their_size_and_counts_and_are_deterministic() {
+    let (first, second) = (implicit_sets(), implicit_sets());
+    assert_eq!(first.len(), MAX_IMPLICIT + 1);
+    for (k, (x, y)) in first.iter().zip(&second).enumerate() {
+        assert_eq!(x.name, implicit_set_name(k));
+        assert_eq!(x.name, y.name);
+        assert_eq!(x.cases, y.cases, "{}", x.name);
+        assert_eq!(x.cases.len(), SET_SIZE, "{}", x.name);
+        for case in &x.cases {
+            let count = implicit_count(case);
+            if k == 0 {
+                assert!((1..=MAX_IMPLICIT).contains(&count), "{}: {case:?}", x.name);
+            } else {
+                assert_eq!(count, k, "{}: {case:?}", x.name);
+            }
+        }
+    }
+}
+
+#[test]
+fn implicit_sets_have_the_recorded_signs() {
+    for (set, signs) in implicit_sets().iter().zip(implicit_recorded_signs()) {
+        assert_eq!(set.cases.len(), signs.len(), "{}", set.name);
+        for (case, sign) in set.cases.iter().zip(signs) {
+            assert_eq!(exact_orient3d_any(case), sign, "{}: {case:?}", set.name);
+        }
+    }
+}
+
+#[test]
+fn any_explicit_sets_are_the_explicit_sets() {
+    let explicit = orient3d_sets();
+    let any = any_explicit_sets();
+    assert_eq!(explicit.len(), any.len());
+    for (x, y) in explicit.iter().zip(&any) {
+        assert_eq!(x.name, y.name);
+        assert_eq!(x.cases.len(), y.cases.len(), "{}", x.name);
+        for (a, b) in x.cases.iter().zip(&y.cases) {
+            assert!(
+                b.iter().all(|q| matches!(q, AnyPoint::Explicit(_))),
+                "{}: {b:?}",
+                x.name
+            );
+            assert_eq!(*a, b.map(|q| *q.approx()), "{}", x.name);
+        }
+    }
+}
+
+#[test]
+fn orient3d_matches_the_exact_sign_on_points_of_any_type() {
+    let mut scratch = Scratch::growable(1 << 12);
+    for set in implicit_sets().iter().chain(&any_explicit_sets()) {
+        for case in &set.cases {
+            let exact = exact_orient3d_any(case);
+            assert_eq!(
+                implicit_predicates_orient3d_any_sign(case),
+                exact,
+                "{}: {case:?}",
+                set.name
+            );
+            let [a, b, c, d] = case;
+            let sign = orient3d_in(&mut scratch, a, b, c, d).expect("a growable arena");
+            assert_eq!(sign.map(i8::from), Some(exact), "{}: {case:?}", set.name);
+        }
+    }
+}
+
+#[test]
+fn exact_sets_need_the_exact_stages_and_every_form_decides_them() {
+    let mut sets = exact_sets();
+    assert_eq!(sets.len(), MAX_IMPLICIT);
+    for (k, set) in sets.iter_mut().enumerate() {
+        assert_eq!(set.name, implicit_set_name(k + 1));
+        assert_eq!(set.points.len(), SET_SIZE, "{}", set.name);
+        assert_eq!(set.coords.len(), SET_SIZE, "{}", set.name);
+        let used = set.scratch.used();
+        for (case, coords) in set.points.iter().zip(&set.coords) {
+            assert_eq!(implicit_count(case), k + 1, "{}: {case:?}", set.name);
+            let [a, b, c, d] = case;
+            assert_eq!(stages::filter_points(a, b, c, d), None, "{case:?}");
+            let exact = Some(exact_orient3d_any(case));
+            let q = coords.each_ref();
+            let s = &mut set.scratch;
+            let translated = stages::expansions_translated_in(s, q).expect("room");
+            let untranslated = stages::expansions_untranslated_in(s, q).expect("room");
+            let chain = stages::exact_stages_in(s, a, b, c, d).expect("room");
+            assert_eq!(translated.map(i8::from), exact, "{case:?}");
+            assert_eq!(untranslated.map(i8::from), exact, "{case:?}");
+            assert_eq!(chain.map(i8::from), exact, "{case:?}");
+            assert_eq!(s.used(), used, "the stages leave the arena as it was");
+        }
+    }
 }

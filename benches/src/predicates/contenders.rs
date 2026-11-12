@@ -1,7 +1,7 @@
 //! The contenders, each returning the sign in the convention of the module
 //! documentation of [`super`].
 
-use super::{InSphereInput, Orient3dInput};
+use super::{ImplicitInput, InSphereInput, Orient3dInput};
 
 /// The sign, 1, 0 or -1, of a value.
 fn sign(x: f64) -> i8 {
@@ -72,6 +72,20 @@ pub fn geometry_orient3d_sign(p: &Orient3dInput) -> i8 {
 /// set has such a case.
 #[must_use]
 pub fn implicit_predicates_orient3d_sign(p: &Orient3dInput) -> i8 {
+    let [a, b, c, d] = p;
+    let sign = implicit_predicates::orient3d(a, b, c, d)
+        .expect("benchmark inputs are inside the range where orient3d decides");
+    i8::from(sign)
+}
+
+/// `orient3d` of `implicit-predicates` on points of any type, with the
+/// arena of the thread for the exact stages of implicit points.
+///
+/// # Panics
+///
+/// Panics if the sign is undecided; no benchmark set has such a case.
+#[must_use]
+pub fn implicit_predicates_orient3d_any_sign(p: &ImplicitInput) -> i8 {
     let [a, b, c, d] = p;
     let sign = implicit_predicates::orient3d(a, b, c, d)
         .expect("benchmark inputs are inside the range where orient3d decides");

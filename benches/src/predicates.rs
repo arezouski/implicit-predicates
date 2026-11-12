@@ -1,9 +1,12 @@
-//! Input sets and contenders for the explicit-point predicate benchmarks.
+//! Input sets and contenders for the predicate benchmarks.
 //!
 //! The sets of [`orient3d_sets`] and [`insphere_sets`] are deterministic and
-//! have [`SET_SIZE`] cases each. The `corpus` set is drawn from the calls of
-//! the versioned sample corpora whose points are all explicit, weighted by
-//! how many calls of the recording run each stored call stands for.
+//! have [`SET_SIZE`] cases each, on explicit points. The `corpus` set is
+//! drawn from the calls of the versioned sample corpora whose points are all
+//! explicit, weighted by how many calls of the recording run each stored
+//! call stands for. The sets of [`implicit_sets`], [`any_explicit_sets`] and
+//! [`exact_sets`] hold points of any type of `implicit-predicates`, among
+//! them the recorded calls with implicit points.
 //!
 //! The contenders are `implicit-predicates` (`orient3d` only, so far), the
 //! `robust` and `geometry-predicates` crates and an unprotected `f64`
@@ -30,11 +33,16 @@ use implicit_predicates_corpus::{Call, Corpus, PointDef, Predicate};
 use crate::Rng;
 
 mod contenders;
+mod implicit;
 
 pub use contenders::{
-    geometry_insphere_sign, geometry_orient3d_sign, implicit_predicates_orient3d_sign,
-    naive_insphere, naive_insphere_sign, naive_orient3d, naive_orient3d_sign, robust_insphere_sign,
-    robust_orient3d_sign,
+    geometry_insphere_sign, geometry_orient3d_sign, implicit_predicates_orient3d_any_sign,
+    implicit_predicates_orient3d_sign, naive_insphere, naive_insphere_sign, naive_orient3d,
+    naive_orient3d_sign, robust_insphere_sign, robust_orient3d_sign,
+};
+pub use implicit::{
+    CORPUS_DIR, EXACT_SEED, ExactSet, IMPLICIT_SEED, ImplicitInput, MAX_IMPLICIT,
+    any_explicit_sets, exact_sets, implicit_recorded_signs, implicit_set_name, implicit_sets,
 };
 
 /// Four points of `orient3d`.
@@ -254,18 +262,30 @@ fn near_cospherical(seed: u64) -> Vec<InSphereInput> {
 
 /// The sample corpora of `corpus/samples/`, in file name order.
 fn sample_corpora() -> Vec<Corpus> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../corpus/samples");
-    let mut files: Vec<_> = std::fs::read_dir(&dir)
-        .expect("the sample corpora directory")
+    read_corpora(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../corpus/samples"))
+}
+
+/// The corpus files of `dir`, in file name order.
+///
+/// # Panics
+///
+/// Panics if `dir` cannot be read, has no corpus file, or has an invalid
+/// one.
+fn read_corpora(dir: &Path) -> Vec<Corpus> {
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
         .map(|entry| entry.expect("a directory entry").path())
         .filter(|path| path.extension().is_some_and(|e| e == "ipcorpus"))
         .collect();
     files.sort();
+    assert!(!files.is_empty(), "no corpus file in {}", dir.display());
     files
         .iter()
         .map(|path| {
-            let reader = BufReader::new(File::open(path).expect("a sample corpus"));
-            Corpus::read(reader).expect("a valid sample corpus")
+            let reader = BufReader::new(
+                File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display())),
+            );
+            Corpus::read(reader).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()))
         })
         .collect()
 }
