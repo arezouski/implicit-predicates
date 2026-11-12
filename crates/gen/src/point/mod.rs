@@ -36,6 +36,11 @@ pub(crate) use error_bound::{ErrorProgram, Term};
 pub use parse::parse_points;
 pub(crate) use parse::read_declaration;
 
+/// The most nodes that the [`PointGraph`] of a point type may have for
+/// [`generate_points`](crate::generate_points) to emit it: distinct
+/// operations and inputs, counted once each over the three coordinates.
+pub const MAX_POINT_NODES: usize = 1024;
+
 /// The type of a parameter of a point type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParamType {

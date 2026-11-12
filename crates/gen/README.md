@@ -69,7 +69,7 @@ sum         := (NAME | INTEGER) ('+' (NAME | INTEGER))*
 A parameter is an `F64x3` (three `f64` coordinates) or an `f64`. In the
 expression, a `NAME` is a parameter, used whole: the coordinates of an
 `F64x3` cannot be read one by one. `INTEGER` is a plain decimal integer
-literal that fits in 64 bits and is exactly an `f64`. Operations on an
+literal that fits in an `i64` and is exactly an `f64`. Operations on an
 `F64x3` are per coordinate: a sum or a difference combines two values of the
 same type, a product combines an `f64` with an `F64x3` (in either order) or
 two `f64`, and the value of the whole expression must be an `F64x3`. Every
@@ -96,16 +96,21 @@ Names:
   `Result`, `Ok`, `Err`, `Option`, `Some`, `None` and `From`; two point
   types cannot have names whose snake case is the same, since each is
   checked by `exact_<snake case of the name>`;
-- a parameter cannot be named like a field or a function of the generated
-  type: `approx`, `err`, `exact`, `is_explicit`, `new`, `new_unchecked`,
-  `evaluate`, `write_exact` and `ERR_SLACK`.
+- the name of a parameter must start with a lowercase ASCII letter, so that
+  it cannot be a type, a constant or a variant that the generated code uses
+  (such as `Ok`, `None`, `UNIT` or `ERR_SLACK`), and cannot be named like a
+  field or a function of the generated type: `approx`, `err`, `exact`,
+  `is_explicit`, `new`, `new_unchecked`, `evaluate` and `write_exact`.
 
 A point type is explicit when it has one `F64x3` parameter and returns it as
 is, like `Explicit` above; every other type is implicit. `generate_points`
 also refuses an implicit type whose error bound needs more than
 `MAX_ROUNDS` (1,024) roundings on a chain of operations, or whose exact
-coordinates need temporaries of more than 4,096 `f64`. Every error is
-reported as `file:line:column: message`.
+coordinates need temporaries of more than 4,096 `f64`, and any type whose
+coordinates take more than `MAX_POINT_NODES` (1,024) distinct operations
+and inputs, counted once over the three coordinates, which bounds the size
+of the emitted code. Every error is reported as `file:line:column:
+message`.
 
 `parse_points` reads the declarations of a file; `parse` reads its
 predicates and checks the declarations without returning them (a file of

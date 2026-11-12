@@ -172,5 +172,5 @@ pub(crate) fn int_literal(text: &str, span: Span) -> Res<i64> {
     let digits: String = text.chars().filter(|&c| c != '_').collect();
     digits
         .parse::<i64>()
-        .map_err(|_| diag(span, "integer literal does not fit in 64 bits"))
+        .map_err(|_| diag(span, "integer literal does not fit in an `i64`"))
 }

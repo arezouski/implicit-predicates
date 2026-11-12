@@ -294,8 +294,9 @@ impl Arena {
     /// For nonzero components of magnitude in `[2^m, 2^big_m]`, the capped
     /// length of every node when every product operand has a `B` of at
     /// most `2^high`, every node a `B` below the overflow limit and a count
-    /// of at most `2^51`; `None` otherwise. Stops at the first node that
-    /// fails, so the work stays small however large the definition.
+    /// of at most [`MAX_OPERATIONS`], `2^50`; `None` otherwise. Stops at the
+    /// first node that fails, so the work stays small however large the
+    /// definition.
     fn fit(&self, m: i64, big_m: i64, high: i64) -> Option<Vec<u128>> {
         self.fit_with_counts(m, big_m, high)
             .map(|(lengths, _)| lengths)

@@ -14,54 +14,13 @@ use std::fmt::Write;
 use super::point_checks::write_checks;
 use super::point_eval::{write_error_helpers, write_exact_helpers};
 use super::point_exact::ExactPlan;
+use super::point_rules::{check_names, check_size};
 use super::point_types::{write_any_point, write_explicit, write_implicit};
 use super::{Generated, comment, literal, notice};
 use crate::error::Error;
 use crate::point::{
     ErrorProgram, LinearSum, ParamType, PointNode, PointType, error_bound, parse_points,
 };
-
-/// Names a parameter cannot have: the generated type uses them for its
-/// fields and functions.
-const RESERVED_PARAMS: [&str; 9] = [
-    "approx",
-    "err",
-    "exact",
-    "is_explicit",
-    "new",
-    "new_unchecked",
-    "evaluate",
-    "write_exact",
-    "ERR_SLACK",
-];
-
-/// Names a point type cannot have: the generated modules use them, as
-/// their own items, items of the core and of the oracle, or names of the
-/// prelude. Every other item they use, primitive types and modules among
-/// them, starts with a lowercase letter, which a point type cannot.
-const RESERVED_TYPES: [&str; 21] = [
-    "AnyPoint",
-    "PointError",
-    "Point",
-    "Scratch",
-    "ScratchExhausted",
-    "ExactCoords",
-    "ExactError",
-    "Weight",
-    "Mark",
-    "Span",
-    "Dyadic",
-    "UNIT",
-    "TINY",
-    "SUM_OPERAND_LIMIT",
-    "Result",
-    "Ok",
-    "Err",
-    "Option",
-    "Some",
-    "None",
-    "From",
-];
 
 /// The largest graph whose coordinates the documentation spells out.
 pub(crate) const MAX_RENDERED_NODES: usize = 64;
@@ -90,10 +49,12 @@ pub(crate) const MAX_RENDERED_NODES: usize = 64;
 /// # Errors
 ///
 /// A syntax error in a declaration; a point type whose name does not start
-/// with an uppercase letter; a parameter or type with a name that the
-/// generated code uses; an integer that is not exactly an `f64`; an
-/// error bound with more roundings than [`crate::MAX_ROUNDS`]; exact
-/// coordinates whose temporaries take more than 4,096 `f64`; or a `where`
+/// with an uppercase letter; a parameter whose name does not start with a
+/// lowercase letter; a parameter or type with a name that the generated code
+/// uses; an integer that is not exactly an `f64`; an error bound with more
+/// roundings than [`crate::MAX_ROUNDS`]; exact coordinates whose temporaries
+/// take more than 4,096 `f64`; coordinates of more than
+/// [`crate::MAX_POINT_NODES`] distinct operations and inputs; or a `where`
 /// comparison that, after cancelling the parameters on both sides, is not
 /// one parameter against an integer of magnitude at most `2^53`, the only
 /// form emitted for now.
@@ -201,40 +162,7 @@ fn prepare<'a>(
     file: &str,
     earlier: &[TypeInfo<'_>],
 ) -> Result<TypeInfo<'a>, Error> {
-    if !point.name.starts_with(|c: char| c.is_ascii_uppercase()) {
-        return Err(Error::at(
-            file,
-            point.position,
-            format!(
-                "`{}` cannot name a point type: the name of a point type must start with an \
-                 uppercase letter, so that it cannot be a primitive type, a module or a \
-                 function that the generated code uses",
-                point.name
-            ),
-        ));
-    }
-    if RESERVED_TYPES.contains(&point.name.as_str()) {
-        return Err(Error::at(
-            file,
-            point.position,
-            format!(
-                "`{}` cannot name a point type: the generated code uses that name",
-                point.name
-            ),
-        ));
-    }
-    for param in &point.params {
-        if RESERVED_PARAMS.contains(&param.name.as_str()) {
-            return Err(Error::at(
-                file,
-                param.position,
-                format!(
-                    "`{}` cannot name a parameter: the generated type uses that name",
-                    param.name
-                ),
-            ));
-        }
-    }
+    check_names(point, file)?;
     let check_name = format!("exact_{}", snake_case(&point.name));
     if let Some(other) = earlier.iter().find(|t| t.check_name == check_name) {
         return Err(Error::at(
@@ -267,6 +195,9 @@ fn prepare<'a>(
             bounds: constraint_bounds(point, file)?,
         })
     };
+    // After the other checks, which report a long chain of roundings or
+    // large exact coordinates more precisely.
+    check_size(point, file)?;
     Ok(TypeInfo {
         point,
         slot,

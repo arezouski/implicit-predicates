@@ -5,7 +5,8 @@
 use std::time::{Duration, Instant};
 
 use implicit_predicates_gen::{
-    Error, canonical, difference_graph, filter_bound, generate, parse, parse_points,
+    Error, MAX_POINT_NODES, canonical, difference_graph, filter_bound, generate, generate_points,
+    parse, parse_points,
 };
 
 /// How the tests say to regenerate the code.
@@ -261,4 +262,29 @@ fn points_nested_32_deep_are_read_and_one_more_is_rejected() {
     ] {
         assert!(parse_points(&source, "t.pred").is_err());
     }
+}
+
+#[test]
+fn a_point_of_too_many_operations_is_an_error_at_its_name() {
+    // A run of unary minus takes no rounding, so only the number of
+    // operations bounds the emitted code; formatting it once overflowed the
+    // stack of rustfmt.
+    let minuses = |count: usize| format!("point N(p: F64x3) = {}p;", "-".repeat(count));
+    for count in [10_001, 200_001] {
+        let start = Instant::now();
+        let e = generate_points(&minuses(count), "t.pred", REGENERATE).expect_err("too large");
+        assert!(start.elapsed() < LIMIT, "took {:?}", start.elapsed());
+        assert_eq!((e.file.as_str(), e.line, e.column), ("t.pred", 1, 7), "{e}");
+        assert!(e.message.contains(&MAX_POINT_NODES.to_string()), "{e}");
+        assert!(e.message.contains("operations"), "{e}");
+    }
+    // Three coordinates, the scalar, three negations each time and three
+    // products: exactly the limit, and three nodes more.
+    let scaled = |count: usize| format!("point N(p: F64x3, t: f64) = t * {}p;", "-".repeat(count));
+    let fits = (MAX_POINT_NODES - 7) / 3;
+    assert_eq!(7 + 3 * fits, MAX_POINT_NODES);
+    assert!(generate_points(&scaled(fits), "t.pred", REGENERATE).is_ok());
+    let e = generate_points(&scaled(fits + 1), "t.pred", REGENERATE).expect_err("one more");
+    assert_eq!((e.line, e.column), (1, 7), "{e}");
+    assert!(e.message.contains("take 1027 distinct"), "{e}");
 }

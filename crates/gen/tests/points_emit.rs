@@ -251,6 +251,26 @@ fn declarations_that_cannot_be_emitted_are_rejected_with_their_position() {
         (1, 19),
         "cannot name a parameter",
     );
+    // Constants, variants and types of the generated code, and of the
+    // prelude, start with an uppercase letter; a parameter cannot.
+    for name in [
+        "Ok",
+        "Err",
+        "Some",
+        "None",
+        "UNIT",
+        "TINY",
+        "SUM_OPERAND_LIMIT",
+        "ERR_SLACK",
+        "P",
+        "_t",
+    ] {
+        rejected(
+            &format!("point A(p: F64x3, {name}: f64) = p * {name};"),
+            (1, 19),
+            "must start with a lowercase letter",
+        );
+    }
     rejected(
         "point AnyPoint(p: F64x3) = p;",
         (1, 7),

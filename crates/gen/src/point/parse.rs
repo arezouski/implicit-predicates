@@ -330,10 +330,9 @@ fn parse_sum(cur: &mut Cursor, scope: &Scope) -> Res<LinearSum> {
             Some(TokenTree::Literal(lit)) => {
                 let span = lit.span();
                 let value = int_literal(&lit.to_string(), span)?;
-                sum.constant = sum
-                    .constant
-                    .checked_add(value)
-                    .ok_or_else(|| diag(span, "the sum of the integers does not fit in 64 bits"))?;
+                sum.constant = sum.constant.checked_add(value).ok_or_else(|| {
+                    diag(span, "the sum of the integers does not fit in an `i64`")
+                })?;
             }
             _ => return Err(cur.expected("an `f64` parameter or an integer")),
         }

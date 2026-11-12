@@ -18,6 +18,7 @@ mod grid;
 mod point_checks;
 mod point_eval;
 mod point_exact;
+mod point_rules;
 mod point_types;
 mod points;
 mod program;
@@ -122,9 +123,9 @@ pub struct Generated {
 /// - [`crate::canonical`] keeps every expansion within `2^16` terms, `2^16`
 ///   bits per coefficient and `2^20` units of work;
 /// - the exact plans reject temporaries of `2^32` components or more, or of
-///   more than `2^51` operations, and take a few passes over the graph for
-///   each power of two they try; the plans over spans stop each pass at the
-///   first node whose bound overflows;
+///   more than `2^51` operations on the stack and `2^50` over spans, and take
+///   a few passes over the graph for each power of two they try; the plans
+///   over spans stop each pass at the first node whose bound overflows;
 /// - the search for the edge cases of the checks, the most expensive step
 ///   per node, runs only on main forms of at most 256 distinct
 ///   subexpressions, and makes at most a fixed number of exact evaluations
