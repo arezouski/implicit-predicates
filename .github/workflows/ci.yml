@@ -111,8 +111,11 @@ jobs:
           targets: thumbv7em-none-eabihf, wasm32-unknown-unknown
       - run: cargo build -p implicit-predicates-core --target thumbv7em-none-eabihf
       - run: cargo build -p implicit-predicates --no-default-features --target thumbv7em-none-eabihf
+      - run: cargo build -p implicit-predicates --no-default-features --target wasm32-unknown-unknown
       - run: cargo build -p implicit-predicates --target wasm32-unknown-unknown
       - run: cargo build -p implicit-predicates-core --features alloc --target wasm32-unknown-unknown
+      # The tests of the crate without its `std` feature, on the host.
+      - run: cargo test -p implicit-predicates --no-default-features
 
   reference:
     # The bindings to the third-party reference libraries, outside the
@@ -120,9 +123,6 @@ jobs:
     # downloaded and no corpus is generated. The libraries are built with
     # AVX2 and FMA, which GitHub's x86_64 runners support.
     runs-on: ubuntu-latest
-    # Non-blocking until it has run green once: it compiles third-party code
-    # whose behaviour depends on the compiler of the runner.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -141,3 +141,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo doc --workspace --no-deps
       - run: cargo doc --workspace --no-deps --all-features
+      - run: cargo doc -p implicit-predicates --no-deps --no-default-features
