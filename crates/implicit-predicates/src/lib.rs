@@ -16,7 +16,10 @@
 //! definition: a floating-point filter decides the common cases, and exact
 //! stages built on the expansions of `implicit-predicates-core` decide the
 //! rest. The point types are generated from their declarations in the same
-//! way.
+//! way. A type of your own can implement [`Point`] too, but the predicates
+//! rely on its contract without checking it: an implementation that breaks
+//! it makes them return wrong signs. `insphere` and the other kinds of
+//! implicit points do not exist yet.
 //!
 //! ```
 //! # #[cfg(feature = "std")] {

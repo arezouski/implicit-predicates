@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Implicit points. `Point`, in `implicit-predicates-core`, is the contract
+  of a point as the predicates read it: an approximation of its
+  coordinates, a bound on the error of each one, whether it is explicit,
+  and its exact coordinates written as expansions to a `Scratch` arena, in
+  homogeneous form (`ExactCoords`, with a `Weight`), or an `ExactError`.
+  `[f64; 3]` implements it as an explicit point. The predicates rely on the
+  contract without checking it: an implementation that breaks it gives
+  wrong signs.
+- Point types in `implicit-predicates`, generated from their declarations:
+  `Explicit`, a validated explicit point; `Lnc`, the point `q + t (p - q)`
+  on the segment between two explicit points, with its coordinates computed
+  in `f64` and an error bound for each one that is zero on the coordinates
+  that are exact; `AnyPoint`, either of them; and `PointError`, the error of
+  their constructors. `new` rejects inputs that are not finite and, for
+  `Lnc`, a `t` outside `0..=1`; `new_unchecked` accepts any `f64`.
+- `orient3d_in`, `orient3d` with a caller-provided arena for the exact
+  coordinates of implicit points. It works without `std` and returns
+  `ScratchExhausted` when the arena is too small.
+- The `std` feature of `implicit-predicates`, on by default, which provides
+  the arena of each thread used by `orient3d`.
+- `Scratch::write`, to write an expansion computed by other code into the
+  arena, and the `filter` module of `implicit-predicates-core`, which turns
+  the errors of the points of a call into the uncertainty of a filter.
+- Point declarations in `implicit-predicates-gen`: `point NAME(params) =
+  expr;`, with `F64x3` and `f64` parameters and an optional `where` clause
+  on the parameters, read by
+  `parse_points` into a `PointType`. `generate_points` emits the module of
+  the point types of a file, with their constructors, the error bound of
+  their coordinates, derived by `error_bound`, and their exact coordinates.
+  The command line tool writes it as `points.rs`, next to the predicates and
+  their checks; `--check` covers it as well.
+- A floating-point filter with one size and one uncertainty per axis, chosen
+  by `filter_form` when every term of a predicate has the same degree in
+  each axis, as for `orient3d` (`AxisBound`, `AxisConstants`,
+  `FilterForm`), and exact stages over spans of an arena for points of any
+  type, with their ranges derived by `exact_plan_spans_translated` and
+  `exact_plan_spans_untranslated`.
+
+### Changed
+
+- `orient3d` takes any `&impl Point` instead of `&[f64; 3]`, so it accepts
+  `[f64; 3]`, `Explicit`, `Lnc`, `AnyPoint` and the types of other crates
+  that implement `Point`. This is a breaking change. Calls with `&[f64; 3]`
+  arguments keep compiling and return the same signs, and `orient3d` still
+  coerces to the function pointer type
+  `fn(&[f64; 3], &[f64; 3], &[f64; 3], &[f64; 3]) -> Option<Sign>`. Arguments
+  that reached `&[f64; 3]` through a deref coercion, such as `&&[f64; 3]` or
+  `&Box<[f64; 3]>`, no longer compile: pass the reference itself (`r`
+  rather than `&r`) or dereference the box (`&*b`). So do arguments whose
+  type was inferred from the parameter, such as
+  `&slice.try_into().unwrap()`: annotate them as `[f64; 3]`. The generic
+  parameters of `orient3d` cannot be named, since they are `impl Point`
+  arguments.
+- `orient3d` needs the `std` feature, on by default. Without it, call
+  `orient3d_in`. On explicit points it still does not allocate; with an
+  implicit point that the filter cannot decide, the arena of the thread is
+  allocated on its first use and grows on the heap when a call needs more.
+- With implicit points, `orient3d` also returns `None` when the exact
+  coordinates of a point cannot be computed in the range of its exact
+  arithmetic, or when, no stage being able to decide, a nonzero component
+  of those exact coordinates lies outside `2^-188..=2^235` or a coordinate
+  has more than 16 components. For explicit points the conditions are
+  unchanged.
+- In the generated code, the filter of a predicate with a per-axis bound
+  takes the uncertainty of the points as `e: [f64; 3]`, and each predicate
+  module also holds `filter_points`, `exact_stages`, `exact_stages_in` and
+  `staged_in`.
+
 ## [0.0.1] - 2026-11-11
 
 First release: early development, published so that the crates can be

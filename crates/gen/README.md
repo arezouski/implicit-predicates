@@ -51,20 +51,61 @@ point Lnc(p: F64x3, q: F64x3, t: f64) = q + t*(p - q)
     where 0 <= t, t <= 1;
 ```
 
-A declaration is the word `point`, a name, parameters of type `F64x3` (three
-`f64` coordinates) or `f64`, `=`, an expression and `;`. The expression is
-built from the parameters, integer literals, `+`, `-` (binary and unary), `*`
-and parentheses. Operations on an `F64x3` are per coordinate: a sum or a
-difference combines two values of the same type, a product combines an `f64`
-with an `F64x3` (in either order) or two `f64`, and the value of the whole
-expression must be an `F64x3`. Every parameter must be used by the
-expression.
+A declaration reads:
 
-An optional `where` clause lists, separated by commas, comparisons `<=`
-between sums of `f64` parameters and integer literals, such as
-`0 <= u, 0 <= v, u + v <= 1`: what the parameters must satisfy for the point
-to exist. The names of points and parameters cannot be Rust keywords, and two
-points cannot share a name.
+```text
+declaration := 'point' NAME '(' params ')' '=' expr ('where' bounds)? ';'
+params      := (param (',' param)* ','?)?
+param       := NAME ':' ('F64x3' | 'f64')
+expr        := term (('+' | '-') term)*
+term        := unary ('*' unary)*
+unary       := '-'* atom
+atom        := INTEGER | NAME | '(' expr ')'
+bounds      := bound (',' bound)*
+bound       := sum '<=' sum
+sum         := (NAME | INTEGER) ('+' (NAME | INTEGER))*
+```
+
+A parameter is an `F64x3` (three `f64` coordinates) or an `f64`. In the
+expression, a `NAME` is a parameter, used whole: the coordinates of an
+`F64x3` cannot be read one by one. `INTEGER` is a plain decimal integer
+literal that fits in 64 bits and is exactly an `f64`. Operations on an
+`F64x3` are per coordinate: a sum or a difference combines two values of the
+same type, a product combines an `f64` with an `F64x3` (in either order) or
+two `f64`, and the value of the whole expression must be an `F64x3`. Every
+parameter must be used by the expression. Brackets nest at most 32 deep.
+
+The optional `where` clause lists what the parameters must satisfy for the
+point to exist. Its comparisons are `<=` only, between sums of `f64`
+parameters and integers; `-`, `*` and `F64x3` parameters are refused there,
+and so is a comparison that names no parameter. For now, a comparison must
+also reduce, once the parameters on both sides cancel, to one parameter
+against an integer of magnitude at most `2^53`, such as `0 <= t` or
+`t <= 1`, so that it is checked exactly: the parser accepts `u + v <= 1`,
+but `generate_points` reports it as an error.
+
+Names:
+
+- the names of points and parameters cannot be Rust keywords, `_` or raw
+  identifiers; two points cannot share a name, nor two parameters of one
+  point;
+- the name of a point type must start with an uppercase ASCII letter, and
+  cannot be a name that the generated modules use: `AnyPoint`, `PointError`,
+  `Point`, `Scratch`, `ScratchExhausted`, `ExactCoords`, `ExactError`,
+  `Weight`, `Mark`, `Span`, `Dyadic`, `UNIT`, `TINY`, `SUM_OPERAND_LIMIT`,
+  `Result`, `Ok`, `Err`, `Option`, `Some`, `None` and `From`; two point
+  types cannot have names whose snake case is the same, since each is
+  checked by `exact_<snake case of the name>`;
+- a parameter cannot be named like a field or a function of the generated
+  type: `approx`, `err`, `exact`, `is_explicit`, `new`, `new_unchecked`,
+  `evaluate`, `write_exact` and `ERR_SLACK`.
+
+A point type is explicit when it has one `F64x3` parameter and returns it as
+is, like `Explicit` above; every other type is implicit. `generate_points`
+also refuses an implicit type whose error bound needs more than
+`MAX_ROUNDS` (1,024) roundings on a chain of operations, or whose exact
+coordinates need temporaries of more than 4,096 `f64`. Every error is
+reported as `file:line:column: message`.
 
 `parse_points` reads the declarations of a file; `parse` reads its
 predicates and checks the declarations without returning them (a file of
@@ -96,16 +137,9 @@ covers the rounding of the computation itself. A coordinate that is exact,
 such as one shared by the parents of a point on a line, gets an error of
 exactly zero.
 
-The name of a point type must start with an uppercase letter and cannot
-be a name that the generated module uses, such as `Point` or `Result`; a
-parameter cannot be named like a field or a function of the generated type,
-such as `approx` or `new`.
-
-For now a `where` comparison must reduce, once the parameters on both sides
-cancel, to one parameter against an integer of magnitude at most `2^53`, so
-that it is checked exactly; a comparison that names no parameter is an
-error. The checks module of the point types holds `exact_<name>`, the exact
-coordinates of each type that is not explicit.
+The checks module of the point types holds `exact_<name>`, the exact
+coordinates of each implicit type, in snake case, evaluated with the exact
+numbers of `implicit-predicates-oracle`.
 
 ## What the generator checks
 
