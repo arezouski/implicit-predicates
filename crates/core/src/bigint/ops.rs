@@ -18,13 +18,10 @@ impl Scratch<'_> {
     ///
     /// # Errors
     ///
-    /// [`ScratchExhausted`] if that space is not free, or if the exponents
-    /// are so far apart that the result would be wider than `u32::MAX`
-    /// words; the arena is unchanged.
-    ///
-    /// # Panics
-    ///
-    /// Panics if an exponent leaves the range of `i32`.
+    /// [`ScratchExhausted`] if that space is not free, if the exponents are
+    /// so far apart that the result would be wider than `u32::MAX` words,
+    /// or if the exponent of the result leaves the range of `i32`; the
+    /// number of words in use is unchanged.
     ///
     /// # Examples
     ///
@@ -95,6 +92,7 @@ impl Scratch<'_> {
         let negative = first.negative;
 
         let mut dropped = 0;
+        let mark = self.mark();
         let limbs = self.write_words([first.limbs, second.limbs], needed, |[wf, ws], out| {
             let pf = Placed {
                 words: wf,
@@ -119,8 +117,16 @@ impl Scratch<'_> {
             debug_assert!(len > 0, "a sum of unequal magnitudes came out zero");
             len
         })?;
-        let exp = i32::try_from(i64::from(base) + i64::try_from(dropped).unwrap_or(i64::MAX))
-            .expect("the exponent of a big integer stays within i32");
+        // The dropped words are known only now: give the result back if its
+        // exponent does not fit.
+        let exp = match i32::try_from(i64::from(base) + i64::try_from(dropped).unwrap_or(i64::MAX))
+        {
+            Ok(exp) => exp,
+            Err(_) => {
+                self.reset(mark);
+                return Err(ScratchExhausted);
+            }
+        };
         Ok(Big {
             limbs,
             exp,
@@ -141,9 +147,9 @@ impl Scratch<'_> {
     /// # Errors
     ///
     /// [`ScratchExhausted`] if that space is not free, or if the exponent
-    /// of the product leaves the range of `i32`, which cannot happen for
-    /// operands whose exponents come from fewer than `u32::MAX` words; the
-    /// arena is unchanged.
+    /// of the product leaves the range of `i32`, which happens only for
+    /// values of a magnitude of `2^(64·2^31)` or more, or as small as its
+    /// inverse; the arena is unchanged.
     ///
     /// # Examples
     ///
@@ -198,12 +204,9 @@ impl Scratch<'_> {
     ///
     /// # Errors
     ///
-    /// [`ScratchExhausted`] if the space is not free or the exponents are
-    /// too far apart; the arena is unchanged.
-    ///
-    /// # Panics
-    ///
-    /// Panics if an exponent leaves the range of `i32`.
+    /// [`ScratchExhausted`] if the space is not free, the exponents are too
+    /// far apart, or the exponent of the result leaves the range of `i32`;
+    /// the number of words in use is unchanged.
     ///
     /// # Examples
     ///

@@ -35,9 +35,9 @@
 //! // The determinant is exactly zero.
 //! assert_eq!(scratch.big_sub(ad, bc)?.sign(), Sign::Zero);
 //!
-//! // Flip one sign and it is exactly negative.
-//! let bc = scratch.big_mul(b, c.neg())?;
-//! assert_eq!(scratch.big_sub(ad, bc)?.sign(), Sign::Positive);
+//! // Flip the sign of `d` and the determinant is exactly negative.
+//! let ad = scratch.big_mul(a, d.neg())?;
+//! assert_eq!(scratch.big_sub(ad, bc)?.sign(), Sign::Negative);
 //! # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
 //! ```
 

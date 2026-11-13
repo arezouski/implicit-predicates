@@ -558,3 +558,30 @@ fn exponents_that_leave_i32_in_a_product_are_an_exhausted_arena() {
         assert_eq!(r.exponent(), -1);
     }
 }
+
+#[test]
+fn a_sum_whose_result_exponent_leaves_i32_is_an_exhausted_arena() {
+    let mut grow = Scratch::growable(16);
+    let mut buf = [0.0; 16];
+    let mut fixed = Scratch::borrowed(&mut buf);
+    for s in [&mut grow, &mut fixed] {
+        // 2^128 + 2^64 + 1 and 2^64 + 1 at exponent i32::MAX - 1: the
+        // difference is 2^128, whose exponent is i32::MAX + 1.
+        let a = s.big_from_words(false, &[1, 1, 1], i32::MAX - 1).unwrap();
+        let b = s.big_from_words(false, &[1, 1], i32::MAX - 1).unwrap();
+        let used = s.used();
+        for r in [
+            s.big_sub(a, b),
+            s.big_add(a, b.neg()),
+            s.big_add(b.neg(), a),
+        ] {
+            assert_eq!(r.unwrap_err(), ScratchExhausted);
+            assert_eq!(s.used(), used);
+        }
+        // One word lower it fits.
+        let a = s.big_from_words(false, &[1, 1, 1], i32::MAX - 2).unwrap();
+        let b = s.big_from_words(false, &[1, 1], i32::MAX - 2).unwrap();
+        let d = s.big_sub(a, b).unwrap();
+        assert_eq!((d.len(), d.exponent()), (1, i32::MAX));
+    }
+}
