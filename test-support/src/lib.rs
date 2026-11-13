@@ -14,6 +14,7 @@
 //! `implicit-predicates-core` and check every intermediate result.
 
 mod arena;
+mod big;
 mod bit_patterns;
 mod checks;
 mod expansions;
@@ -21,6 +22,7 @@ mod points;
 mod values;
 
 pub use arena::{Applied, ArenaOp, PRODUCT_OPERAND_LIMIT, arena_op, product_working_space};
+pub use big::{assert_valid_big, big_to_dyadic};
 pub use bit_patterns::{bit_pattern_expansion, bit_pattern_pair};
 pub use checks::{assert_valid_expansion, has_adjacent_components};
 pub use expansions::{expansion, expansion_with, expansion_within, near_equal};

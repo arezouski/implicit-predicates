@@ -3,7 +3,7 @@
 use core::cmp::Ordering;
 use core::ops::{Add, Mul, Neg, Sub};
 
-use num_bigint::{BigInt, Sign};
+use num_bigint::{BigInt, BigUint, Sign};
 
 /// An exact dyadic rational: an arbitrary-precision integer mantissa times a
 /// power of two.
@@ -63,6 +63,33 @@ impl Dyadic {
         Dyadic {
             mant: BigInt::from_biguint(sign, magnitude.into()),
             exp,
+        }
+    }
+
+    /// Builds `±(words) * 2^exp2` exactly, where `words` are the 64-bit
+    /// digits of the magnitude from least to most significant.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use implicit_predicates_oracle::Dyadic;
+    ///
+    /// // 2^64 + 3, negated, times 2^-3.
+    /// let d = Dyadic::from_words(true, &[3, 1], -3);
+    /// let expected = &Dyadic::from_f64(-18446744073709551616.0 / 8.0)
+    ///     - &Dyadic::from_f64(3.0 / 8.0);
+    /// assert_eq!(d, expected);
+    /// assert!(Dyadic::from_words(true, &[], 5).is_zero());
+    /// ```
+    pub fn from_words(negative: bool, words: &[u64], exp2: i64) -> Dyadic {
+        let digits: Vec<u32> = words
+            .iter()
+            .flat_map(|&w| [w as u32, (w >> 32) as u32])
+            .collect();
+        let sign = if negative { Sign::Minus } else { Sign::Plus };
+        Dyadic {
+            mant: BigInt::from_biguint(sign, BigUint::new(digits)),
+            exp: exp2,
         }
     }
 

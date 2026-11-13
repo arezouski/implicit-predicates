@@ -49,6 +49,9 @@ pub struct Span {
 pub struct Mark(pub(super) u32);
 
 impl Span {
+    /// The span of no components, valid in every arena.
+    pub(crate) const EMPTY: Span = Span { start: 0, len: 0 };
+
     /// Returns the number of components of the expansion.
     ///
     /// # Examples

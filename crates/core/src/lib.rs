@@ -32,6 +32,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub mod bigint;
 pub mod eft;
 pub mod expansion;
 pub mod filter;
@@ -39,6 +40,7 @@ pub mod point;
 pub mod scratch;
 mod sign;
 
+pub use bigint::Big;
 pub use point::{ExactCoords, ExactError, Point, Weight};
 pub use scratch::{Mark, Scratch, ScratchExhausted, Span};
 pub use sign::Sign;
