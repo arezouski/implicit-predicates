@@ -68,6 +68,7 @@ mod product;
 mod reservation;
 mod span;
 mod storage;
+mod words;
 mod write;
 
 pub use error::ScratchExhausted;

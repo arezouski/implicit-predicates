@@ -22,6 +22,18 @@ impl Scratch<'_> {
         needed: u64,
         write: impl FnOnce([&[f64]; N], &mut [f64]) -> usize,
     ) -> Result<Span, ScratchExhausted> {
+        self.write_words(operands, needed, write)
+    }
+
+    /// The reservation path itself, as [`write_result`](Self::write_result)
+    /// describes it. Nothing here treats the components as numbers, so the
+    /// result may hold 64-bit words stored as bit patterns.
+    pub(crate) fn write_words<const N: usize>(
+        &mut self,
+        operands: [Span; N],
+        needed: u64,
+        write: impl FnOnce([&[f64]; N], &mut [f64]) -> usize,
+    ) -> Result<Span, ScratchExhausted> {
         for operand in operands {
             self.debug_check(operand);
         }
