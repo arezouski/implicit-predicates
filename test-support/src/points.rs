@@ -1,9 +1,9 @@
-//! Generators of points in space and of sets of four points with a given
-//! relationship, for the predicates on points.
+//! Generators of points in space and of sets of four or five points with a
+//! given relationship, for the predicates on points.
 //!
-//! The exact relationships (coplanar, repeated) are built on a grid of small
-//! integers times a power of two, where every operation used to build them
-//! is exact in `f64`.
+//! The exact relationships (coplanar, cospherical, repeated) are built on a
+//! grid of small integers times a power of two, where every operation used
+//! to build them is exact in `f64`.
 //!
 //! [`lnc_params`] gives the parents and the parameter of a point on a line.
 
@@ -247,4 +247,83 @@ pub fn lnc_params() -> impl Strategy<Value = LncParams> {
         underflow,
         close,
     ]
+}
+
+/// Five points in space, the arguments of `insphere`.
+pub type Points5 = [Point3; 5];
+
+/// Five points from [`point3`]: in general position, almost always.
+pub fn random5() -> impl Strategy<Value = Points5> {
+    [point3(), point3(), point3(), point3(), point3()]
+}
+
+/// Five points whose coordinates are integers in `-16..=16` times a common
+/// power of two between `2^-150` and `2^200`.
+pub fn grid5() -> impl Strategy<Value = Points5> {
+    let point = || [-16i32..=16, -16i32..=16, -16i32..=16];
+    (
+        GRID_EXPONENTS,
+        [point(), point(), point(), point(), point()],
+    )
+        .prop_map(|(k, p)| p.map(|point| point.map(|n| on_grid(n, k))))
+}
+
+/// The squares of the radii of the spheres of [`cospherical5`]: each sphere
+/// about a point of the integer lattice holds from 30 to a few hundred
+/// points of the lattice.
+const RADII_SQUARED: [i32; 6] = [9, 25, 49, 81, 169, 625];
+
+/// The points of the integer lattice at distance `sqrt(r2)` from the
+/// origin.
+fn lattice_sphere(r2: i32) -> Vec<[i32; 3]> {
+    let r = (1..).find(|r| r * r >= r2).expect("a radius");
+    let range = || -r..=r;
+    range()
+        .flat_map(|x| range().flat_map(move |y| range().map(move |z| [x, y, z])))
+        .filter(|[x, y, z]| x * x + y * y + z * z == r2)
+        .collect()
+}
+
+/// Five exactly cospherical points: points of the integer lattice on a
+/// sphere of radius 3 to 25 about a centre with integer coordinates in
+/// `-64..=64`, times a common power of two between `2^-150` and `2^200`.
+/// Points may repeat, and four of them may be coplanar.
+///
+/// The coordinates are integers below `2^7` before the scaling, so every
+/// point is exact.
+pub fn cospherical5() -> impl Strategy<Value = Points5> {
+    let spheres: Vec<Vec<[i32; 3]>> = RADII_SQUARED.into_iter().map(lattice_sphere).collect();
+    let index = || any::<prop::sample::Index>();
+    (
+        GRID_EXPONENTS,
+        prop::sample::select(spheres),
+        [-64i32..=64, -64i32..=64, -64i32..=64],
+        [index(), index(), index(), index(), index()],
+    )
+        .prop_map(|(k, sphere, centre, at)| {
+            at.map(|i| {
+                let offset = i.get(&sphere);
+                std::array::from_fn(|axis| on_grid(centre[axis] + offset[axis], k))
+            })
+        })
+}
+
+/// Points from [`cospherical5`] with one to three coordinates of one point,
+/// at any position, moved by one to three units in the last place, up or
+/// down: four points on a sphere and one just off it, or still on it when
+/// the moves happen not to change the value.
+pub fn near_cospherical5() -> impl Strategy<Value = Points5> {
+    let ulps = || prop_oneof![-3i32..=-1, 1i32..=3];
+    (
+        cospherical5(),
+        0usize..5,
+        prop::sample::subsequence(vec![0usize, 1, 2], 1..=3),
+        [ulps(), ulps(), ulps()],
+    )
+        .prop_map(|(mut p, point, axes, ulps)| {
+            for (axis, ulps) in axes.into_iter().zip(ulps) {
+                p[point][axis] = step_ulps(p[point][axis], ulps);
+            }
+            p
+        })
 }

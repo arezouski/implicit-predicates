@@ -27,12 +27,13 @@ pub use bit_patterns::{bit_pattern_expansion, bit_pattern_pair};
 pub use checks::{assert_valid_expansion, has_adjacent_components};
 pub use expansions::{expansion, expansion_with, expansion_within, near_equal};
 pub use points::{
-    LncParams, Point3, Points4, coplanar4, extreme4, grid4, lnc_params, near_coplanar4, point3,
-    random4, repeated4, signed_zeros4,
+    LncParams, Point3, Points4, Points5, coplanar4, cospherical5, extreme4, grid4, grid5,
+    lnc_params, near_coplanar4, near_cospherical5, point3, random4, random5, repeated4,
+    signed_zeros4,
 };
 pub use values::{
-    any_finite, cancellation_that_rounds, correlated_pair, leaf, near_cancelling,
-    product_domain_bits, product_operand,
+    any_finite, cancellation_that_rounds, correlated_pair, extreme_value, leaf, lnc_parameter,
+    near_cancelling, product_domain_bits, product_operand,
 };
 
 use implicit_predicates_oracle::Dyadic;

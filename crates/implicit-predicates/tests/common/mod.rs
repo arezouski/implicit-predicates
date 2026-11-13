@@ -1,6 +1,13 @@
-//! What the tests of `orient3d` share: the generated checks, among them the
-//! exact sign `generated::exact`, the stages by name, and the condition
-//! under which the chain is documented to decide.
+//! What the tests of the predicates share: for `orient3d`, the generated
+//! checks, among them the exact sign `generated::exact`, the stages by name,
+//! and the condition under which the chain is documented to decide; for
+//! `insphere`, its stages by name and the stage that decides a call
+//! ([`insphere`]); for both, the arguments of a call with implicit points
+//! ([`args`]), why a call reaches the stage on big integers ([`why`]),
+//! points of types made for the tests ([`odd_points`]) and a few helpers.
+//!
+//! The generated checks of `insphere` are not here: only its own tests
+//! compile them.
 
 // Each test binary uses a different part of this module and of the
 // generated checks.
@@ -12,18 +19,18 @@ pub mod generated;
 #[path = "../generated/points.rs"]
 pub mod point_checks;
 
-#[path = "../generated/insphere.rs"]
-pub mod insphere_checks;
-
-#[cfg(feature = "std")]
 pub mod args;
 pub mod boxes;
 pub mod corpus_points;
 #[cfg(feature = "std")]
 pub mod corpus_sweep;
+pub mod insphere;
+pub mod odd_points;
+pub mod why;
 
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{Point, Scratch, Sign};
+use implicit_predicates_oracle::Dyadic;
 pub use implicit_predicates_test_support::Points4 as Points;
 
 /// A stage of the chain, as a function of the four points.
@@ -138,4 +145,30 @@ pub fn pow2(exponent: i32) -> f64 {
     } else {
         f64::from_bits(1 << (exponent + 1074))
     }
+}
+
+/// The sign of `s`, a sign given as `-1`, `0` or `1` as the oracles of
+/// `implicit_predicates_corpus::exact` give it.
+///
+/// # Panics
+///
+/// Panics if `s` is not one of them.
+pub fn sign_of(s: i8) -> Sign {
+    match s {
+        1 => Sign::Positive,
+        0 => Sign::Zero,
+        -1 => Sign::Negative,
+        _ => panic!("not a sign: {s}"),
+    }
+}
+
+/// Whether `x` is at least `n * (1 + 2^-30)` and below
+/// `n * (1 + 2^-30) * (1 + 2^-39)`, exactly: the exact value `n (1 + t)`,
+/// `0 <= t < 2^-40`, inflated by `1 + 2^-30` and rounded up, as the
+/// generator emits the constants of a filter.
+pub fn is_derived(x: f64, n: &Dyadic) -> bool {
+    let inflated = n * &(&Dyadic::from_f64(1.0) + &Dyadic::from_f64(pow2(-30)));
+    let above = &inflated * &(&Dyadic::from_f64(1.0) + &Dyadic::from_f64(pow2(-39)));
+    let x = Dyadic::from_f64(x);
+    inflated <= x && x < above
 }

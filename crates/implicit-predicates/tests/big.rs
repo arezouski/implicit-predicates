@@ -10,14 +10,14 @@ mod common;
 
 use common::args::{Arg, Args, Call, Orient3d, Orient3dIn, any_points, exact_sign, with_concrete};
 use common::generated::{exact, exact_at};
+use common::odd_points::{Long, NoCoordinates, Weighted};
 use common::{CHAIN, Points, first_deciding, pow2};
 use implicit_predicates::stages::orient3d::{self as stages, BIG_INTEGERS_EXPLICIT_ARENA};
 use implicit_predicates::{
-    AnyPoint, BigCoords, ExactCoords, ExactError, Lnc, Point, Scratch, Sign, Span, Weight,
-    orient3d, orient3d_in,
+    AnyPoint, BigCoords, ExactCoords, Lnc, Point, Scratch, Sign, orient3d, orient3d_in,
 };
 use implicit_predicates_oracle::Dyadic;
-use implicit_predicates_test_support::{config, leaf};
+use implicit_predicates_test_support::{config, extreme_value, leaf, lnc_parameter};
 use proptest::prelude::*;
 
 /// Three points of a plane, for a fourth point to be tested against.
@@ -63,40 +63,6 @@ mod an_input_that_is_not_finite_panics {
     }
 }
 
-/// A point at the origin whose exact coordinates have the weight
-/// `Weight::Expansion`, with an infinite error so that the filter never
-/// decides.
-struct Weighted;
-
-impl Point for Weighted {
-    fn approx(&self) -> &[f64; 3] {
-        &[0.0; 3]
-    }
-
-    fn err(&self) -> &[f64; 3] {
-        &[f64::INFINITY; 3]
-    }
-
-    fn is_explicit(&self) -> bool {
-        false
-    }
-
-    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
-        let zero = scratch.push(&[])?;
-        let one = scratch.push(&[1.0])?;
-        Ok(ExactCoords {
-            x: zero,
-            y: zero,
-            z: zero,
-            w: Weight::Expansion(one),
-        })
-    }
-
-    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
-        [0.0; 3].exact_big(scratch)
-    }
-}
-
 #[test]
 #[should_panic(
     expected = "implicit-predicates: a point has a weight other than one, which the predicates do not support"
@@ -114,32 +80,6 @@ fn a_point_with_a_weight_panics_with_an_arena() {
     let [a, b, c] = PLANE;
     let mut buf = vec![0.0; 1 << 12];
     let _ = orient3d_in(&mut Scratch::borrowed(&mut buf), &a, &b, &c, &Weighted);
-}
-
-/// A point at the origin without exact coordinates, as expansions or as big
-/// integers, with an infinite error so that the filter never decides.
-struct NoCoordinates;
-
-impl Point for NoCoordinates {
-    fn approx(&self) -> &[f64; 3] {
-        &[0.0; 3]
-    }
-
-    fn err(&self) -> &[f64; 3] {
-        &[f64::INFINITY; 3]
-    }
-
-    fn is_explicit(&self) -> bool {
-        false
-    }
-
-    fn exact(&self, _: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
-        Err(ExactError::OutOfRange)
-    }
-
-    fn exact_big(&self, _: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
-        Err(ExactError::OutOfRange)
-    }
 }
 
 #[test]
@@ -246,47 +186,20 @@ fn the_documented_arena_for_explicit_points_is_the_constant() {
     }
 }
 
-/// A value of `family` for an extreme input:
-///
-/// - 0: an exponent uniform in `-1074..=1023`, with any significand;
-/// - 1: `±1e-300` or `±1e300`, so that both meet in one call;
-/// - 2: a subnormal;
-/// - 3: a zero of either sign, or a value of family 0;
-/// - 4: a value of any of the families above.
-fn extreme(family: usize) -> BoxedStrategy<f64> {
-    match family {
-        0 => leaf(-1074, 1023, 53).boxed(),
-        1 => prop::sample::select(vec![1e-300, -1e-300, 1e300, -1e300]).boxed(),
-        2 => leaf(-1074, -1023, 52).boxed(),
-        3 => prop_oneof![Just(0.0), Just(-0.0), leaf(-1074, 1023, 53)].boxed(),
-        _ => prop_oneof![extreme(0), extreme(1), extreme(2), extreme(3)].boxed(),
-    }
-}
-
-/// A parameter of a point on a line in `[0, 1]`: its ends, `-0.0`, the
-/// least subnormal, a value of every magnitude, or any value.
-fn parameter() -> impl Strategy<Value = f64> {
-    prop_oneof![
-        prop::sample::select(vec![0.0, -0.0, 5e-324, 1.0, 1f64.next_down(), 0.5]),
-        leaf(-1074, -1, 53).prop_map(f64::abs),
-        0.0..=1.0f64,
-    ]
-}
-
-/// Four arguments whose inputs are values of one family of [`extreme`],
-/// with points on a line, in any number from none to four, at any
-/// positions; the others are explicit.
+/// Four arguments whose inputs are values of one family of
+/// [`extreme_value`], with points on a line, in any number from none to
+/// four, at any positions; the others are explicit.
 fn extreme_args() -> impl Strategy<Value = Args> {
     (0usize..5).prop_flat_map(|family| {
-        let v = || extreme(family);
+        let v = || extreme_value(family);
         let point = move || [v(), v(), v()];
         (
             [point(), point(), point(), point()],
             [
-                (point(), point(), parameter()),
-                (point(), point(), parameter()),
-                (point(), point(), parameter()),
-                (point(), point(), parameter()),
+                (point(), point(), lnc_parameter()),
+                (point(), point(), lnc_parameter()),
+                (point(), point(), lnc_parameter()),
+                (point(), point(), lnc_parameter()),
             ],
             prop::sample::subsequence(vec![0, 1, 2, 3], 0..=4),
         )
@@ -346,7 +259,7 @@ proptest! {
     fn degenerate_calls_on_extreme_magnitudes_are_zero(
         base in [base_point(), base_point(), base_point()],
         scales in [scale(), scale(), scale()],
-        t in [parameter(), parameter(), parameter(), parameter()],
+        t in [lnc_parameter(), lnc_parameter(), lnc_parameter(), lnc_parameter()],
         (from, to) in (0usize..4, 0usize..3),
     ) {
         let [a, b, c] = std::array::from_fn(|i| base[i].map(|x| x * scales[i]));
@@ -584,84 +497,6 @@ fn each_range_over_spans_hands_over_to_the_next_stage() {
         assert_eq!(sign, expected, "{case}: {p:?}");
         assert_ne!(expected, Sign::Zero, "{case}: {p:?}");
         assert_every_call(&args, expected);
-    }
-}
-
-/// A point whose first coordinate is the sum of `components`, a valid
-/// expansion, with an infinite error so that the filter never decides; it
-/// counts the calls to `exact_big`.
-struct Long {
-    components: Vec<f64>,
-    approx: [f64; 3],
-    big_calls: std::cell::Cell<usize>,
-}
-
-impl Long {
-    /// The point `(sum of components, y, z)`.
-    fn new(components: Vec<f64>, y: f64, z: f64) -> Long {
-        let x = components.iter().rev().sum();
-        Long {
-            components,
-            approx: [x, y, z],
-            big_calls: std::cell::Cell::new(0),
-        }
-    }
-
-    /// The exact coordinates of the point.
-    fn exact_value(&self) -> [Dyadic; 3] {
-        let x = self
-            .components
-            .iter()
-            .fold(Dyadic::from_f64(0.0), |acc, &c| &acc + &Dyadic::from_f64(c));
-        [
-            x,
-            Dyadic::from_f64(self.approx[1]),
-            Dyadic::from_f64(self.approx[2]),
-        ]
-    }
-}
-
-impl Point for Long {
-    fn approx(&self) -> &[f64; 3] {
-        &self.approx
-    }
-
-    fn err(&self) -> &[f64; 3] {
-        &[f64::INFINITY; 3]
-    }
-
-    fn is_explicit(&self) -> bool {
-        false
-    }
-
-    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
-        fn push(scratch: &mut Scratch<'_>, e: &[f64]) -> Result<Span, ExactError> {
-            Ok(scratch.push(e)?)
-        }
-        let mark = scratch.mark();
-        let spans = push(scratch, &self.components).and_then(|x| {
-            let y = push(scratch, &self.approx[1..2])?;
-            Ok((x, y, push(scratch, &self.approx[2..])?))
-        });
-        let (x, y, z) = spans.inspect_err(|_| scratch.reset(mark))?;
-        Ok(ExactCoords {
-            x,
-            y,
-            z,
-            w: Weight::One,
-        })
-    }
-
-    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
-        self.big_calls.set(self.big_calls.get() + 1);
-        let mut x = scratch.big_from_f64(0.0)?;
-        for &c in &self.components {
-            let c = scratch.big_from_f64(c)?;
-            x = scratch.big_add(x, c)?;
-        }
-        let y = scratch.big_from_f64(self.approx[1])?;
-        let z = scratch.big_from_f64(self.approx[2])?;
-        Ok(BigCoords::new(x, y, z))
     }
 }
 

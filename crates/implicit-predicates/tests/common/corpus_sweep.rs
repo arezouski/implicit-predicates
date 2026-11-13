@@ -7,12 +7,12 @@ use std::fmt::Write as _;
 
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{AnyPoint, BigCoords, ExactCoords, ExactError, Point, Scratch, Sign};
-use implicit_predicates_core::{eft, expansion};
 use implicit_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
 use implicit_predicates_corpus::weighted::weights;
 use implicit_predicates_corpus::{Corpus, Predicate};
 
 use super::corpus_points::{call_points, implicit_count, points};
+pub use super::why::{Why, why_exact_failed};
 use super::{CHAIN, STAGED, all_in_range, first_deciding, in_range, refs};
 
 /// The stages a call can be attributed to, in the order of the chain: the
@@ -34,25 +34,6 @@ pub const COLUMNS: [&str; 8] = [
 const CERTAIN_ZERO: usize = 1;
 const FIRST_SPANS_STAGE: usize = 5;
 const BIG_INTEGERS: usize = 7;
-
-/// Why no stage on expansions decides a call, which the stage on big
-/// integers then decides.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Why {
-    /// Explicit points with a coordinate outside `UNTRANSLATED_RANGE`.
-    CoordinateOutOfRange,
-    /// `Point::exact` failed with `ExactError::OutOfRange`.
-    ExactOutOfRange,
-    /// An exact coordinate has more than `MAX_COORD_COMPONENTS` components.
-    TooManyComponents,
-    /// A component of an exact coordinate is outside
-    /// `SPANS_UNTRANSLATED_RANGE`.
-    ComponentOutOfRange,
-    /// None of the above: every input is inside the documented ranges, so
-    /// some stage on expansions should have decided. The call is decided,
-    /// by the stage on big integers, but a sweep counts it as a mismatch.
-    Unexplained,
-}
 
 /// The first stage that decides a call, as an index in [`COLUMNS`], with
 /// its sign; or [`BIG_INTEGERS`] and the reason why no stage on expansions
@@ -87,40 +68,6 @@ fn attribute(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Result<Sig
     let result = attribute_spans(scratch, p);
     scratch.reset(mark);
     result
-}
-
-/// Why `Point::exact` failed on `point` with `ExactError::OutOfRange`:
-/// [`Why::ExactOutOfRange`] if its inputs are outside the range of its
-/// exact arithmetic, and [`Why::Unexplained`] if they are inside, where it
-/// should not have failed.
-pub fn why_exact_failed(point: &AnyPoint) -> Why {
-    let in_range = match point {
-        AnyPoint::Lnc(l) => lnc_in_exact_range(l.p(), l.q(), l.t()),
-        // An explicit point fails only with a coordinate that is not finite.
-        AnyPoint::Explicit(_) => point.approx().iter().all(|x| x.is_finite()),
-    };
-    if in_range {
-        Why::Unexplained
-    } else {
-        Why::ExactOutOfRange
-    }
-}
-
-/// Whether the exact arithmetic of a point on the line through `p` and `q`
-/// with parameter `t` can take them: every parent coordinate is below
-/// `2^1020`, and `t` and every component of the exact differences of the
-/// parents lie in the product domain.
-fn lnc_in_exact_range(p: &[f64; 3], q: &[f64; 3], t: f64) -> bool {
-    let limit = 2f64.powi(1020);
-    let below = |x: f64| x.abs() < limit;
-    eft::in_product_domain(t)
-        && (0..3).all(|k| {
-            let mut d = [0.0; 2];
-            below(p[k]) && below(q[k]) && {
-                let n = expansion::from_two_diff(p[k], q[k], &mut d);
-                d[..n].iter().all(|&c| eft::in_product_domain(c))
-            }
-        })
 }
 
 /// [`attribute`] after the filter, for points that are not all explicit:

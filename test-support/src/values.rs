@@ -160,3 +160,36 @@ pub(crate) fn step_ulps(x: f64, ulps: i32) -> f64 {
     };
     (0..ulps.unsigned_abs()).fold(x, |y, _| step(y))
 }
+
+/// A value of `family` for an extreme input:
+///
+/// - 0: an exponent uniform in `-1074..=1023`, with any significand;
+/// - 1: `±1e-300` or `±1e300`, so that both meet in one call;
+/// - 2: a subnormal;
+/// - 3: a zero of either sign, or a value of family 0;
+/// - 4: a value of any of the families above.
+pub fn extreme_value(family: usize) -> BoxedStrategy<f64> {
+    match family {
+        0 => leaf(-1074, 1023, 53).boxed(),
+        1 => prop::sample::select(vec![1e-300, -1e-300, 1e300, -1e300]).boxed(),
+        2 => leaf(-1074, -1023, 52).boxed(),
+        3 => prop_oneof![Just(0.0), Just(-0.0), leaf(-1074, 1023, 53)].boxed(),
+        _ => prop_oneof![
+            extreme_value(0),
+            extreme_value(1),
+            extreme_value(2),
+            extreme_value(3)
+        ]
+        .boxed(),
+    }
+}
+
+/// A parameter of a point on a line in `[0, 1]`: its ends, `-0.0`, the
+/// least subnormal, a value of every magnitude, or any value.
+pub fn lnc_parameter() -> impl Strategy<Value = f64> {
+    prop_oneof![
+        prop::sample::select(vec![0.0, -0.0, 5e-324, 1.0, 1f64.next_down(), 0.5]),
+        leaf(-1074, -1, 53).prop_map(f64::abs),
+        0.0..=1.0f64,
+    ]
+}

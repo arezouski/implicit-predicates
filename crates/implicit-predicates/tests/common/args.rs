@@ -1,6 +1,8 @@
 //! The arguments of a call with implicit points: each an explicit point or a
-//! point on a line, with its exact coordinates, the calls of the chain on
-//! them, and the condition under which the chain is documented to decide.
+//! point on a line, with its exact coordinates; for `orient3d`, the calls of
+//! the chain on them and the condition under which the chain is documented
+//! to decide; for `insphere`, the five points of a call of any concrete
+//! types.
 
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{AnyPoint, Explicit, Lnc, Point, Scratch, Sign, Weight};
@@ -116,8 +118,10 @@ pub fn with_concrete<F: Call>(args: &Args, raw: bool, f: &mut F) -> F::Output {
 }
 
 /// `orient3d` on points of any type.
+#[cfg(feature = "std")]
 pub struct Orient3d;
 
+#[cfg(feature = "std")]
 impl Call for Orient3d {
     type Output = Sign;
     fn call<A: Point, B: Point, C: Point, D: Point>(&mut self, a: &A, b: &B, c: &C, d: &D) -> Sign {
@@ -141,8 +145,32 @@ impl Call for Orient3dIn {
 }
 
 /// The points of `args` as [`AnyPoint`]s.
-pub fn any_points(args: &Args) -> [AnyPoint; 4] {
+pub fn any_points<const N: usize>(args: &[Arg; N]) -> [AnyPoint; N] {
     args.each_ref().map(Arg::any)
+}
+
+/// A call on five points of any type, given to [`with_concrete5`].
+pub trait Call5 {
+    type Output;
+    fn call<A: Point, B: Point, C: Point, D: Point, E: Point>(
+        &mut self,
+        a: &A,
+        b: &B,
+        c: &C,
+        d: &D,
+        e: &E,
+    ) -> Self::Output;
+}
+
+/// `f` on the five points of `args`, each of its concrete type, as
+/// [`with_concrete`] builds them.
+pub fn with_concrete5<F: Call5>(args: &[Arg; 5], raw: bool, f: &mut F) -> F::Output {
+    concrete!(args[0], raw, |a| concrete!(args[1], raw, |b| concrete!(
+        args[2],
+        raw,
+        |c| concrete!(args[3], raw, |d| concrete!(args[4], raw, |e| f
+            .call(a, b, c, d, e)))
+    )))
 }
 
 /// Every way of running the chain or one of its stages on `args`, by name:
@@ -152,6 +180,7 @@ pub fn any_points(args: &Args) -> [AnyPoint; 4] {
 /// `orient3d` and `orient3d_in` on `AnyPoint`s and on the concrete types.
 /// The stages that always decide give `Some`, so that every result has one
 /// type.
+#[cfg(feature = "std")]
 pub fn every_stage(args: &Args) -> Vec<(&'static str, Option<Sign>)> {
     let [a, b, c, d] = any_points(args);
     let mut buf = vec![0.0; 1 << 16];

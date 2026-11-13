@@ -15,23 +15,13 @@ mod common;
 
 use common::boxes::{determinant_at, exact_corners};
 use common::generated::exact;
-use common::{Points, STAGES, orient3d, pow2, refs};
+use common::{Points, STAGES, is_derived, orient3d, pow2, refs};
 use implicit_predicates::Sign;
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates_core::filter::uncertainty;
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{config, coplanar4, grid4, near_coplanar4, random4, sample};
 use proptest::prelude::*;
-
-/// Whether `x` is at least `n * (1 + 2^-30)` and below
-/// `n * (1 + 2^-30) * (1 + 2^-39)`, exactly: the exact value `n (1 + t)`,
-/// `0 <= t < 2^-40`, inflated by `1 + 2^-30` and rounded up.
-fn is_derived(x: f64, n: &Dyadic) -> bool {
-    let inflated = n * &(&Dyadic::from_f64(1.0) + &Dyadic::from_f64(pow2(-30)));
-    let above = &inflated * &(&Dyadic::from_f64(1.0) + &Dyadic::from_f64(pow2(-39)));
-    let x = Dyadic::from_f64(x);
-    inflated <= x && x < above
-}
 
 #[test]
 fn the_constants_are_the_derived_ones() {
