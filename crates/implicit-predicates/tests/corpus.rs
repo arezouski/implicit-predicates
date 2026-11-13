@@ -6,8 +6,9 @@
 //! The recording program uses the opposite sign convention, so the recorded
 //! sign is `REFERENCE_ORIENT3D_FACTOR` times ours. Calls with a kind of
 //! point that this crate does not provide yet are counted and reported.
-//! A call that no stage decides is reported with the documented reason
-//! (see `common::corpus_sweep::Why`); on the samples there must be none.
+//! A call that no stage on expansions decides, which the stage on big
+//! integers then decides, is reported with the reason (see
+//! `common::corpus_sweep::Why`); on the samples there must be none.
 //!
 //! The versioned samples are checked by default. The generated corpus is
 //! large and not versioned; its sweep is ignored, and is meant to be run in
@@ -55,8 +56,9 @@ fn read(path: &Path) -> Corpus {
 }
 
 /// Fails, after the report, if a call got a sign other than the recorded
-/// one, the public functions disagree with the stages, or no stage decided
-/// a call whose inputs are inside the documented ranges.
+/// one, the public functions disagree with the stages, or no stage on
+/// expansions decided a call whose inputs are inside their documented
+/// ranges.
 fn assert_no_mismatch(name: &str, tally: &Tally) {
     assert!(
         tally.mismatch_count == 0,
@@ -85,7 +87,7 @@ fn orient3d_matches_the_recorded_sign_on_the_samples() {
     assert_no_mismatch("samples", &tally);
     assert!(
         tally.undecided.is_empty(),
-        "undecided calls on the samples: {:?}",
+        "calls not decided on expansions on the samples: {:?}",
         tally.examples
     );
     assert!(

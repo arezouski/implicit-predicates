@@ -110,9 +110,7 @@ fn orient3d_matches_robust_on_a_long_run() {
         let p = case(&mut rng, index);
         assert!(p.iter().flatten().all(|&x| in_range(x)), "{p:?}");
         let [a, b, c, d] = &p;
-        let ours = implicit_predicates::orient3d(a, b, c, d)
-            .unwrap_or_else(|| panic!("case {index} undecided: {p:?}"));
-        let ours = i8::from(ours);
+        let ours = i8::from(implicit_predicates::orient3d(a, b, c, d));
         let theirs = robust_orient3d_sign(&p);
         assert_eq!(
             ours,

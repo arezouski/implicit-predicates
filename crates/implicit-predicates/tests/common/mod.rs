@@ -19,8 +19,8 @@ pub mod corpus_points;
 #[cfg(feature = "std")]
 pub mod corpus_sweep;
 
-use implicit_predicates::Sign;
 use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates::{Point, Scratch, Sign};
 pub use implicit_predicates_test_support::Points4 as Points;
 
 /// A stage of the chain, as a function of the four points.
@@ -47,19 +47,40 @@ pub const STAGES: [(&str, Stage); 5] = [
     stage!(staged),
 ];
 
-/// The stages of the chain for explicit points, in the order `staged`
-/// tries them, by name. The tests check that the first of them that decides
-/// gives the result of `staged`, so this list cannot drift from the
-/// generated chain.
-pub const CHAIN: [(&str, Stage); 4] = [
+/// The stages of the chain for explicit points, in the order `orient3d`
+/// tries them, by name: those of `staged`, then the stage on big integers.
+/// The tests check that the first of them that decides gives the result of
+/// `orient3d`, so this list cannot drift from the generated chain.
+pub const CHAIN: [(&str, Stage); 5] = [
     FILTER,
     stage!(exact_differences),
     stage!(expansions_translated),
     stage!(expansions_untranslated),
+    ("big_integers", big_integers),
 ];
 
+/// The number of stages of [`CHAIN`] that `staged` runs: all but the stage
+/// on big integers.
+pub const STAGED: usize = 4;
+
+/// `big_integers_in` on the coordinates of the points as big integers,
+/// written by `exact_big` to an arena of
+/// [`stages::BIG_INTEGERS_EXPLICIT_ARENA`] slots, which suffice for
+/// explicit points; `None` only when a coordinate is not finite, which
+/// `exact_big` declines.
+pub fn big_integers(p: [&[f64; 3]; 4]) -> Option<Sign> {
+    let mut buf = vec![0.0; stages::BIG_INTEGERS_EXPLICIT_ARENA];
+    let mut scratch = Scratch::borrowed(&mut buf);
+    let mut q = Vec::with_capacity(4);
+    for x in p {
+        q.push(x.exact_big(&mut scratch).ok()?);
+    }
+    let sign = stages::big_integers_in(&mut scratch, [&q[0], &q[1], &q[2], &q[3]]);
+    Some(sign.expect("the arena of the stage for explicit points"))
+}
+
 /// The index in [`CHAIN`] of the first stage that decides, and its result;
-/// `None` when no stage decides.
+/// `None` only when an input is not finite.
 pub fn first_deciding(p: &Points) -> Option<(usize, Sign)> {
     CHAIN
         .iter()
@@ -74,7 +95,7 @@ pub fn refs(p: &Points) -> [&[f64; 3]; 4] {
 
 /// `orient3d` on the four points.
 #[cfg(feature = "std")]
-pub fn orient3d(p: &Points) -> Option<Sign> {
+pub fn orient3d(p: &Points) -> Sign {
     implicit_predicates::orient3d(&p[0], &p[1], &p[2], &p[3])
 }
 

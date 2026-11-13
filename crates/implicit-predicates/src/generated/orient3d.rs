@@ -6,8 +6,10 @@
 //!
 //! Every stage takes the points `a`, `b`, `c` and `d` of the definition as `p`,
 //! in that order, and returns the sign of the predicate, or `None` when it
-//! cannot decide. [`staged`] runs them in order on explicit points, and
-//! [`staged_in`] on points of any type.
+//! cannot decide; the last one, [`big_integers_in`], takes their coordinates as
+//! big integers and always decides. [`staged`] runs the stages before it in
+//! order on explicit points, and [`staged_in`] runs every stage on points of
+//! any type, so it decides every input.
 
 use implicit_predicates_core::{
     Big, BigCoords, ExactCoords, ExactError, Point, Scratch, ScratchExhausted, Sign, Span, Weight,
@@ -710,16 +712,60 @@ pub fn exact_stages(p: [&[f64; 3]; 4]) -> Option<Sign> {
         .or_else(|| expansions_untranslated(p))
 }
 
-/// The exact sign of the predicate for points of any type:
-/// [`expansions_translated_in`], then [`expansions_untranslated_in`], on the
-/// exact coordinates of the points written to `scratch`, which is reset to its
-/// mark whatever they return. `Ok(None)` means that no stage can decide: the
-/// inputs of some point are outside the range of its exact arithmetic
-/// ([`ExactError::OutOfRange`]), or none of the stages decides.
+/// The exact sign of the predicate for explicit points: [`exact_stages`], which
+/// does not use `scratch`, then, when it does not decide, [`big_integers_in`]
+/// on the coordinates of the points written to `scratch` as big integers, which
+/// always decides. `scratch` is left as it was.
 ///
 /// # Errors
 ///
 /// [`ScratchExhausted`] if `scratch` runs out of room.
+///
+/// # Panics
+///
+/// If a coordinate is not finite.
+#[cold]
+#[inline(never)]
+pub fn exact_stages_explicit_in(
+    scratch: &mut Scratch<'_>,
+    p: [&[f64; 3]; 4],
+) -> Result<Sign, ScratchExhausted> {
+    fn big(scratch: &mut Scratch<'_>, p: [&[f64; 3]; 4]) -> Result<Sign, ScratchExhausted> {
+        let q0 = exact_big(scratch, p[0])?;
+        let q1 = exact_big(scratch, p[1])?;
+        let q2 = exact_big(scratch, p[2])?;
+        let q3 = exact_big(scratch, p[3])?;
+        big_integers_in(scratch, [&q0, &q1, &q2, &q3])
+    }
+    if let Some(sign) = exact_stages(p) {
+        return Ok(sign);
+    }
+    let mark = scratch.mark();
+    let result = big(scratch, p);
+    scratch.reset(mark);
+    result
+}
+
+/// The exact sign of the predicate for points of any type:
+/// [`expansions_translated_in`], then [`expansions_untranslated_in`], on the
+/// exact coordinates of the points written to `scratch`, then, when they do not
+/// decide, [`big_integers_in`] on the coordinates of the points as big integers
+/// written to `scratch`, which always decides. The stages over spans are
+/// skipped when a point cannot give its exact coordinates as expansions, as
+/// when its inputs are outside the range of its exact arithmetic
+/// ([`ExactError::OutOfRange`]). Each attempt starts from the mark of `scratch`
+/// on entry, to which it is reset whatever they return.
+///
+/// # Errors
+///
+/// [`ScratchExhausted`] if `scratch` runs out of room.
+///
+/// # Panics
+///
+/// If the exact coordinates of a point have a weight other than
+/// [`Weight::One`], which the predicates do not support, or a point cannot give
+/// its exact coordinates as big integers, which by the contract of
+/// [`Point::exact_big`] happens only when an input is not finite.
 #[cold]
 #[inline(never)]
 pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point>(
@@ -728,24 +774,19 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point>(
     p1: &P1,
     p2: &P2,
     p3: &P3,
-) -> Result<Option<Sign>, ScratchExhausted> {
-    fn run<P0: Point, P1: Point, P2: Point, P3: Point>(
+) -> Result<Sign, ScratchExhausted> {
+    fn spans<P0: Point, P1: Point, P2: Point, P3: Point>(
         scratch: &mut Scratch<'_>,
         p0: &P0,
         p1: &P1,
         p2: &P2,
         p3: &P3,
     ) -> Result<Option<Sign>, ScratchExhausted> {
-        let Some(q0) = exact(scratch, p0)? else {
-            return Ok(None);
-        };
-        let Some(q1) = exact(scratch, p1)? else {
-            return Ok(None);
-        };
-        let Some(q2) = exact(scratch, p2)? else {
-            return Ok(None);
-        };
-        let Some(q3) = exact(scratch, p3)? else {
+        let q0 = exact(scratch, p0)?;
+        let q1 = exact(scratch, p1)?;
+        let q2 = exact(scratch, p2)?;
+        let q3 = exact(scratch, p3)?;
+        let (Some(q0), Some(q1), Some(q2), Some(q3)) = (q0, q1, q2, q3) else {
             return Ok(None);
         };
         let q = [&q0, &q1, &q2, &q3];
@@ -754,8 +795,26 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point>(
         }
         expansions_untranslated_in(scratch, q)
     }
+    fn big<P0: Point, P1: Point, P2: Point, P3: Point>(
+        scratch: &mut Scratch<'_>,
+        p0: &P0,
+        p1: &P1,
+        p2: &P2,
+        p3: &P3,
+    ) -> Result<Sign, ScratchExhausted> {
+        let q0 = exact_big(scratch, p0)?;
+        let q1 = exact_big(scratch, p1)?;
+        let q2 = exact_big(scratch, p2)?;
+        let q3 = exact_big(scratch, p3)?;
+        big_integers_in(scratch, [&q0, &q1, &q2, &q3])
+    }
     let mark = scratch.mark();
-    let result = run(scratch, p0, p1, p2, p3);
+    let decided = spans(scratch, p0, p1, p2, p3);
+    scratch.reset(mark);
+    if let Some(sign) = decided? {
+        return Ok(sign);
+    }
+    let result = big(scratch, p0, p1, p2, p3);
     scratch.reset(mark);
     result
 }
@@ -763,14 +822,20 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point>(
 /// The sign of the predicate for points of any type, from the first stage that
 /// decides.
 ///
-/// Runs [`filter_points`]; then, when every point is explicit, [`exact_stages`]
-/// on their coordinates, which does not use `scratch`; otherwise
+/// Runs [`filter_points`]; then, when every point is explicit,
+/// [`exact_stages_explicit_in`] on their coordinates; otherwise
 /// [`exact_stages_in`], on their exact coordinates written to `scratch`.
-/// `scratch` is left as it was. `Ok(None)` means that no stage can decide.
+/// `scratch` is not used when the filter decides, and is left as it was. Every
+/// call decides: the last stage, [`big_integers_in`], always does.
 ///
 /// # Errors
 ///
 /// [`ScratchExhausted`] if `scratch` runs out of room.
+///
+/// # Panics
+///
+/// If an input of a point is not finite, or the exact coordinates of a point
+/// have a weight other than one, as [`exact_stages_in`] says.
 #[inline]
 pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point>(
     scratch: &mut Scratch<'_>,
@@ -778,17 +843,15 @@ pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point>(
     p1: &P1,
     p2: &P2,
     p3: &P3,
-) -> Result<Option<Sign>, ScratchExhausted> {
+) -> Result<Sign, ScratchExhausted> {
     if let Some(sign) = filter_points(p0, p1, p2, p3) {
-        return Ok(Some(sign));
+        return Ok(sign);
     }
     if p0.is_explicit() & p1.is_explicit() & p2.is_explicit() & p3.is_explicit() {
-        return Ok(exact_stages([
-            p0.approx(),
-            p1.approx(),
-            p2.approx(),
-            p3.approx(),
-        ]));
+        return exact_stages_explicit_in(
+            scratch,
+            [p0.approx(), p1.approx(), p2.approx(), p3.approx()],
+        );
     }
     exact_stages_in(scratch, p0, p1, p2, p3)
 }
@@ -796,15 +859,49 @@ pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point>(
 /// The exact coordinates of the point `p`, written to `scratch`, or `None` if
 /// it cannot give them for any reason other than the room of the arena, such as
 /// inputs outside the range of its exact arithmetic.
+///
+/// # Panics
+///
+/// If the coordinates have a weight other than [`Weight::One`], which the
+/// predicates do not support.
 fn exact(
     scratch: &mut Scratch<'_>,
     p: &impl Point,
 ) -> Result<Option<ExactCoords>, ScratchExhausted> {
     match p.exact(scratch) {
+        Ok(c) if c.w != Weight::One => no_exact_coordinates(
+            "implicit-predicates: a point has a weight other than one, which the predicates do not support",
+        ),
         Ok(c) => Ok(Some(c)),
         Err(ExactError::Exhausted(e)) => Err(e),
         Err(_) => Ok(None),
     }
+}
+
+/// The exact coordinates of the point `p` as big integers, written to
+/// `scratch`.
+///
+/// # Panics
+///
+/// If `p` cannot give them for any reason other than the room of the arena: by
+/// the contract of [`Point::exact_big`], only when an input is not finite.
+fn exact_big(scratch: &mut Scratch<'_>, p: &impl Point) -> Result<BigCoords, ScratchExhausted> {
+    match p.exact_big(scratch) {
+        Ok(c) => Ok(c),
+        Err(ExactError::Exhausted(e)) => Err(e),
+        Err(_) => no_exact_coordinates(
+            "implicit-predicates: a point has no exact coordinates: an input is not finite",
+        ),
+    }
+}
+
+/// Ends a call whose points cannot give the exact coordinates the predicate
+/// needs, with a panic of message `reason`: the chain never returns a sign it
+/// has not computed exactly.
+#[cold]
+#[inline(never)]
+fn no_exact_coordinates(reason: &str) -> ! {
+    panic!("{reason}")
 }
 
 /// The larger of `a` and `b`, or `b` if they are unordered.

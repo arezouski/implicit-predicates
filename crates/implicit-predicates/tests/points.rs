@@ -343,7 +343,7 @@ fn the_types_of_the_point_contract_come_from_this_crate() {
     let origin = implicit_predicates::orient3d_in(&mut scratch, &a, &b, &c, &Origin);
     let explicit = implicit_predicates::orient3d_in(&mut scratch, &a, &b, &c, &[0.0; 3]);
     assert_eq!(origin, explicit);
-    assert!(matches!(origin, Ok(Some(_))), "{origin:?}");
+    assert!(origin.is_ok(), "{origin:?}");
 }
 
 /// The big-integer coordinates of `point`, as exact values.

@@ -1,9 +1,11 @@
 //! Rust code for the stages of a predicate.
 //!
 //! For each predicate the generated module holds its constants, the
-//! floating-point filter ([`filter`]), three exact stages ([`exact`]) and the
-//! chain that runs them ([`chain`]); a second module holds the checks that
-//! its tests use ([`checks`]). The output is built as text, in a fixed
+//! floating-point filter ([`filter`]), the exact stages on the stack
+//! ([`exact`]) and over spans of an arena ([`spans`]), the final stage on
+//! big integers ([`big`]) and the chains that run them ([`chain`] and
+//! [`generic`]); a second module holds the checks that its tests use
+//! ([`checks`]). The output is built as text, in a fixed
 //! order, so it is the same on every run; it is not formatted.
 
 mod big;
@@ -106,9 +108,12 @@ pub struct Generated {
 /// `big_integers_in` evaluates the main form exactly with the big-integer
 /// operations of an arena, on the coordinates of the points as big integers,
 /// and `BIG_INTEGERS_EXPLICIT_ARENA` is a number of `f64` slots of the arena
-/// that suffices for it on explicit points; the chains do not run it yet.
-/// The module of
-/// its checks holds `exact`, the main form evaluated with the exact numbers
+/// that suffices for it on explicit points. It always decides, and ends the
+/// chain for points of any type: `exact_stages_explicit_in` runs it after
+/// `exact_stages`, and `exact_stages_in` after the stages over spans, so
+/// `staged_in` decides every input, and panics on a point that cannot give
+/// its coordinates as big integers or whose exact coordinates have a weight
+/// other than one. The module of its checks holds `exact`, the main form evaluated with the exact numbers
 /// of `implicit-predicates-oracle`, `bound_edge_cases`, pairs of inputs at
 /// the edge of the error bound of the filter for explicit points, and, for a
 /// per-axis filter, `uncertainty_edge_cases`, the same with an uncertainty.
@@ -334,9 +339,11 @@ fn write_header(out: &mut String, predicate: &Predicate, notice: &str, forms: &F
         &format!(
             "The stages of the predicate `{}`.\n\n\
              Every stage takes the points {} of the definition as `p`, in that order, \
-             and returns the sign of the predicate, or `None` when it cannot decide. \
-             [`staged`] runs them in order on explicit points, and [`staged_in`] on points \
-             of any type.",
+             and returns the sign of the predicate, or `None` when it cannot decide; \
+             the last one, [`big_integers_in`], takes their coordinates as big integers \
+             and always decides. [`staged`] runs the stages before it in order on explicit \
+             points, and [`staged_in`] runs every stage on points of any type, so it \
+             decides every input.",
             predicate.name,
             list(&predicate.params)
         ),

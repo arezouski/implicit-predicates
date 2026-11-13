@@ -1,14 +1,17 @@
 //! `orient3d` on every combination of explicit points and points on a line,
 //! against the exact sign: every stage alone and the chain, on `AnyPoint`s
 //! and on the concrete types; the degenerate cases; and inputs that are not
-//! finite.
+//! finite, which panic.
 
 // `orient3d` needs the `std` feature.
 #![cfg(feature = "std")]
 
 mod common;
 
-use common::args::{Arg, Args, all_explicit, decidable, every_stage, exact_sign, spans_decidable};
+use common::args::{
+    Arg, Args, Orient3d, Orient3dIn, all_explicit, decidable, decided_on_expansions, every_stage,
+    exact_sign, spans_decidable, with_concrete,
+};
 use common::{Points, edges};
 use implicit_predicates::Sign;
 use implicit_predicates::stages::orient3d as stages;
@@ -29,8 +32,9 @@ const CHAIN: [&str; 6] = [
     "orient3d_in, concrete",
 ];
 
-/// The names of [`every_stage`] that run every stage over spans.
-const OVER_SPANS: [&str; 1] = ["exact_stages_in"];
+/// The names of [`every_stage`] that decide whenever the stages over spans
+/// are documented to.
+const OVER_SPANS: [&str; 1] = ["expansions_untranslated_in"];
 
 /// The ends of the ranges of the stages on the stack, of the filter and of
 /// the stages over spans.
@@ -114,9 +118,11 @@ fn check(args: &Args) -> Result<(), TestCaseError> {
     for name in CHAIN {
         prop_assert_eq!(result(name), chain, "{} on {:?}", name, args);
     }
-    // `None` only outside the documented range.
+    // Every call decides; without the stage on big integers, at least
+    // within the documented range.
+    prop_assert_eq!(chain, Some(expected), "{:?}", args);
     if decidable(args) {
-        prop_assert!(chain.is_some(), "no sign for {:?}", args);
+        prop_assert!(decided_on_expansions(&results), "{:?}", args);
     }
     if spans_decidable(args) {
         for name in OVER_SPANS {
@@ -169,9 +175,7 @@ proptest! {
             let explicit = implicit_predicates::orient3d(
                 &point[0].any(), &point[1].any(), &point[2].any(), &point[3].any(),
             );
-            if let (Some(a), Some(b)) = (on_line, explicit) {
-                prop_assert_eq!(a, b, "{:?} {:?}", line, point);
-            }
+            prop_assert_eq!(on_line, explicit, "{:?} {:?}", line, point);
         }
     }
 
@@ -253,7 +257,7 @@ proptest! {
     }
 
     #[test]
-    fn inputs_that_are_not_finite_give_none(
+    fn inputs_that_are_not_finite_panic(
         args in any_args(),
         bad in prop::sample::select(vec![f64::NAN, -f64::NAN, f64::INFINITY, f64::NEG_INFINITY]),
     ) {
@@ -263,15 +267,30 @@ proptest! {
                 let mut changed = inputs.clone();
                 changed[slot] = bad;
                 let args = replaced(&args, i, args[i].with_inputs(&changed));
-                for (name, result) in every_stage(&args) {
-                    prop_assert_eq!(result, None, "{} on {:?}", name, args);
+                let [a, b, c, d] = common::args::any_points(&args);
+                prop_assert_eq!(stages::filter_points(&a, &b, &c, &d), None, "{:?}", args);
+                for raw in [false, true] {
+                    let messages = [
+                        panic_message(|| {
+                            with_concrete(&args, raw, &mut Orient3d);
+                        }),
+                        panic_message(|| {
+                            with_concrete(&args, raw, &mut Orient3dIn);
+                        }),
+                    ];
+                    for message in messages {
+                        prop_assert!(
+                            message.as_deref().is_some_and(|m| m.contains("not finite")),
+                            "{:?} (raw: {}): {:?}", args, raw, message
+                        );
+                    }
                 }
             }
         }
     }
 
     #[test]
-    fn a_point_whose_approximation_overflows_gives_none(
+    fn a_point_whose_approximation_overflows_has_the_exact_sign(
         args in any_args(),
         i in 0usize..4,
         t in prop::sample::select(vec![0.0, 0.5, 1.0, 0.25]),
@@ -279,14 +298,27 @@ proptest! {
     ) {
         // The difference of the parents overflows, so the approximation is
         // not finite even where the point is, as at `t = 0` or `t = 1`; and
-        // the parents are beyond the range of the exact arithmetic.
+        // the parents are beyond the range of the exact arithmetic over
+        // expansions, so only the stage on big integers decides.
         for (p, q) in [([big; 3], [-big; 3]), ([big, 0.0, 1.0], [-big, 0.0, 1.0])] {
             let args = replaced(&args, i, Arg::Lnc(p, q, t));
-            for (name, result) in every_stage(&args) {
-                prop_assert_eq!(result, None, "{} on {:?}", name, args);
-            }
+            let results = every_stage(&args);
+            prop_assert!(!decided_on_expansions(&results), "{:?}", args);
+            check(&args)?;
         }
     }
+}
+
+/// The message of the panic of `f`, or `None` if it does not panic.
+fn panic_message(f: impl FnOnce()) -> Option<String> {
+    let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).err()?;
+    Some(
+        payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+            .unwrap_or_default(),
+    )
 }
 
 /// Every one of the 16 combinations on the same nearly degenerate and

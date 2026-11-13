@@ -119,14 +119,8 @@ pub fn with_concrete<F: Call>(args: &Args, raw: bool, f: &mut F) -> F::Output {
 pub struct Orient3d;
 
 impl Call for Orient3d {
-    type Output = Option<Sign>;
-    fn call<A: Point, B: Point, C: Point, D: Point>(
-        &mut self,
-        a: &A,
-        b: &B,
-        c: &C,
-        d: &D,
-    ) -> Option<Sign> {
+    type Output = Sign;
+    fn call<A: Point, B: Point, C: Point, D: Point>(&mut self, a: &A, b: &B, c: &C, d: &D) -> Sign {
         implicit_predicates::orient3d(a, b, c, d)
     }
 }
@@ -136,14 +130,8 @@ impl Call for Orient3d {
 pub struct Orient3dIn;
 
 impl Call for Orient3dIn {
-    type Output = Option<Sign>;
-    fn call<A: Point, B: Point, C: Point, D: Point>(
-        &mut self,
-        a: &A,
-        b: &B,
-        c: &C,
-        d: &D,
-    ) -> Option<Sign> {
+    type Output = Sign;
+    fn call<A: Point, B: Point, C: Point, D: Point>(&mut self, a: &A, b: &B, c: &C, d: &D) -> Sign {
         let mut buf = vec![0.0; 1 << 16];
         let mut scratch = Scratch::borrowed(&mut buf);
         let result = implicit_predicates::orient3d_in(&mut scratch, a, b, c, d);
@@ -158,9 +146,12 @@ pub fn any_points(args: &Args) -> [AnyPoint; 4] {
 }
 
 /// Every way of running the chain or one of its stages on `args`, by name:
-/// the filter on the points, the stages over spans on their exact
-/// coordinates (when every point has them), `staged_in`, `orient3d` and
-/// `orient3d_in` on `AnyPoint`s and on the concrete types.
+/// the filter on the points, the stages on the stack (when every point is
+/// explicit), the stages over spans on their exact coordinates (when every
+/// point has them), `exact_stages_in`, `staged_in`,
+/// `orient3d` and `orient3d_in` on `AnyPoint`s and on the concrete types.
+/// The stages that always decide give `Some`, so that every result has one
+/// type.
 pub fn every_stage(args: &Args) -> Vec<(&'static str, Option<Sign>)> {
     let [a, b, c, d] = any_points(args);
     let mut buf = vec![0.0; 1 << 16];
@@ -169,14 +160,19 @@ pub fn every_stage(args: &Args) -> Vec<(&'static str, Option<Sign>)> {
         ("filter_points", stages::filter_points(&a, &b, &c, &d)),
         (
             "staged_in",
-            stages::staged_in(&mut scratch, &a, &b, &c, &d).unwrap(),
+            Some(stages::staged_in(&mut scratch, &a, &b, &c, &d).unwrap()),
         ),
         (
             "exact_stages_in",
-            stages::exact_stages_in(&mut scratch, &a, &b, &c, &d).unwrap(),
+            Some(stages::exact_stages_in(&mut scratch, &a, &b, &c, &d).unwrap()),
         ),
     ];
     assert_eq!(scratch.used(), 0);
+    if all_explicit(args) {
+        let p = args.map(|arg| arg.inputs());
+        let p: [[f64; 3]; 4] = std::array::from_fn(|i| [p[i][0], p[i][1], p[i][2]]);
+        results.push(("exact_stages", stages::exact_stages(p.each_ref())));
+    }
     let exact: Option<Vec<_>> = [a, b, c, d]
         .iter()
         .map(|p| p.exact(&mut scratch).ok())
@@ -190,20 +186,39 @@ pub fn every_stage(args: &Args) -> Vec<(&'static str, Option<Sign>)> {
         results.push(("expansions_translated_in", translated));
         results.push(("expansions_untranslated_in", untranslated));
     }
-    results.extend([
-        ("orient3d", implicit_predicates::orient3d(&a, &b, &c, &d)),
-        ("orient3d_in", Orient3dIn.call(&a, &b, &c, &d)),
-        (
-            "orient3d, concrete",
-            with_concrete(args, false, &mut Orient3d),
-        ),
-        ("orient3d, arrays", with_concrete(args, true, &mut Orient3d)),
-        (
-            "orient3d_in, concrete",
-            with_concrete(args, false, &mut Orient3dIn),
-        ),
-    ]);
+    results.extend(
+        [
+            ("orient3d", implicit_predicates::orient3d(&a, &b, &c, &d)),
+            ("orient3d_in", Orient3dIn.call(&a, &b, &c, &d)),
+            (
+                "orient3d, concrete",
+                with_concrete(args, false, &mut Orient3d),
+            ),
+            ("orient3d, arrays", with_concrete(args, true, &mut Orient3d)),
+            (
+                "orient3d_in, concrete",
+                with_concrete(args, false, &mut Orient3dIn),
+            ),
+        ]
+        .map(|(name, sign)| (name, Some(sign))),
+    );
     results
+}
+
+/// Whether a stage before the one on big integers decides, in the results
+/// of [`every_stage`]: the filter, the stages on the stack or a stage over
+/// spans.
+pub fn decided_on_expansions(results: &[(&str, Option<Sign>)]) -> bool {
+    results.iter().any(|(name, result)| {
+        [
+            "filter_points",
+            "exact_stages",
+            "expansions_translated_in",
+            "expansions_untranslated_in",
+        ]
+        .contains(name)
+            && result.is_some()
+    })
 }
 
 /// Whether every explicit argument is given exactly by its coordinates.
@@ -233,8 +248,8 @@ pub fn spans_decidable(args: &Args) -> bool {
     })
 }
 
-/// Whether the chain is documented to decide on `args`: for four explicit
-/// points, every coordinate is zero or of a magnitude in
+/// Whether the chain decides on `args` without the stage on big integers:
+/// for four explicit points, every coordinate is zero or of a magnitude in
 /// `UNTRANSLATED_RANGE`, which rules out values that are not finite;
 /// otherwise [`spans_decidable`].
 pub fn decidable(args: &Args) -> bool {

@@ -116,11 +116,36 @@ fn the_chain_for_points_of_any_type_takes_the_exact_stages_of_staged_for_explici
         staged_in,
         &[
             "filter_points(p0, p1, p2, p3)",
-            "return Ok(exact_stages([",
+            "return exact_stages_explicit_in(scratch, [",
             "exact_stages_in(scratch, p0, p1, p2, p3)",
         ],
     );
     assert!(order.is_sorted(), "{staged_in}");
+    // Then the stage on big integers, on the coordinates of the points.
+    let explicit = function(&o.stages, "exact_stages_explicit_in");
+    assert!(
+        explicit.starts_with(
+            "pub fn exact_stages_explicit_in(scratch: &mut Scratch<'_>, p: [&[f64; 3]; 4]) \
+             -> Result<Sign, ScratchExhausted> {"
+        ),
+        "{explicit}"
+    );
+    let order = positions(
+        explicit,
+        &[
+            "fn big(",
+            "let q0 = exact_big(scratch, p[0])?;",
+            "let q3 = exact_big(scratch, p[3])?;",
+            "big_integers_in(scratch, [&q0, &q1, &q2, &q3])\n}",
+            "if let Some(sign) = exact_stages(p) {\nreturn Ok(sign);\n}",
+            "let mark = scratch.mark();",
+            "let result = big(scratch, p);",
+            "scratch.reset(mark);\nresult",
+        ],
+    );
+    assert!(order.is_sorted(), "{explicit}");
+    let start = o.stages.find("pub fn exact_stages_explicit_in").unwrap();
+    assert!(o.stages[..start].ends_with("#[cold]\n#[inline(never)]\n"));
     let exact = function(&o.stages, "exact_stages");
     assert!(
         exact.starts_with("pub fn exact_stages(p: [&[f64; 3]; 4]) -> Option<Sign> {"),
@@ -138,9 +163,21 @@ fn the_chain_for_points_of_any_type_takes_the_exact_stages_of_staged_for_explici
     // In-sphere has no stage on the stack: its chain for explicit points
     // takes the arena.
     let i = generated(INSPHERE, "predicates/insphere.pred");
-    assert!(function(&i.stages, "staged_in").contains("return exact_stages(scratch, ["));
+    assert!(
+        function(&i.stages, "staged_in").contains("return exact_stages_explicit_in(scratch, [")
+    );
     let exact = function(&i.stages, "exact_stages");
     assert!(exact.contains("staged_in_arena(scratch, p)"), "{exact}");
+    let explicit = function(&i.stages, "exact_stages_explicit_in");
+    let order = positions(
+        explicit,
+        &[
+            "let q4 = exact_big(scratch, p[4])?;",
+            "big_integers_in(scratch, [&q0, &q1, &q2, &q3, &q4])",
+            "if let Some(sign) = exact_stages(scratch, p)? {\nreturn Ok(sign);\n}",
+        ],
+    );
+    assert!(order.is_sorted(), "{explicit}");
 }
 
 #[test]
@@ -150,24 +187,35 @@ fn the_stages_over_spans_run_on_the_exact_coordinates_in_order_and_reset_the_are
     let order = positions(
         spans,
         &[
-            "fn run<",
-            "let Some(q0) = exact(scratch, p0)? else {\nreturn Ok(None);\n};",
-            "let Some(q3) = exact(scratch, p3)? else {\nreturn Ok(None);\n};",
+            "fn spans<",
+            "let q0 = exact(scratch, p0)?;",
+            "let q3 = exact(scratch, p3)?;",
+            "let (Some(q0), Some(q1), Some(q2), Some(q3)) = (q0, q1, q2, q3) else {\n\
+             return Ok(None);\n};",
             "let q = [&q0, &q1, &q2, &q3];",
             "if let Some(sign) = expansions_translated_in(scratch, q)? {",
             "expansions_untranslated_in(scratch, q)\n}",
             "let mark = scratch.mark();",
-            "let result = run(scratch, p0, p1, p2, p3);",
+            "let decided = spans(scratch, p0, p1, p2, p3);",
             "scratch.reset(mark);",
         ],
     );
     assert!(order.is_sorted(), "{spans}");
     let start = o.stages.find("pub fn exact_stages_in").unwrap();
     assert!(o.stages[..start].ends_with("#[cold]\n#[inline(never)]\n"));
-    // An exhausted arena is an error; any other failure, such as inputs
-    // out of range, is `None`.
+    // An exhausted arena is an error; a weight other than one is a panic;
+    // any other failure, such as inputs out of range, is `None`, and leaves
+    // the stage on big integers to decide.
     let exact = &o.stages[o.stages.find("\nfn exact(").unwrap()..];
-    assert!(exact.contains("Err(ExactError::Exhausted(e)) => Err(e),\nErr(_) => Ok(None),"));
+    assert!(
+        exact.contains(
+            "Ok(c) if c.w != Weight::One => no_exact_coordinates(\n\
+         \"implicit-predicates: a point has a weight other than one, which the predicates do \
+         not support\",\n),\nOk(c) => Ok(Some(c)),\n\
+         Err(ExactError::Exhausted(e)) => Err(e),\nErr(_) => Ok(None),"
+        ),
+        "{exact}"
+    );
     // Without an exact form, only the translated form.
     let i = generated(INSPHERE, "predicates/insphere.pred");
     let spans = function(&i.stages, "exact_stages_in");
@@ -215,5 +263,77 @@ fn the_checks_hold_a_check_of_each_kind_of_edge_case_for_the_arity_of_the_predic
     assert!(!i.checks.contains("check_uncertainty_edge_cases"));
     for g in [&o, &i] {
         g.checks.parse::<TokenStream>().unwrap();
+    }
+}
+
+#[test]
+fn the_stages_for_points_of_any_type_end_with_the_stage_on_big_integers() {
+    for (source, file, points) in [
+        (ORIENT3D, "predicates/orient3d.pred", 4),
+        (INSPHERE, "predicates/insphere.pred", 5),
+    ] {
+        let g = generated(source, file);
+        for name in ["exact_stages_explicit_in", "exact_stages_in", "staged_in"] {
+            let f = function(&g.stages, name);
+            let signature = &f[..f.find('{').unwrap()];
+            assert!(
+                signature.ends_with(") -> Result<Sign, ScratchExhausted> "),
+                "{file}: {signature}"
+            );
+        }
+        // The coordinates as big integers are asked for only after the
+        // stages over spans, from the mark taken on entry.
+        let f = function(&g.stages, "exact_stages_in");
+        let last = format!("q{}", points - 1);
+        let refs: Vec<String> = (0..points).map(|i| format!("&q{i}")).collect();
+        let order = positions(
+            f,
+            &[
+                "fn spans<",
+                "let q = [&q0, ",
+                "expansions_translated_in(scratch, q)",
+                "fn big<",
+                "let q0 = exact_big(scratch, p0)?;",
+                &format!("let {last} = exact_big(scratch, p{})?;", points - 1),
+                &format!("big_integers_in(scratch, [{}])", refs.join(", ")),
+                "let mark = scratch.mark();",
+                "let decided = spans(scratch, ",
+                "scratch.reset(mark);\nif let Some(sign) = decided? {\nreturn Ok(sign);\n}",
+                "let result = big(scratch, ",
+                "scratch.reset(mark);\nresult",
+            ],
+        );
+        assert!(order.is_sorted(), "{file}: {f}");
+        let first_big = f.find("exact_big").unwrap();
+        assert!(
+            f[first_big..].find("_in(scratch, q)").is_none(),
+            "{file}: {f}"
+        );
+        assert_eq!(f.matches("scratch.mark()").count(), 1, "{file}: {f}");
+        assert_eq!(f.matches("scratch.reset(mark)").count(), 2, "{file}: {f}");
+        // A point without exact coordinates as big integers is a panic.
+        let exact_big = &g.stages[g.stages.find("\nfn exact_big(").unwrap()..];
+        assert!(
+            exact_big.contains(
+                "Ok(c) => Ok(c),\nErr(ExactError::Exhausted(e)) => Err(e),\n\
+             Err(_) => no_exact_coordinates(\n\
+             \"implicit-predicates: a point has no exact coordinates: an input is not finite\",\n),"
+            ),
+            "{file}: {exact_big}"
+        );
+        for message in [
+            "\"implicit-predicates: a point has a weight other than one, which the predicates do \
+             not support\"",
+            "\"implicit-predicates: a point has no exact coordinates: an input is not finite\"",
+        ] {
+            assert_eq!(g.stages.matches(message).count(), 1, "{file}: {message}");
+        }
+        assert!(
+            g.stages.contains(
+                "#[cold]\n#[inline(never)]\nfn no_exact_coordinates(reason: &str) -> ! {\n\
+                 panic!(\"{reason}\")\n}"
+            ),
+            "{file}"
+        );
     }
 }

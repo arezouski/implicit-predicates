@@ -137,7 +137,7 @@ fn spans_stages(group: &mut BenchmarkGroup<'_, WallTime>) {
         let scratch = &mut set.scratch;
         let name = format!("exact_stages_in/{}", set.name);
         bench(group, name, &set.points, |[a, b, c, d]| {
-            orient3d::exact_stages_in(scratch, a, b, c, d).expect("a growable arena")
+            Some(orient3d::exact_stages_in(scratch, a, b, c, d).expect("a growable arena"))
         });
     }
 }

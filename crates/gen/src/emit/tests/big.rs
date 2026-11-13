@@ -33,6 +33,13 @@ fn the_text_of_the_stage_on_big_integers_has_the_value_of_the_source_polynomial(
             .zip(generated(source))
         {
             let code = function(&g.stages, "big_integers_in");
+            // The readback takes coordinate `k` of point `i` as `c[i][k]`,
+            // so it does not see how `c` is built from the points.
+            assert!(
+                code.contains("\nlet c = p.map(|q| [q.x, q.y, q.z]);\n"),
+                "{}: {code}",
+                p.name
+            );
             assert_eq!(
                 expand(&interpret_big_stage(code)),
                 expand(&p.main),

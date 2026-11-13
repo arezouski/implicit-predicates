@@ -22,8 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cases of its checks is empty; and a point type has an exact coordinate
   that can have more than 16 components, which the exact stages decline.
 - `Polynomial::is_affine_in_each_coordinate`.
+- `orient3d` and `orient3d_in` end with an exact stage on big integers, so
+  they decide every finite input, whatever the magnitude of the
+  coordinates. With explicit points outside the range of the stages on the
+  stack, `orient3d` uses the arena of the thread and `orient3d_in` the arena
+  it is given, 1,456 `f64` of which always suffice.
+- Documented panics of `orient3d` and `orient3d_in`: on an input that is not
+  finite, and on a point whose exact coordinates have a weight other than
+  `Weight::One`, which the predicates do not support.
+- The generated chain for points of any type, `staged_in`, runs the stage on
+  big integers last, through `exact_stages_explicit_in` for explicit points
+  and `exact_stages_in` for the others.
 
 ### Changed
+
+- **Breaking:** `orient3d` returns `Sign` instead of `Option<Sign>`, and
+  `orient3d_in` returns `Result<Sign, ScratchExhausted>` instead of
+  `Result<Option<Sign>, ScratchExhausted>`: no finite input gives `None`
+  any more, and an input that is not finite, which gave `None`, panics.
 
 - **Breaking:** `Point`, in `implicit-predicates-core`, has a new required
   method, `exact_big`, which writes the exact coordinates as big integers

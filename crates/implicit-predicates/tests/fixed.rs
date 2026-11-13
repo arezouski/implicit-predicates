@@ -8,11 +8,12 @@
 
 mod common;
 
-use common::args::{Arg, Args, decidable, every_stage, exact_sign};
+use common::args::{Arg, Args, decidable, decided_on_expansions, every_stage, exact_sign};
 use implicit_predicates::{Lnc, Scratch, Sign, orient3d, orient3d_in};
 
-/// Checks every stage on `args` against the exact sign, and that the chain
-/// decides when it is documented to.
+/// Checks every stage on `args` against the exact sign, that the chain
+/// decides, and that it does so before the stage on big integers when it is
+/// documented to.
 fn check(args: &Args) {
     let expected = exact_sign(args);
     let results = every_stage(args);
@@ -21,12 +22,16 @@ fn check(args: &Args) {
             assert_eq!(*sign, expected, "{name} on {args:?}");
         }
     }
-    if decidable(args) {
-        for (name, result) in &results {
-            if !name.starts_with("filter") && !name.starts_with("expansions") {
-                assert!(result.is_some(), "{name} on {args:?}");
-            }
+    // Every call decides; without the stage on big integers, at least
+    // within the documented range.
+    for (name, result) in &results {
+        if !name.starts_with("filter") && !name.starts_with("expansions") && *name != "exact_stages"
+        {
+            assert_eq!(*result, Some(expected), "{name} on {args:?}");
         }
+    }
+    if decidable(args) {
+        assert!(decided_on_expansions(&results), "{args:?}");
     }
 }
 
@@ -147,20 +152,42 @@ fn the_untranslated_stage_over_spans_decides_near_the_top_of_its_range() {
     let s = 1.5 * 2f64.powi(234);
     let (a, b, c) = ([s, 0.0, 0.0], [0.0, s, 0.0], [0.0, 0.0, s]);
     let m = Lnc::new(a, b, 0.3).unwrap();
-    assert_eq!(orient3d(&a, &b, &c, &m), Some(Sign::Zero));
+    assert_eq!(orient3d(&a, &b, &c, &m), Sign::Zero);
     let mut buf = vec![0.0; 1 << 12];
     let mut scratch = Scratch::borrowed(&mut buf);
-    assert_eq!(
-        orient3d_in(&mut scratch, &a, &b, &c, &m),
-        Ok(Some(Sign::Zero))
-    );
+    assert_eq!(orient3d_in(&mut scratch, &a, &b, &c, &m), Ok(Sign::Zero));
     let m = Lnc::new(a, [0.0, 0.0, -s], 0.3).unwrap();
+    for args in [
+        [
+            Arg::Explicit(a),
+            Arg::Explicit(b),
+            Arg::Explicit(c),
+            Arg::Lnc(a, b, 0.3),
+        ],
+        [
+            Arg::Explicit(a),
+            Arg::Explicit(b),
+            Arg::Explicit(c),
+            Arg::Lnc(a, [0.0, 0.0, -s], 0.3),
+        ],
+    ] {
+        check(&args);
+        // The untranslated stage over spans decides, not the translated
+        // one, nor the stage on big integers after them.
+        let results = every_stage(&args);
+        let result = |name: &str| results.iter().find(|(n, _)| *n == name).unwrap().1;
+        assert_eq!(result("expansions_translated_in"), None, "{args:?}");
+        assert_eq!(
+            result("expansions_untranslated_in"),
+            Some(exact_sign(&args)),
+            "{args:?}"
+        );
+    }
     let args = [
         Arg::Explicit(a),
         Arg::Explicit(b),
         Arg::Explicit(c),
         Arg::Lnc(a, [0.0, 0.0, -s], 0.3),
     ];
-    assert_eq!(orient3d(&a, &b, &c, &m), Some(exact_sign(&args)));
-    check(&args);
+    assert_eq!(orient3d(&a, &b, &c, &m), exact_sign(&args));
 }

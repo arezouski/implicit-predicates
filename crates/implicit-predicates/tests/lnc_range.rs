@@ -1,19 +1,20 @@
-//! The documented condition on the inputs of an `Lnc` under which
-//! `orient3d` decides: `t` zero or at least `2^-k` for some `0 <= k <= 317`, and
-//! every nonzero coordinate of `p` and `q` of a magnitude between
-//! `2^(k - 84)` and `2^233`, with every nonzero coordinate of the explicit
-//! points between `2^-188` and `2^235`. Inside it the exact coordinates of
-//! the point are computed and every component lies in the range of the
-//! exact stage over spans, so the call is decided, also when only an exact
-//! stage can decide it; outside it a call can give `None`, as the two
-//! documented examples do.
+//! The condition on the inputs of an `Lnc` under which `orient3d` decides
+//! before the stage on big integers: `t` zero or at least `2^-k` for some
+//! `0 <= k <= 317`, and every nonzero coordinate of `p` and `q` of a
+//! magnitude between `2^(k - 84)` and `2^233`, with every nonzero coordinate
+//! of the explicit points between `2^-188` and `2^235`. Inside it the exact
+//! coordinates of the point are computed and every component lies in the
+//! range of the exact stage over spans, so a stage on expansions decides,
+//! also when only an exact stage can decide; outside it a call can need
+//! the stage on big integers, as the examples of the documentation of
+//! `orient3d` do, and gets the exact sign from it.
 
 // `orient3d` needs the `std` feature.
 #![cfg(feature = "std")]
 
 mod common;
 
-use common::args::{Arg, exact_sign};
+use common::args::{Arg, decided_on_expansions, every_stage, exact_sign};
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{Lnc, Point, Scratch, Sign, orient3d, orient3d_in};
 use implicit_predicates_test_support::{config, leaf};
@@ -47,20 +48,32 @@ fn assert_components_in_range(p: [f64; 3], q: [f64; 3], t: f64) {
     }
 }
 
-/// Asserts that `orient3d` and `orient3d_in` decide on `args` with the
-/// exact sign, and returns it.
-fn assert_decided(args: &[Arg; 4]) -> Sign {
+/// Asserts that `orient3d` and `orient3d_in` give the exact sign on `args`,
+/// and returns it; and that a stage on expansions decides, when
+/// `on_expansions`, or that none does.
+fn assert_sign(args: &[Arg; 4], on_expansions: bool) -> Sign {
     let [a, b, c, d] = args.each_ref().map(Arg::any);
     let sign = exact_sign(args);
-    assert_eq!(orient3d(&a, &b, &c, &d), Some(sign), "{args:?}");
+    assert_eq!(orient3d(&a, &b, &c, &d), sign, "{args:?}");
     let mut buf = vec![0.0; 1 << 14];
     let mut scratch = Scratch::borrowed(&mut buf);
     assert_eq!(
         orient3d_in(&mut scratch, &a, &b, &c, &d),
-        Ok(Some(sign)),
+        Ok(sign),
+        "{args:?}"
+    );
+    assert_eq!(
+        decided_on_expansions(&every_stage(args)),
+        on_expansions,
         "{args:?}"
     );
     sign
+}
+
+/// Asserts that a stage on expansions decides on `args` with the exact
+/// sign, and returns it.
+fn assert_decided(args: &[Arg; 4]) -> Sign {
+    assert_sign(args, true)
 }
 
 /// Checks one `Lnc` of the condition and the calls built from it: with
@@ -150,7 +163,7 @@ fn inputs_at_the_edges_of_the_condition_are_decided() {
 }
 
 #[test]
-fn the_documented_examples_outside_the_condition_give_none() {
+fn the_documented_examples_outside_the_condition_are_decided_on_big_integers() {
     let (min, _) = spans_range();
     let a = [1.0, 0.25, 0.5];
     let c = [0.3, 0.7, 5.0];
@@ -161,7 +174,13 @@ fn the_documented_examples_outside_the_condition_give_none() {
         ([0.1, 3.0, 0.75], 2f64.powi(-200)),
     ] {
         let m = Lnc::new(a, b, t).unwrap();
-        assert_eq!(orient3d(&a, &b, &c, &m), None, "{b:?} {t:e}");
+        let args = [
+            Arg::Explicit(a),
+            Arg::Explicit(b),
+            Arg::Explicit(c),
+            Arg::Lnc(a, b, t),
+        ];
+        assert_eq!(assert_sign(&args, false), Sign::Zero, "{b:?} {t:e}");
         // The exact coordinates are computed, but a component of one of
         // them is below the range of the exact stage over spans.
         let mut buf = vec![0.0; 256];
@@ -208,11 +227,17 @@ fn the_lower_ends_of_the_condition_are_reached() {
         assert_eq!(smallest_component(p, q, t), min, "k = {k}");
         check_condition(p, q, t, [c, [1.0, 2.0, 3.0]]);
         // One bit lower in `p.x`, or in `t`: a component below the range,
-        // and `None` for points that only an exact stage can decide.
+        // and the stage on big integers for points that only an exact stage
+        // can decide.
         for (p, t) in [([low / 2.0, 1.0, 1.0], t), (p, t / 2.0)] {
             assert!(smallest_component(p, q, t) < min, "k = {k}");
-            let m = Lnc::new(p, q, t).unwrap();
-            assert_eq!(orient3d(&p, &q, &c, &m), None, "k = {k}");
+            let args = [
+                Arg::Explicit(p),
+                Arg::Explicit(q),
+                Arg::Explicit(c),
+                Arg::Lnc(p, q, t),
+            ];
+            assert_eq!(assert_sign(&args, false), Sign::Zero, "k = {k}");
         }
     }
 }
@@ -224,13 +249,21 @@ fn the_condition_holds_when_every_coordinate_of_p_and_q_is_zero() {
     for k in [0, 1, 317] {
         check_condition([0.0; 3], [0.0; 3], 2f64.powi(-k), others);
     }
-    // Outside the condition but in the product domain: still decided.
+    // Outside the condition but in the product domain: still decided on
+    // expansions.
     let (a, b, c) = ([1.0, -1.0, 0.0], [0.0, 1.0, -1.0], [1.0, 0.0, -1.0]);
+    let args = |t| {
+        [
+            Arg::Explicit(a),
+            Arg::Explicit(b),
+            Arg::Explicit(c),
+            Arg::Lnc([0.0; 3], [0.0; 3], t),
+        ]
+    };
     for t in [2f64.powi(-480), 0.0, -0.0] {
-        let m = Lnc::new([0.0; 3], [0.0; 3], t).unwrap();
-        assert_eq!(orient3d(&a, &b, &c, &m), Some(Sign::Zero), "{t:e}");
+        assert_eq!(assert_sign(&args(t), true), Sign::Zero, "{t:e}");
     }
-    // The documented example: `t` below the product domain.
-    let m = Lnc::new([0.0; 3], [0.0; 3], 2f64.powi(-600)).unwrap();
-    assert_eq!(orient3d(&a, &b, &c, &m), None);
+    // The documented example: `t` below the product domain, decided on big
+    // integers.
+    assert_eq!(assert_sign(&args(2f64.powi(-600)), false), Sign::Zero);
 }

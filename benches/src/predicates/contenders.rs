@@ -64,32 +64,18 @@ pub fn geometry_orient3d_sign(p: &Orient3dInput) -> i8 {
 }
 
 /// `orient3d` of `implicit-predicates`.
-///
-/// # Panics
-///
-/// Panics if the sign is undecided, which happens only for coordinates
-/// outside the range where `orient3d` is documented to decide; no benchmark
-/// set has such a case.
 #[must_use]
 pub fn implicit_predicates_orient3d_sign(p: &Orient3dInput) -> i8 {
     let [a, b, c, d] = p;
-    let sign = implicit_predicates::orient3d(a, b, c, d)
-        .expect("benchmark inputs are inside the range where orient3d decides");
-    i8::from(sign)
+    i8::from(implicit_predicates::orient3d(a, b, c, d))
 }
 
 /// `orient3d` of `implicit-predicates` on points of any type, with the
 /// arena of the thread for the exact stages of implicit points.
-///
-/// # Panics
-///
-/// Panics if the sign is undecided; no benchmark set has such a case.
 #[must_use]
 pub fn implicit_predicates_orient3d_any_sign(p: &ImplicitInput) -> i8 {
     let [a, b, c, d] = p;
-    let sign = implicit_predicates::orient3d(a, b, c, d)
-        .expect("benchmark inputs are inside the range where orient3d decides");
-    i8::from(sign)
+    i8::from(implicit_predicates::orient3d(a, b, c, d))
 }
 
 /// `insphere` of the `geometry-predicates` crate.

@@ -111,11 +111,12 @@ fn robust_and_geometry_predicates_match_the_exact_sign_on_every_set() {
         for case in &s.cases {
             let exact = exact_orient3d(case);
             let [a, b, c, d] = case;
-            // The benchmark wrapper expects a decided sign: every case of
-            // every set must be inside the range where the chain decides.
+            // Every case of every set is decided before the stage on big
+            // integers, which the benchmarks of explicit points do not
+            // measure.
             assert!(
-                implicit_predicates::orient3d(a, b, c, d).is_some(),
-                "implicit-predicates undecided {}: {case:?}",
+                stages::staged([a, b, c, d]).is_some(),
+                "implicit-predicates decides only on big integers {}: {case:?}",
                 s.name
             );
             assert_eq!(
@@ -299,7 +300,7 @@ fn orient3d_matches_the_exact_sign_on_points_of_any_type() {
             );
             let [a, b, c, d] = case;
             let sign = orient3d_in(&mut scratch, a, b, c, d).expect("a growable arena");
-            assert_eq!(sign.map(i8::from), Some(exact), "{}: {case:?}", set.name);
+            assert_eq!(i8::from(sign), exact, "{}: {case:?}", set.name);
         }
     }
 }
@@ -325,7 +326,7 @@ fn exact_sets_need_the_exact_stages_and_every_form_decides_them() {
             let chain = stages::exact_stages_in(s, a, b, c, d).expect("room");
             assert_eq!(translated.map(i8::from), exact, "{case:?}");
             assert_eq!(untranslated.map(i8::from), exact, "{case:?}");
-            assert_eq!(chain.map(i8::from), exact, "{case:?}");
+            assert_eq!(Some(i8::from(chain)), exact, "{case:?}");
             assert_eq!(s.used(), used, "the stages leave the arena as it was");
         }
     }

@@ -1,6 +1,6 @@
 //! `orient3d` on explicit points against the exact sign on every family of
-//! inputs, given as `[f64; 3]`, `Explicit` or `AnyPoint`, its documented
-//! range, and the symmetries of the determinant.
+//! inputs, given as `[f64; 3]`, `Explicit` or `AnyPoint`, the documented
+//! range of its stages on the stack, and the symmetries of the determinant.
 
 // `orient3d` needs the `std` feature.
 #![cfg(feature = "std")]
@@ -102,7 +102,7 @@ proptest! {
             // for points of any type with an arena.
             let explicit = p.map(Explicit::new_unchecked);
             let any = explicit.map(AnyPoint::from);
-            let mut buf = [0.0; 64];
+            let mut buf = [0.0; stages::BIG_INTEGERS_EXPLICIT_ARENA];
             let mut scratch = Scratch::borrowed(&mut buf);
             for (name, result) in [
                 ("Explicit", implicit_predicates::orient3d(&explicit[0], &explicit[1], &explicit[2], &explicit[3])),
@@ -111,32 +111,30 @@ proptest! {
             ] {
                 prop_assert_eq!(result, orient3d(&p), "{} {} {:?}", name, family, p);
             }
-            // Explicit points do not use the arena.
-            prop_assert_eq!(scratch.high_water(), 0);
-            match orient3d(&p) {
-                Some(sign) => prop_assert_eq!(sign, expected, "{} {:?}", family, p),
-                None => prop_assert!(
-                    !all_in_range(&p, stages::UNTRANSLATED_RANGE),
-                    "{} {:?} is in the documented range",
-                    family,
-                    p
-                ),
+            // Explicit points use the arena only when the stages on the
+            // stack do not decide, for the stage on big integers, and then
+            // `BIG_INTEGERS_EXPLICIT_ARENA` slots suffice.
+            if stages::staged(refs(&p)).is_some() {
+                prop_assert_eq!(scratch.high_water(), 0);
             }
+            prop_assert_eq!(scratch.used(), 0);
+            prop_assert_eq!(orient3d(&p), expected, "{} {:?}", family, p);
         }
     }
 
     #[test]
-    fn none_only_outside_the_documented_range(families in families()) {
+    fn the_stages_on_the_stack_decide_only_in_their_documented_range(families in families()) {
         for (family, p) in families {
-            // The chain ends with the two expansion stages, which decide
-            // exactly when every coordinate is zero or has a magnitude in
-            // their range; outside both only the filter and the exact
-            // differences can decide.
+            // The stages on the stack end with the two expansion stages,
+            // which decide exactly when every coordinate is zero or has a
+            // magnitude in their range; outside both only the filter and
+            // the exact differences can decide, and otherwise the stage on
+            // big integers does.
             let translated = all_in_range(&p, stages::TRANSLATED_RANGE);
             let inside = all_in_range(&p, stages::UNTRANSLATED_RANGE);
             let earlier = stages::filter(refs(&p), [0.0; 3])
                 .or_else(|| stages::exact_differences(refs(&p)));
-            let result = orient3d(&p);
+            let result = stages::staged(refs(&p));
             prop_assert_eq!(
                 result.is_some(),
                 earlier.is_some() || translated || inside,
@@ -173,7 +171,7 @@ proptest! {
         for (family, p) in families {
             prop_assert_eq!(
                 first_deciding(&p).map(|(_, sign)| sign),
-                orient3d(&p),
+                Some(orient3d(&p)),
                 "{} {:?}",
                 family,
                 p
@@ -204,9 +202,7 @@ proptest! {
                     let mut q = p;
                     q.swap(i, j);
                     prop_assert_eq!(exact(&q), -exact(&p));
-                    if let (Some(s), Some(t)) = (s, orient3d(&q)) {
-                        prop_assert_eq!(t, -s, "{} {:?} swapped {} {}", family, p, i, j);
-                    }
+                    prop_assert_eq!(orient3d(&q), -s, "{} {:?} swapped {} {}", family, p, i, j);
                 }
             }
         }
@@ -219,9 +215,7 @@ proptest! {
             for permutation in permutations().into_iter().filter(|&s| is_even(s)) {
                 let q = permuted(&p, permutation);
                 prop_assert_eq!(exact(&q), exact(&p));
-                if let (Some(s), Some(t)) = (s, orient3d(&q)) {
-                    prop_assert_eq!(t, s, "{} {:?} {:?}", family, p, permutation);
-                }
+                prop_assert_eq!(orient3d(&q), s, "{} {:?} {:?}", family, p, permutation);
             }
         }
     }
@@ -247,7 +241,7 @@ proptest! {
             }
         }
         prop_assert_eq!(exact(&q), exact(&p));
-        prop_assert_eq!(orient3d(&q), Some(exact(&p)), "{:?} moved by {:?}", p, shift);
+        prop_assert_eq!(orient3d(&q), exact(&p), "{:?} moved by {:?}", p, shift);
     }
 
     #[test]
@@ -267,7 +261,7 @@ proptest! {
         if from != to {
             let mut q = p;
             q[to] = q[from];
-            prop_assert_eq!(orient3d(&q), Some(Sign::Zero), "{:?}", q);
+            prop_assert_eq!(orient3d(&q), Sign::Zero, "{:?}", q);
             // The filter gives no sign; it gives the zero only on a flat
             // axis.
             let filter = stages::filter(refs(&q), [0.0; 3]);
@@ -278,7 +272,7 @@ proptest! {
     }
 
     #[test]
-    fn non_finite_inputs_are_none_and_do_not_panic(
+    fn non_finite_inputs_are_none_in_every_stage_and_a_panic_in_orient3d(
         p in prop_oneof![random4(), grid4(), extreme4(&edges())],
     ) {
         for point in 0..4 {
@@ -289,7 +283,12 @@ proptest! {
                     for (name, stage) in STAGES {
                         prop_assert_eq!(stage(refs(&q)), None, "{} on {:?}", name, q);
                     }
-                    prop_assert_eq!(orient3d(&q), None);
+                    let panicked = std::panic::catch_unwind(|| orient3d(&q));
+                    let message = panicked
+                        .err()
+                        .and_then(|e| e.downcast_ref::<String>().cloned())
+                        .unwrap_or_default();
+                    prop_assert!(message.contains("not finite"), "{:?}: {}", q, message);
                 }
             }
         }

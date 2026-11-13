@@ -13,12 +13,13 @@ use implicit_predicates_corpus::weighted::weights;
 use implicit_predicates_corpus::{Corpus, Predicate};
 
 use super::corpus_points::{call_points, implicit_count, points};
-use super::{CHAIN, all_in_range, first_deciding, in_range, refs};
+use super::{CHAIN, STAGED, all_in_range, first_deciding, in_range, refs};
 
 /// The stages a call can be attributed to, in the order of the chain: the
 /// filter giving a sign, the filter giving `Zero` (some axis is flat, so the
 /// value is exactly zero), the exact stages for explicit points, the exact
-/// stages over arena spans, and no stage.
+/// stages over arena spans, and the stage on big integers, which decides
+/// every call that the others do not.
 pub const COLUMNS: [&str; 8] = [
     "filter",
     "certain zero",
@@ -27,14 +28,15 @@ pub const COLUMNS: [&str; 8] = [
     "expansions_untranslated",
     "expansions_translated_in",
     "expansions_untranslated_in",
-    "none",
+    "big_integers",
 ];
 
 const CERTAIN_ZERO: usize = 1;
 const FIRST_SPANS_STAGE: usize = 5;
-const NONE: usize = 7;
+const BIG_INTEGERS: usize = 7;
 
-/// Why no stage decides a call.
+/// Why no stage on expansions decides a call, which leaves it to the stage
+/// on big integers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Why {
     /// Explicit points with a coordinate outside `UNTRANSLATED_RANGE`.
@@ -47,12 +49,14 @@ pub enum Why {
     /// `SPANS_UNTRANSLATED_RANGE`.
     ComponentOutOfRange,
     /// None of the above: every input is inside the documented ranges, so
-    /// some stage should have decided. A sweep counts it as a mismatch.
+    /// some stage on expansions should have decided. A sweep counts it as a
+    /// mismatch.
     Unexplained,
 }
 
 /// The first stage that decides a call, as an index in [`COLUMNS`], with
-/// its sign; or [`NONE`] and the reason.
+/// its sign; or [`BIG_INTEGERS`] and the reason why no stage on expansions
+/// decides it.
 fn attribute(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Result<Sign, Why>) {
     let [a, b, c, d] = p;
     if let Some(sign) = stages::filter_points(a, b, c, d) {
@@ -61,8 +65,9 @@ fn attribute(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Result<Sig
     }
     if p.iter().all(Point::is_explicit) {
         let q = p.map(|x| *x.approx());
-        // The filter of `CHAIN` has already declined.
-        return CHAIN
+        // The filter of `CHAIN` has already declined; the stage on big
+        // integers is attributed with its reason.
+        return CHAIN[..STAGED]
             .iter()
             .enumerate()
             .skip(1)
@@ -75,7 +80,7 @@ fn attribute(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Result<Sig
                 } else {
                     Why::CoordinateOutOfRange
                 };
-                (NONE, Err(why))
+                (BIG_INTEGERS, Err(why))
             });
     }
     let mark = scratch.mark();
@@ -125,7 +130,7 @@ fn attribute_spans(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Resu
     for (slot, point) in q.iter_mut().zip(p) {
         match point.exact(scratch) {
             Ok(c) => *slot = Some(c),
-            Err(ExactError::OutOfRange) => return (NONE, Err(why_exact_failed(point))),
+            Err(ExactError::OutOfRange) => return (BIG_INTEGERS, Err(why_exact_failed(point))),
             Err(ExactError::Exhausted(e)) => panic!("a growable arena is exhausted: {e:?}"),
             Err(e) => panic!("an error of `Point::exact` that this sweep does not know: {e:?}"),
         }
@@ -153,7 +158,7 @@ fn attribute_spans(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Resu
     } else {
         Why::Unexplained
     };
-    (NONE, Err(why))
+    (BIG_INTEGERS, Err(why))
 }
 
 /// For explicit points: whether `column` is the stage that the order of
@@ -165,8 +170,10 @@ fn explicit_chain_agrees(p: &[AnyPoint; 4], column: usize, wrong: impl Fn(Sign) 
     let expected = match first_deciding(&q) {
         Some((0, Sign::Zero)) => CERTAIN_ZERO,
         Some((0, _)) => 0,
-        Some((i, _)) => i + 1,
-        None => NONE,
+        Some((i, _)) if i < STAGED => i + 1,
+        Some(_) => BIG_INTEGERS,
+        // Every input of the corpora is finite, so some stage decides.
+        None => return false,
     };
     let every_stage_right = CHAIN
         .iter()
@@ -209,9 +216,10 @@ impl Bucket {
 #[derive(Debug)]
 pub struct Tally {
     pub buckets: [Bucket; 5],
-    /// The weight and stored count of the undecided calls, by reason.
+    /// The weight and stored count of the calls that no stage on expansions
+    /// decides, which the stage on big integers decides, by reason.
     pub undecided: Vec<(Why, usize, f64)>,
-    /// Up to a few undecided calls of each reason, described.
+    /// Up to a few of those calls of each reason, described.
     pub examples: Vec<(Why, String)>,
     /// Calls whose sign differs from the recorded one, or on which the
     /// public functions disagree with the stages.
@@ -249,7 +257,8 @@ impl Default for Tally {
     }
 }
 
-/// The most examples kept of each reason for an undecided call.
+/// The most examples kept of each reason for a call that no stage on
+/// expansions decides.
 const EXAMPLES: usize = 5;
 
 /// The most mismatches kept described.
@@ -341,13 +350,15 @@ impl Tally {
                 corpus.model, COLUMNS[column]
             )
         };
+        // The sign of the first stage on expansions that decides, if one
+        // does; otherwise the stage on big integers decides.
         let staged = result.ok();
         let wrong = |s: Sign| REFERENCE_ORIENT3D_FACTOR * i8::from(s) != recorded;
         let unexplained = result == Err(Why::Unexplained);
-        if staged.is_some_and(wrong)
+        if wrong(public)
             || unexplained
-            || public != staged
-            || in_arena != staged
+            || staged.is_some_and(|s| s != public)
+            || in_arena != public
             || arena.used() != 0
             || (p.iter().all(Point::is_explicit) && !explicit_chain_agrees(p, column, wrong))
         {
@@ -396,7 +407,8 @@ impl Tally {
     }
 
     /// The table of weighted fractions, one row per number of implicit
-    /// points, then the counts and the undecided calls.
+    /// points, then the counts and the calls that no stage on expansions
+    /// decides.
     pub fn report(&self, name: &str) -> String {
         let mut out = String::new();
         let mut line = |s: String| writeln!(out, "{s}").expect("writing to a string");
@@ -443,7 +455,10 @@ impl Tally {
         let implicit_weight = self.implicit().weight;
         let mut undecided = self.undecided.clone();
         undecided.sort_by_key(|&(why, ..)| why);
-        line(format!("undecided: {}", undecided.len()));
+        line(format!(
+            "not decided on expansions, by reason: {}",
+            undecided.len()
+        ));
         for (why, stored, weight) in &undecided {
             line(format!(
                 "  {why:?}: {stored} stored, weight {weight:.1}, {:.6} % of the weight with implicit points",

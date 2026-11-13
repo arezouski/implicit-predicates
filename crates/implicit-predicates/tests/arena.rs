@@ -133,7 +133,7 @@ fn in_arena_of<A: Point, B: Point, C: Point, D: Point>(
     b: &B,
     c: &C,
     d: &D,
-) -> (Result<Option<Sign>, ScratchExhausted>, usize) {
+) -> (Result<Sign, ScratchExhausted>, usize) {
     let mut buf = vec![0.0; size];
     let mut scratch = Scratch::borrowed(&mut buf);
     let result = orient3d_in(&mut scratch, a, b, c, d);
@@ -152,15 +152,15 @@ fn fits_from<A: Point, B: Point, C: Point, D: Point>(
 ) -> usize {
     // The arena a large call needs, at most its high-water mark.
     let (result, high_water) = in_arena_of(1 << 20, a, b, c, d);
-    assert_eq!(result, Ok(Some(expected)));
-    assert_eq!(in_arena_of(high_water, a, b, c, d).0, Ok(Some(expected)));
+    assert_eq!(result, Ok(expected));
+    assert_eq!(in_arena_of(high_water, a, b, c, d).0, Ok(expected));
     // Below the smallest size that fits, every size is too small.
     let (mut low, mut high) = (0, high_water);
     while low < high {
         let mid = (low + high) / 2;
         match in_arena_of(mid, a, b, c, d).0 {
             Ok(result) => {
-                assert_eq!(result, Some(expected), "size {mid}");
+                assert_eq!(result, expected, "size {mid}");
                 high = mid;
             }
             Err(_) => low = mid + 1,
@@ -173,11 +173,7 @@ fn fits_from<A: Point, B: Point, C: Point, D: Point>(
         assert!(in_arena_of(size, a, b, c, d).0.is_err(), "size {size}");
     }
     for size in [low, low + 1, low + 100, 2 * low] {
-        assert_eq!(
-            in_arena_of(size, a, b, c, d).0,
-            Ok(Some(expected)),
-            "size {size}"
-        );
+        assert_eq!(in_arena_of(size, a, b, c, d).0, Ok(expected), "size {size}");
     }
     low
 }
@@ -204,8 +200,8 @@ fn long_coordinates_grow_the_arena_of_the_thread() {
         let low = fits_from(&a, &b, &c, &d, expected);
         beyond += usize::from(low > THREAD_ARENA);
         // The arena of the thread grows to what the call needs.
-        assert_eq!(orient3d(&a, &b, &c, &d), Some(expected));
-        assert_eq!(orient3d(&a, &b, &c, &d), Some(expected));
+        assert_eq!(orient3d(&a, &b, &c, &d), expected);
+        assert_eq!(orient3d(&a, &b, &c, &d), expected);
     }
     // Some calls need more than the initial arena of the thread.
     assert!(beyond > 0);
@@ -235,7 +231,7 @@ impl Point for Reentrant {
 
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
         let [a, b, c, d] = any_points(&self.inner);
-        assert_eq!(orient3d(&a, &b, &c, &d), Some(exact_sign(&self.inner)));
+        assert_eq!(orient3d(&a, &b, &c, &d), exact_sign(&self.inner));
         self.calls.set(self.calls.get() + 1);
         self.point.exact(scratch)
     }
@@ -258,7 +254,7 @@ fn a_point_that_calls_a_predicate_does_not_make_it_panic() {
             calls: Cell::new(0),
         };
         let [_, b, c, d] = any_points(args);
-        assert_eq!(orient3d(&a, &b, &c, &d), Some(exact_sign(args)), "{args:?}");
+        assert_eq!(orient3d(&a, &b, &c, &d), exact_sign(args), "{args:?}");
         assert_eq!(a.calls.get(), 1);
     }
 }
@@ -285,13 +281,15 @@ impl Point for Panics {
         panic!("exact coordinates that panic");
     }
 
-    fn exact_big(&self, _: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
-        Err(ExactError::OutOfRange)
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        // Not reached: `exact` panics first. With finite inputs `exact_big`
+        // must give the coordinates, so it gives those of the point.
+        self.0.exact_big(scratch)
     }
 }
 
 /// The results of `orient3d` on every case, in order, on a new thread.
-fn results_on_a_new_thread(cases: &[Args]) -> Vec<Option<Sign>> {
+fn results_on_a_new_thread(cases: &[Args]) -> Vec<Sign> {
     let cases = cases.to_vec();
     std::thread::spawn(move || {
         cases
@@ -309,11 +307,11 @@ fn results_on_a_new_thread(cases: &[Args]) -> Vec<Option<Sign>> {
 #[test]
 fn the_result_does_not_depend_on_earlier_calls() {
     let cases = coplanar_on_lines();
-    let alone: Vec<Option<Sign>> = cases
+    let alone: Vec<Sign> = cases
         .iter()
         .map(|args| results_on_a_new_thread(&[*args])[0])
         .collect();
-    let expected: Vec<Option<Sign>> = cases.iter().map(|args| Some(exact_sign(args))).collect();
+    let expected: Vec<Sign> = cases.iter().map(exact_sign).collect();
     assert_eq!(alone, expected);
     assert_eq!(results_on_a_new_thread(&cases), expected);
     // In reverse order, after long coordinates, and after a call that
@@ -324,7 +322,10 @@ fn the_result_does_not_depend_on_earlier_calls() {
     expected_reversed.reverse();
     std::thread::spawn(move || {
         let [a, b, c, d] = long_points(99, 3);
-        assert!(orient3d(&a, &b, &c, &d).is_some());
+        assert_eq!(
+            orient3d(&a, &b, &c, &d),
+            exact_at(&[a.exact(), b.exact(), c.exact(), d.exact()])
+        );
         let Arg::Lnc(p, q, t) = reversed[0][0] else {
             unreachable!()
         };
@@ -333,7 +334,7 @@ fn the_result_does_not_depend_on_earlier_calls() {
             orient3d(&Panics(Lnc::new_unchecked(p, q, t)), &b, &c, &d)
         }));
         assert!(panicked.is_err());
-        let results: Vec<Option<Sign>> = reversed
+        let results: Vec<Sign> = reversed
             .iter()
             .map(|args| {
                 let [a, b, c, d] = any_points(args);
@@ -395,6 +396,11 @@ fn the_arena_of_the_thread_is_empty_after_a_call_that_panicked() {
             let panicked = catch_unwind(AssertUnwindSafe(|| {
                 orient3d(&Probe { panics: true }, &a, &b, &c)
             }));
+            assert!(panicked.is_err());
+            // A panic of the chain itself, with the coordinates of the
+            // first three points as big integers left in the arena.
+            let panicked =
+                catch_unwind(|| orient3d(&a, &b, &c, &Lnc::new_unchecked(a, b, f64::NAN)));
             assert!(panicked.is_err());
         }
         // The first point is the first to write to the arena.

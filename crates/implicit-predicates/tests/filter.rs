@@ -193,7 +193,7 @@ fn the_filter_decides_at_the_limits_of_each_axis_and_not_beyond() {
 }
 
 #[test]
-fn overflowing_differences_do_not_decide() {
+fn overflowing_differences_are_decided_only_on_big_integers() {
     let base = [
         [1.0, 2.0, 3.0],
         [-2.0, 1.0, 4.0],
@@ -213,7 +213,7 @@ fn overflowing_differences_do_not_decide() {
                 for (name, stage) in STAGES {
                     assert_eq!(stage(refs(&p)), None, "{name} on {p:?}");
                 }
-                assert_eq!(orient3d(&p), None);
+                assert_eq!(orient3d(&p), exact(&p), "{p:?}");
             }
         }
     }

@@ -86,51 +86,61 @@ fn the_bound_edge_cases_are_decided_correctly() {
     for (_, stage) in STAGES {
         check_bound_edge_cases(|p| stage(refs(p)));
     }
-    // The chain on each type, and the range in which it must decide.
-    let (stack, spans) = (stages::UNTRANSLATED_RANGE, stages::SPANS_UNTRANSLATED_RANGE);
-    let chains: [(&str, Chain, (f64, f64)); 4] = [
-        ("arrays", |p| orient3d(p), stack),
-        (
-            "Explicit",
-            |p| {
-                let [a, b, c, d] = p.map(Explicit::new_unchecked);
-                implicit_predicates::orient3d(&a, &b, &c, &d)
-            },
-            stack,
-        ),
-        (
-            "AnyPoint",
-            |p| {
-                let [a, b, c, d] = p.map(|x| AnyPoint::from(Explicit::new_unchecked(x)));
-                implicit_predicates::orient3d(&a, &b, &c, &d)
-            },
-            stack,
-        ),
-        (
-            "Lnc",
-            |p| {
-                let [a, b, c, d] = p.map(|x| Lnc::new_unchecked(x, x, 0.375));
-                implicit_predicates::orient3d(&a, &b, &c, &d)
-            },
-            spans,
-        ),
+    // The chain on each type, which decides every case; and the stages on
+    // expansions, which decide every case in their range.
+    let chains: [(&str, Chain); 4] = [
+        ("arrays", |p| orient3d(p)),
+        ("Explicit", |p| {
+            let [a, b, c, d] = p.map(Explicit::new_unchecked);
+            implicit_predicates::orient3d(&a, &b, &c, &d)
+        }),
+        ("AnyPoint", |p| {
+            let [a, b, c, d] = p.map(|x| AnyPoint::from(Explicit::new_unchecked(x)));
+            implicit_predicates::orient3d(&a, &b, &c, &d)
+        }),
+        ("Lnc", |p| {
+            let [a, b, c, d] = p.map(|x| Lnc::new_unchecked(x, x, 0.375));
+            implicit_predicates::orient3d(&a, &b, &c, &d)
+        }),
     ];
     let cases = generated::bound_edge_cases();
-    for (name, chain, range) in chains {
-        let [decided, _] = check_bound_edge_cases(chain);
+    for (name, chain) in chains {
+        let [decided, declined] = check_bound_edge_cases(|p| Some(chain(p)));
+        assert_eq!((decided, declined), (cases.len(), 0), "{name}");
+    }
+    let over_spans = |p: &Points| {
+        let mut buf = vec![0.0; 1 << 12];
+        let mut scratch = Scratch::borrowed(&mut buf);
+        let q = p.map(|x| x.exact(&mut scratch).unwrap());
+        stages::expansions_untranslated_in(&mut scratch, [&q[0], &q[1], &q[2], &q[3]]).unwrap()
+    };
+    for (name, stage, range) in [
+        (
+            "staged",
+            &(|p: &Points| stages::staged(refs(p))) as &dyn Fn(&Points) -> Option<Sign>,
+            stages::UNTRANSLATED_RANGE,
+        ),
+        (
+            "expansions_untranslated_in",
+            &over_spans,
+            stages::SPANS_UNTRANSLATED_RANGE,
+        ),
+    ] {
         let inside = cases.iter().filter(|p| all_in_range(p, range));
-        for p in inside.clone() {
-            assert!(chain(p).is_some(), "{name} on {p:?}");
+        assert!(inside.clone().count() > 0, "{name}");
+        for p in inside {
+            assert_eq!(stage(p), Some(exact(p)), "{name} on {p:?}");
         }
-        assert!(decided >= inside.count(), "{name}");
     }
 }
 
 /// The chain on four points of one type.
-type Chain = fn(&Points) -> Option<Sign>;
+type Chain = fn(&Points) -> Sign;
 
 /// A point given by an approximation and the error of each coordinate,
-/// without exact coordinates: for the filter only.
+/// without exact coordinates: for the filter only. The chain, which
+/// panics on a point that cannot give its coordinates as big integers,
+/// never gets one.
 struct Approx([f64; 3], [f64; 3]);
 
 impl Point for Approx {
@@ -187,7 +197,7 @@ fn the_chain_of_the_tests_is_the_order_of_staged() {
     let start = source.find("pub fn staged").expect("a staged function");
     let body = &source[start..];
     let body = &body[..body.find("\n}").expect("the end of staged")];
-    let mut calls: Vec<(usize, &str)> = common::CHAIN
+    let mut calls: Vec<(usize, &str)> = common::CHAIN[..common::STAGED]
         .iter()
         .map(|(name, _)| {
             let call = if *name == "filter" {
@@ -205,23 +215,20 @@ fn the_chain_of_the_tests_is_the_order_of_staged() {
     calls.sort();
     let ordered: Vec<&str> = calls.iter().map(|(_, name)| *name).collect();
     assert_eq!(listed, ordered, "{body}");
-    assert_eq!(
-        body.matches("(p)").count() + 1,
-        common::CHAIN.len(),
-        "{body}"
-    );
+    assert_eq!(body.matches("(p)").count() + 1, common::STAGED, "{body}");
 }
 
 /// `exact_stages`, which the chain for points of any type runs on explicit
-/// points after `filter_points`, runs the exact stages of `CHAIN` in the
-/// same order.
+/// points after `filter_points`, runs the exact stages of `CHAIN` on the
+/// stack in the same order; `exact_stages_explicit_in` runs it, then the
+/// stage on big integers, the last of `CHAIN`.
 #[test]
 fn the_exact_stages_for_points_of_any_type_are_those_of_staged() {
     let source = include_str!("../src/generated/orient3d.rs");
     let start = source.find("pub fn exact_stages(").expect("exact_stages");
     let body = &source[start..];
     let body = &body[..body.find("\n}").expect("the end of exact_stages")];
-    let at: Vec<usize> = common::CHAIN[1..]
+    let at: Vec<usize> = common::CHAIN[1..common::STAGED]
         .iter()
         .map(|(name, _)| {
             body.find(&format!("{name}(p)"))
@@ -229,9 +236,15 @@ fn the_exact_stages_for_points_of_any_type_are_those_of_staged() {
         })
         .collect();
     assert!(at.is_sorted(), "{body}");
-    assert_eq!(
-        body.matches("(p)").count(),
-        common::CHAIN.len() - 1,
-        "{body}"
-    );
+    assert_eq!(body.matches("(p)").count(), common::STAGED - 1, "{body}");
+    assert_eq!(common::CHAIN.len(), common::STAGED + 1);
+    assert_eq!(common::CHAIN[common::STAGED].0, "big_integers");
+    let start = source
+        .find("pub fn exact_stages_explicit_in(")
+        .expect("exact_stages_explicit_in");
+    let body = &source[start..];
+    let body = &body[..body.find("\n}\n").expect("its end")];
+    let big = body.find("big_integers_in(scratch, [&q0, &q1, &q2, &q3])");
+    let stack = body.find("exact_stages(p)");
+    assert!(big.is_some() && stack.is_some(), "{body}");
 }

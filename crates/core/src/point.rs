@@ -173,8 +173,9 @@ pub enum Weight {
     /// The denominator is one: the numerators are the coordinates.
     One,
     /// The denominator is the expansion at this span. The predicates of the
-    /// `implicit-predicates` crate do not support it yet: they return `None`
-    /// for a point whose exact coordinates have it.
+    /// `implicit-predicates` crate do not support it yet: they panic on a
+    /// point whose exact coordinates have it, rather than give a sign
+    /// computed without it.
     Expansion(Span),
 }
 
