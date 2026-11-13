@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use implicit_predicates_gen::{generate, generate_points};
+use implicit_predicates_gen::{Polynomial, canonical, generate, generate_points, parse};
 
 /// How the tests say to regenerate the code.
 const REGENERATE: &str = "run the tests.";
@@ -74,6 +74,49 @@ fn compile_and_run(name: &str, modules: &[(String, String)], test: &str) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+/// The one predicate of the file `path`: its name, its parameters, and the
+/// canonical polynomials of its main form and of its `#[exact]` form, if
+/// it has one.
+fn canonical_forms(path: &Path) -> (String, Vec<String>, Polynomial, Option<Polynomial>) {
+    let source = fs::read_to_string(path).unwrap();
+    let file = path.to_str().unwrap();
+    let mut all = parse(&source, file).unwrap();
+    assert_eq!(all.len(), 1, "{file}");
+    let p = all.remove(0);
+    let main = canonical(&p.main, file, p.position).unwrap();
+    let exact = p
+        .exact
+        .as_ref()
+        .map(|exact| canonical(exact, file, p.exact_position.unwrap()).unwrap());
+    (p.name, p.params, main, exact)
+}
+
+#[test]
+fn the_predicates_of_the_library_are_those_of_the_fixtures() {
+    // The tests of the generator read the fixtures, which the package of the
+    // generator holds; the library has its own definitions. Each form of
+    // the library has the polynomial of a fixture: `orient3d` both of the
+    // fixture `orient3d.pred`, `insphere` the main form of `insphere.pred`
+    // and, as its exact form, the one of `insphere_raw.pred`.
+    let library = workspace().join("crates/implicit-predicates/predicates");
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let (name, params, main, exact) = canonical_forms(&library.join("orient3d.pred"));
+    let fixture = canonical_forms(&fixtures.join("orient3d.pred"));
+    assert_eq!((&name, &params), (&fixture.0, &fixture.1));
+    assert_eq!(main, fixture.2);
+    assert_eq!(exact, fixture.3);
+    assert!(exact.is_some());
+
+    let (name, params, main, exact) = canonical_forms(&library.join("insphere.pred"));
+    let fixture = canonical_forms(&fixtures.join("insphere.pred"));
+    let raw = canonical_forms(&fixtures.join("insphere_raw.pred"));
+    assert_eq!((&name, &params), (&fixture.0, &fixture.1));
+    assert_eq!((&name, &params), (&raw.0, &raw.1));
+    assert_eq!(main, fixture.2);
+    assert_eq!(exact, Some(raw.2));
+    assert_eq!((fixture.3, raw.3), (None, None));
 }
 
 /// The modules of the stages and of the checks of the one predicate of

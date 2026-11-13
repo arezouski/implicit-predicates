@@ -2,5 +2,6 @@
 //! `implicit-predicates-gen` from the definitions in `predicates/`. Only
 //! this file is written by hand.
 
+pub mod insphere;
 pub mod orient3d;
 pub mod points;

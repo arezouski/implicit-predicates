@@ -12,6 +12,9 @@ pub mod generated;
 #[path = "../generated/points.rs"]
 pub mod point_checks;
 
+#[path = "../generated/insphere.rs"]
+pub mod insphere_checks;
+
 #[cfg(feature = "std")]
 pub mod args;
 pub mod boxes;

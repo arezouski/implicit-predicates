@@ -42,6 +42,41 @@ fn the_text_of_every_stage_over_spans_has_the_value_of_the_source_polynomial() {
     assert_eq!(checked, 2 + 1 + 2 + 1);
 }
 
+/// The in-sphere predicate with both forms: the main form of its fixture,
+/// and the form on raw coordinates of `insphere_raw.pred` as its exact form.
+fn insphere_with_raw_form() -> String {
+    let raw = include_str!("../../../tests/fixtures/insphere_raw.pred");
+    let raw = &raw[raw.find("fn insphere(").unwrap()..];
+    format!("{INSPHERE}\n#[exact]\n{raw}")
+}
+
+#[test]
+fn the_untranslated_stage_over_spans_of_insphere_has_the_value_of_the_source_polynomial() {
+    let source = insphere_with_raw_form();
+    let p = parse(&source, "t.pred").unwrap().remove(0);
+    assert!(p.exact.is_some());
+    let g = super::super::generate(&source, "t.pred", "run the tests.")
+        .unwrap()
+        .remove(0);
+    for stage in ["expansions_translated_in", "expansions_untranslated_in"] {
+        let code = function(&g.stages, stage);
+        for forbidden in ["expansion::", "eft::", "[0.0;"] {
+            assert!(!code.contains(forbidden), "{stage}: {code}");
+        }
+        assert_eq!(
+            expand(&interpret_span_stage(code)),
+            expand(&p.main),
+            "{stage}"
+        );
+    }
+    // The raw form is the one the stage reads: it differs from the main
+    // form in its text, not only in its value.
+    assert_ne!(
+        function(&g.stages, "expansions_translated_in"),
+        function(&g.stages, "expansions_untranslated_in")
+    );
+}
+
 #[test]
 fn the_stack_limit_is_4096_doubles() {
     assert_eq!(STACK_LIMIT, 4096);

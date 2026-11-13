@@ -273,5 +273,6 @@ pub fn orient3d_in(
 /// The individual stages of each predicate, for tests and benchmarks.
 #[doc(hidden)]
 pub mod stages {
+    pub use crate::generated::insphere;
     pub use crate::generated::orient3d;
 }
