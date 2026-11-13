@@ -100,6 +100,16 @@ fn a_point_with_a_weight_panics() {
     orient3d(&a, &b, &c, &Weighted);
 }
 
+#[test]
+#[should_panic(
+    expected = "implicit-predicates: a point has a weight other than one, which the predicates do not support"
+)]
+fn a_point_with_a_weight_panics_with_an_arena() {
+    let [a, b, c] = PLANE;
+    let mut buf = vec![0.0; 1 << 12];
+    let _ = orient3d_in(&mut Scratch::borrowed(&mut buf), &a, &b, &c, &Weighted);
+}
+
 /// A point at the origin without exact coordinates, as expansions or as big
 /// integers, with an infinite error so that the filter never decides.
 struct NoCoordinates;
@@ -133,6 +143,16 @@ impl Point for NoCoordinates {
 fn a_point_without_big_coordinates_panics() {
     let [a, b, c] = PLANE;
     orient3d(&a, &b, &c, &NoCoordinates);
+}
+
+#[test]
+#[should_panic(
+    expected = "implicit-predicates: a point has no exact coordinates: an input is not finite"
+)]
+fn a_point_without_big_coordinates_panics_with_an_arena() {
+    let [a, b, c] = PLANE;
+    let mut buf = vec![0.0; 1 << 12];
+    let _ = orient3d_in(&mut Scratch::borrowed(&mut buf), &a, &b, &c, &NoCoordinates);
 }
 
 /// The calls that the documentation of `orient3d` showed giving `None`,
@@ -195,12 +215,27 @@ fn the_examples_that_gave_none_have_the_sign_of_the_oracle() {
     }
 }
 
-/// The documentation of `orient3d_in` gives the arena that suffices for
-/// explicit points.
+/// The documentation of `orient3d_in` and the changelog give the arena that
+/// suffices for explicit points.
 #[test]
 fn the_documented_arena_for_explicit_points_is_the_constant() {
     let words = BIG_INTEGERS_EXPLICIT_ARENA;
     let documented = format!("{},{:03} `f64`", words / 1000, words % 1000);
-    let source = include_str!("../src/lib.rs");
-    assert!(source.contains(&documented), "{documented}");
+    for (file, text) in [
+        ("lib.rs", include_str!("../src/lib.rs")),
+        ("CHANGELOG.md", include_str!("../../../CHANGELOG.md")),
+    ] {
+        assert!(text.contains(&documented), "{file}: {documented}");
+    }
+    // No README quotes it, so that no other copy can drift.
+    for (file, text) in [
+        ("README.md", include_str!("../../../README.md")),
+        (
+            "crates/implicit-predicates/README.md",
+            include_str!("../README.md"),
+        ),
+    ] {
+        assert!(!text.contains(&format!("{words}")), "{file}");
+        assert!(!text.contains(&documented), "{file}");
+    }
 }

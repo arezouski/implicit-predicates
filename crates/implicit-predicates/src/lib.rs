@@ -235,7 +235,9 @@ fn orient3d_in_thread_arena(
 /// # Panics
 ///
 /// As [`orient3d`]: if an input of a point is not finite, or the exact
-/// coordinates of a point have a weight other than [`Weight::One`].
+/// coordinates of a point have a weight other than [`Weight::One`]. After a
+/// panic `scratch` may be left above the top it had; resetting it to a mark
+/// taken before the call releases what the call wrote.
 ///
 /// # Examples
 ///

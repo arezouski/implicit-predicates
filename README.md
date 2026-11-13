@@ -55,11 +55,13 @@ bound on the error of each one, and, only when the filter cannot decide, its
 exact coordinates as floating-point expansions. Most calls are decided by
 the filter, without heap allocation. When it cannot decide, explicit points
 go through exact stages whose temporaries are on the stack, so no call on
-explicit points allocates; with a point on
-a segment, the exact coordinates are written to an arena of the calling
-thread, which is allocated on the first such call and grows when a call
-needs more. `orient3d_in` takes a caller-provided arena (`Scratch`) instead
-and reports `ScratchExhausted` if it is too small.
+explicit points whose nonzero coordinates have magnitudes in
+`2^-188..=2^239` allocates. With a point on a segment, the exact
+coordinates are written to an arena of the calling thread, which is
+allocated on the first such call and grows when a call needs more; explicit
+points outside that range use the same arena, for the last stage described
+below. `orient3d_in` takes a caller-provided arena (`Scratch`) instead and
+reports `ScratchExhausted` if it is too small.
 
 `orient3d` needs the `std` feature, on by default. Without it the crate is
 `no_std` and `orient3d_in` is the way to call the predicate.

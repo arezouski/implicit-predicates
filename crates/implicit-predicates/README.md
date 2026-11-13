@@ -35,13 +35,15 @@ them, and `AnyPoint`, either of the last two.
 
 A floating-point filter on the approximations of the points decides most
 calls. When it cannot, explicit points go to exact stages on floating-point
-expansions held on the stack, so no call on explicit points allocates. With
-a point on a segment, the exact coordinates of the points go to an arena of the
-calling thread, 16,384 `f64` to start with, that grows on the heap when a
-call needs more. When the expansions cannot decide either, because a
-coordinate is too large or too small for them, a last stage evaluates the
-determinant on big integers in that arena; it is slower, and decides every
-input. `orient3d_in` takes the arena instead. Without its default `std`
+expansions held on the stack, so no call on explicit points whose nonzero
+coordinates have magnitudes in `2^-188..=2^239` allocates. With a point on a
+segment, the exact coordinates of the points go to an arena of the calling
+thread, 16,384 `f64` to start with, allocated on the first such call, that
+grows on the heap when a call needs more. When the expansions cannot decide
+either, because a coordinate is too large or too small for them, a last
+stage evaluates the determinant on big integers in that arena, for explicit
+points too; it is slower, and decides every input. `orient3d_in` takes the
+arena instead. Without its default `std`
 feature the crate is `no_std`, and `orient3d_in` takes the place of
 `orient3d`.
 

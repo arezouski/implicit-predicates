@@ -108,24 +108,35 @@ fn the_bound_edge_cases_are_decided_correctly() {
         let [decided, declined] = check_bound_edge_cases(|p| Some(chain(p)));
         assert_eq!((decided, declined), (cases.len(), 0), "{name}");
     }
-    let over_spans = |p: &Points| {
+    // The stages before the one on big integers, on points of a type whose
+    // exact coordinates are written to an arena: the filter on the points,
+    // then the stages over spans in the order of `exact_stages_in`.
+    fn before_big_integers<P: Point>(p: &Points, point: impl Fn([f64; 3]) -> P) -> Option<Sign> {
+        let [a, b, c, d] = p.map(point);
+        if let Some(sign) = stages::filter_points(&a, &b, &c, &d) {
+            return Some(sign);
+        }
         let mut buf = vec![0.0; 1 << 12];
         let mut scratch = Scratch::borrowed(&mut buf);
-        let q = p.map(|x| x.exact(&mut scratch).unwrap());
-        stages::expansions_untranslated_in(&mut scratch, [&q[0], &q[1], &q[2], &q[3]]).unwrap()
-    };
-    for (name, stage, range) in [
+        let q = [a, b, c, d].map(|x| x.exact(&mut scratch).unwrap());
+        let q = [&q[0], &q[1], &q[2], &q[3]];
+        stages::expansions_translated_in(&mut scratch, q)
+            .unwrap()
+            .or_else(|| stages::expansions_untranslated_in(&mut scratch, q).unwrap())
+    }
+    let stack = |p: &Points| stages::staged(refs(p));
+    let arrays = |p: &Points| before_big_integers(p, |x| x);
+    let lnc = |p: &Points| before_big_integers(p, |x| Lnc::new_unchecked(x, x, 0.375));
+    let before: [(&str, &Decider, (f64, f64)); 3] = [
+        ("staged", &stack, stages::UNTRANSLATED_RANGE),
         (
-            "staged",
-            &(|p: &Points| stages::staged(refs(p))) as &dyn Fn(&Points) -> Option<Sign>,
-            stages::UNTRANSLATED_RANGE,
-        ),
-        (
-            "expansions_untranslated_in",
-            &over_spans,
+            "arrays over spans",
+            &arrays,
             stages::SPANS_UNTRANSLATED_RANGE,
         ),
-    ] {
+        ("Lnc over spans", &lnc, stages::SPANS_UNTRANSLATED_RANGE),
+    ];
+    for (name, stage, range) in before {
         let inside = cases.iter().filter(|p| all_in_range(p, range));
         assert!(inside.clone().count() > 0, "{name}");
         for p in inside {
@@ -136,6 +147,9 @@ fn the_bound_edge_cases_are_decided_correctly() {
 
 /// The chain on four points of one type.
 type Chain = fn(&Points) -> Sign;
+
+/// Some of the stages of the chain on four points, which may not decide.
+type Decider = dyn Fn(&Points) -> Option<Sign>;
 
 /// A point given by an approximation and the error of each coordinate,
 /// without exact coordinates: for the filter only. The chain, which
