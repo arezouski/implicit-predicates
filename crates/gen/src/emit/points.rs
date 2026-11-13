@@ -92,7 +92,8 @@ pub fn generate_points(
 }
 
 /// The warning for a point type with an exact coordinate that can have more
-/// components than the exact stages of a predicate accept, if it has one.
+/// components than the stages of a predicate on expansions accept, if it has
+/// one: such calls go to the slower stage on big integers.
 fn long_coordinates(info: &TypeInfo<'_>) -> Option<String> {
     let lengths = info.implicit.as_ref()?.exact.coordinate_lengths(info.point);
     let long: Vec<String> = (["x", "y", "z"].iter().zip(lengths))
@@ -102,8 +103,9 @@ fn long_coordinates(info: &TypeInfo<'_>) -> Option<String> {
     (!long.is_empty()).then(|| {
         format!(
             "the exact coordinates of `{}` can have more than {MAX_COORD_COMPONENTS} \
-             components ({}): the exact stages of a predicate do not decide a call with \
-             a coordinate that has more",
+             components ({}): the stages of a predicate on expansions do not decide a \
+             call with a coordinate that has more, and the stage on big integers, which \
+             is slower, decides it",
             info.point.name,
             long.join(", ")
         )

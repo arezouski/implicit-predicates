@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 
 use implicit_predicates::stages::orient3d as stages;
-use implicit_predicates::{AnyPoint, ExactCoords, ExactError, Point, Scratch, Sign};
+use implicit_predicates::{AnyPoint, BigCoords, ExactCoords, ExactError, Point, Scratch, Sign};
 use implicit_predicates_core::{eft, expansion};
 use implicit_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
 use implicit_predicates_corpus::weighted::weights;
@@ -35,8 +35,8 @@ const CERTAIN_ZERO: usize = 1;
 const FIRST_SPANS_STAGE: usize = 5;
 const BIG_INTEGERS: usize = 7;
 
-/// Why no stage on expansions decides a call, which leaves it to the stage
-/// on big integers.
+/// Why no stage on expansions decides a call, which the stage on big
+/// integers then decides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Why {
     /// Explicit points with a coordinate outside `UNTRANSLATED_RANGE`.
@@ -49,8 +49,8 @@ pub enum Why {
     /// `SPANS_UNTRANSLATED_RANGE`.
     ComponentOutOfRange,
     /// None of the above: every input is inside the documented ranges, so
-    /// some stage on expansions should have decided. A sweep counts it as a
-    /// mismatch.
+    /// some stage on expansions should have decided. The call is decided,
+    /// by the stage on big integers, but a sweep counts it as a mismatch.
     Unexplained,
 }
 
@@ -216,9 +216,9 @@ impl Bucket {
 #[derive(Debug)]
 pub struct Tally {
     pub buckets: [Bucket; 5],
-    /// The weight and stored count of the calls that no stage on expansions
-    /// decides, which the stage on big integers decides, by reason.
-    pub undecided: Vec<(Why, usize, f64)>,
+    /// The stored count and the weight of the calls that the stage on big
+    /// integers decides, because no stage on expansions does, by reason.
+    pub big_integers: Vec<(Why, usize, f64)>,
     /// Up to a few of those calls of each reason, described.
     pub examples: Vec<(Why, String)>,
     /// Calls whose sign differs from the recorded one, or on which the
@@ -243,7 +243,7 @@ impl Default for Tally {
     fn default() -> Self {
         Tally {
             buckets: Default::default(),
-            undecided: Vec::new(),
+            big_integers: Vec::new(),
             examples: Vec::new(),
             mismatch_count: 0,
             mismatches: Vec::new(),
@@ -257,8 +257,8 @@ impl Default for Tally {
     }
 }
 
-/// The most examples kept of each reason for a call that no stage on
-/// expansions decides.
+/// The most examples kept of each reason for a call that the stage on big
+/// integers decides.
 const EXAMPLES: usize = 5;
 
 /// The most mismatches kept described.
@@ -301,13 +301,13 @@ impl Tally {
         for (bucket, added) in self.buckets.iter_mut().zip(&other.buckets) {
             bucket.add(added);
         }
-        for &(why, stored, weight) in &other.undecided {
-            match self.undecided.iter_mut().find(|(w, ..)| *w == why) {
+        for &(why, stored, weight) in &other.big_integers {
+            match self.big_integers.iter_mut().find(|(w, ..)| *w == why) {
                 Some(entry) => {
                     entry.1 += stored;
                     entry.2 += weight;
                 }
-                None => self.undecided.push((why, stored, weight)),
+                None => self.big_integers.push((why, stored, weight)),
             }
         }
         for (why, example) in &other.examples {
@@ -377,12 +377,12 @@ impl Tally {
                 .any(|q| matches!(q, AnyPoint::Lnc(l) if !(0.0..=1.0).contains(&l.t()))),
         );
         if let Err(why) = result {
-            match self.undecided.iter_mut().find(|(w, ..)| *w == why) {
+            match self.big_integers.iter_mut().find(|(w, ..)| *w == why) {
                 Some(entry) => {
                     entry.1 += 1;
                     entry.2 += weight;
                 }
-                None => self.undecided.push((why, 1, weight)),
+                None => self.big_integers.push((why, 1, weight)),
             }
             if self.examples.iter().filter(|(w, _)| *w == why).count() < EXAMPLES {
                 self.examples.push((why, describe()));
@@ -407,8 +407,8 @@ impl Tally {
     }
 
     /// The table of weighted fractions, one row per number of implicit
-    /// points, then the counts and the calls that no stage on expansions
-    /// decides.
+    /// points, then the counts and the calls that the stage on big integers
+    /// decides, by reason.
     pub fn report(&self, name: &str) -> String {
         let mut out = String::new();
         let mut line = |s: String| writeln!(out, "{s}").expect("writing to a string");
@@ -453,13 +453,13 @@ impl Tally {
             line(format!("  {m}"));
         }
         let implicit_weight = self.implicit().weight;
-        let mut undecided = self.undecided.clone();
-        undecided.sort_by_key(|&(why, ..)| why);
+        let mut big_integers = self.big_integers.clone();
+        big_integers.sort_by_key(|&(why, ..)| why);
         line(format!(
-            "not decided on expansions, by reason: {}",
-            undecided.len()
+            "decided on big integers, by reason: {}",
+            big_integers.len()
         ));
-        for (why, stored, weight) in &undecided {
+        for (why, stored, weight) in &big_integers {
             line(format!(
                 "  {why:?}: {stored} stored, weight {weight:.1}, {:.6} % of the weight with implicit points",
                 100.0 * weight / implicit_weight
@@ -469,5 +469,70 @@ impl Tally {
             line(format!("  {why:?} example: {example}"));
         }
         out
+    }
+}
+
+/// What the stage on big integers alone gave on the `orient3d` calls of
+/// corpora, without the stages before it.
+#[derive(Debug, Default)]
+pub struct BigAlone {
+    /// Calls checked.
+    pub calls: usize,
+    /// Calls with a point of a kind this crate does not provide, skipped.
+    pub unsupported: usize,
+    /// Calls whose sign differs from the recorded one.
+    pub mismatch_count: usize,
+    /// The first [`MISMATCHES`] of them, described.
+    pub mismatches: Vec<String>,
+}
+
+impl BigAlone {
+    /// Runs `big_integers_in` on the coordinates as big integers of the
+    /// points of every `orient3d` call of `corpus`, and compares its sign
+    /// with the recorded one.
+    pub fn add_corpus(&mut self, corpus: &Corpus) {
+        let mapped = points(corpus);
+        let mut scratch = Scratch::growable(1 << 14);
+        for (index, call) in corpus.calls.iter().enumerate() {
+            if call.predicate != Predicate::Orient3d {
+                continue;
+            }
+            let Some(p) = call_points::<4>(&mapped, call) else {
+                self.unsupported += 1;
+                continue;
+            };
+            let mark = scratch.mark();
+            let q: Vec<BigCoords> = p
+                .iter()
+                .map(|x| {
+                    x.exact_big(&mut scratch)
+                        .unwrap_or_else(|e| panic!("no big coordinates: {e:?}, {x:?}"))
+                })
+                .collect();
+            let sign = stages::big_integers_in(&mut scratch, [&q[0], &q[1], &q[2], &q[3]])
+                .unwrap_or_else(|e| panic!("a growable arena is exhausted: {e:?}"));
+            scratch.reset(mark);
+            self.calls += 1;
+            if REFERENCE_ORIENT3D_FACTOR * i8::from(sign) != call.sign {
+                self.mismatch_count += 1;
+                if self.mismatches.len() < MISMATCHES {
+                    self.mismatches.push(format!(
+                        "{} call {index}: recorded {}, big_integers {sign:?}, points {p:?}",
+                        corpus.model, call.sign
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Adds what another sweep found, as if its corpora had been added
+    /// here after the ones already added.
+    pub fn merge(&mut self, other: &BigAlone) {
+        self.calls += other.calls;
+        self.unsupported += other.unsupported;
+        self.mismatch_count += other.mismatch_count;
+        let room = MISMATCHES.saturating_sub(self.mismatches.len());
+        self.mismatches
+            .extend(other.mismatches.iter().take(room).cloned());
     }
 }

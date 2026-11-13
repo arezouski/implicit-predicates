@@ -358,14 +358,31 @@ fn big_of(point: &impl Point, size: usize) -> Result<[Dyadic; 3], ExactError> {
     }))
 }
 
-/// Fixed parameters whose expansions do not fit the exact arithmetic of
-/// `exact`, or lie at its edge.
-fn hard_lnc_params() -> Vec<LncParams> {
+/// Fixed parameters at the edge of the exact arithmetic of `exact`, each
+/// with whether `exact` gives the coordinates as expansions (`true`) or
+/// fails because an input is outside its range (`false`).
+fn hard_lnc_params() -> Vec<(LncParams, bool)> {
     vec![
-        ([0.5, 0.25, 1.0], [1.0, -1.0, 0.125], 2f64.powi(-600)),
-        ([2f64.powi(-140); 3], [1.0, 0.75, -0.5], 0.3),
-        ([1e300, 1e300, 1e300], [-1e300, -1e300, -1e300], 0.5),
-        ([f64::MAX, 1.0, -1.0], [-f64::MAX, 0.0, 5e-324], 0.75),
+        // `t` below the product domain.
+        (
+            ([0.5, 0.25, 1.0], [1.0, -1.0, 0.125], 2f64.powi(-600)),
+            false,
+        ),
+        // A component of `p - q` below the product domain.
+        (([2f64.powi(-500); 3], [1.0, 0.75, -0.5], 0.3), false),
+        // A small parent next to one of order 1: every component of the
+        // difference is in the product domain, so `exact` succeeds.
+        (([2f64.powi(-140); 3], [1.0, 0.75, -0.5], 0.3), true),
+        // A difference above the product domain.
+        (
+            ([1e300, 1e300, 1e300], [-1e300, -1e300, -1e300], 0.5),
+            false,
+        ),
+        // A difference that overflows.
+        (
+            ([f64::MAX, 1.0, -1.0], [-f64::MAX, 0.0, 5e-324], 0.75),
+            false,
+        ),
     ]
 }
 
@@ -384,7 +401,16 @@ fn the_big_coordinates_of_an_lnc_are_exact() {
             assert_eq!(got[k], want, "{params:?} axis {k}");
         }
     };
-    hard_lnc_params().into_iter().for_each(check);
+    for (params, expansions) in hard_lnc_params() {
+        match exact_of(&lnc(params)) {
+            Ok(_) => assert!(expansions, "{params:?}: `exact` succeeds"),
+            Err(e) => {
+                assert!(!expansions, "{params:?}: `exact` fails with {e:?}");
+                assert_eq!(e, ExactError::OutOfRange, "{params:?}");
+            }
+        }
+        check(params);
+    }
     let mut runner = proptest::test_runner::TestRunner::new(config());
     runner
         .run(&lnc_params(), |params| {
@@ -396,9 +422,11 @@ fn the_big_coordinates_of_an_lnc_are_exact() {
 
 #[test]
 fn big_coordinates_agree_with_the_expansions() {
+    let compared = std::cell::Cell::new(0u32);
     let check = |params: LncParams| {
         let point = lnc(params);
         if let Ok(expansions) = exact_of(&point) {
+            compared.set(compared.get() + 1);
             let big = big_of(&point, 4096).unwrap();
             for k in 0..3 {
                 let sum = expansions[k]
@@ -408,13 +436,23 @@ fn big_coordinates_agree_with_the_expansions() {
             }
         }
     };
-    let mut runner = proptest::test_runner::TestRunner::new(config());
+    let config = config();
+    let mut runner = proptest::test_runner::TestRunner::new(config.clone());
     runner
         .run(&lnc_params(), |params| {
             check(params);
             Ok(())
         })
         .unwrap();
+    // `exact` gives the expansions for most parameters, so most cases
+    // compare something.
+    println!("{} of {} cases compared", compared.get(), config.cases);
+    assert!(
+        config.cases == 0 || 2 * compared.get() > config.cases,
+        "{} of {} cases compared",
+        compared.get(),
+        config.cases
+    );
 }
 
 #[test]

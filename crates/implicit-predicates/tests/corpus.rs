@@ -6,16 +6,19 @@
 //! The recording program uses the opposite sign convention, so the recorded
 //! sign is `REFERENCE_ORIENT3D_FACTOR` times ours. Calls with a kind of
 //! point that this crate does not provide yet are counted and reported.
-//! A call that no stage on expansions decides, which the stage on big
-//! integers then decides, is reported with the reason (see
-//! `common::corpus_sweep::Why`); on the samples there must be none.
+//! Every call is decided: a call that no stage on expansions decides goes
+//! to the stage on big integers, and is reported with the reason (see
+//! `common::corpus_sweep::Why`); on the samples there must be none. On the
+//! generated corpus, the stage on big integers alone must also give the
+//! recorded sign of every call.
 //!
 //! The versioned samples are checked by default. The generated corpus is
 //! large and not versioned; its sweep is ignored, and is meant to be run in
 //! release mode with `cargo test -p implicit-predicates --release --test
 //! corpus -- --ignored --nocapture generated`, which also prints, for the models
 //! without and with self-intersections, the weighted fraction of the calls
-//! that each stage decides first, by number of implicit points.
+//! that each stage decides first, by number of implicit points, and the
+//! number of calls and the time of the sweep of the stage on big integers.
 
 // `orient3d` needs the `std` feature.
 #![cfg(feature = "std")]
@@ -28,7 +31,7 @@ use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
-use common::corpus_sweep::Tally;
+use common::corpus_sweep::{BigAlone, Tally};
 use implicit_predicates_corpus::Corpus;
 use implicit_predicates_corpus::parallel::{default_jobs, map_ordered};
 
@@ -85,9 +88,14 @@ fn orient3d_matches_the_recorded_sign_on_the_samples() {
     println!("{}", tally.report("samples"));
     assert_merging_is_adding(&tally);
     assert_no_mismatch("samples", &tally);
+    let mut alone = BigAlone::default();
+    for name in SAMPLES {
+        alone.add_corpus(&read(&root().join("corpus/samples").join(name)));
+    }
+    assert_big_alone("samples", &alone, total.0 + total.1);
     assert!(
-        tally.undecided.is_empty(),
-        "calls not decided on expansions on the samples: {:?}",
+        tally.big_integers.is_empty(),
+        "calls decided on big integers on the samples: {:?}",
         tally.examples
     );
     assert!(
@@ -130,6 +138,69 @@ fn assert_merging_is_adding(expected: &Tally) {
             assert!((x - y).abs() <= 1e-9 * y.abs(), "{x} is not {y}");
         }
     }
+}
+
+/// Fails if the stage on big integers alone gave a sign other than the
+/// recorded one, skipped a call, or checked fewer than `least` calls.
+fn assert_big_alone(name: &str, alone: &BigAlone, least: usize) {
+    assert!(
+        alone.mismatch_count == 0,
+        "{name}: {} mismatches of the stage on big integers, the first: {}",
+        alone.mismatch_count,
+        alone.mismatches[0]
+    );
+    assert_eq!(alone.unsupported, 0, "{name}: calls skipped");
+    assert!(
+        alone.calls >= least,
+        "{name}: {} calls checked, fewer than {least}",
+        alone.calls
+    );
+}
+
+/// The stage on big integers alone, without the stages before it, on every
+/// `orient3d` call of the generated corpus, in both populations: the only
+/// way to run it on real calls in number, since the chain leaves it very
+/// few.
+#[test]
+#[ignore = "needs the generated corpus; run in release mode"]
+fn the_big_integers_alone_match_the_recorded_sign_on_the_generated_corpus() {
+    let dir = root().join("corpus/data/corpus");
+    assert!(
+        dir.is_dir(),
+        "no generated corpus in {}: build it with `python3 corpus/tools/corpus.py all`",
+        dir.display()
+    );
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot list {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "ipcorpus"))
+        .collect();
+    files.sort();
+    let start = std::time::Instant::now();
+    let mut alone = BigAlone::default();
+    map_ordered(
+        &files,
+        default_jobs(),
+        |path| {
+            let mut of_file = BigAlone::default();
+            of_file.add_corpus(&read(path));
+            of_file
+        },
+        |of_file| {
+            alone.merge(&of_file);
+            ControlFlow::<()>::Continue(())
+        },
+    );
+    let seconds = start.elapsed().as_secs_f64();
+    println!(
+        "big integers alone: {} files, {} calls, {} mismatches, {seconds:.1} s",
+        files.len(),
+        alone.calls,
+        alone.mismatch_count
+    );
+    // Every call of the two populations of the sweep of the chain.
+    let least = 3_163_737 + 7_861_160 + 2_738_941 + 6_560_056;
+    assert_big_alone("generated corpus", &alone, least);
 }
 
 /// The files listed in `list`, relative to the root of the workspace.

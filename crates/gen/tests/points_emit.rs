@@ -397,7 +397,7 @@ fn parameter_names_must_be_snake_case() {
 }
 
 #[test]
-fn a_type_whose_exact_coordinates_can_be_too_long_for_the_exact_stages_gets_a_warning() {
+fn a_type_whose_exact_coordinates_can_be_too_long_for_the_stages_on_expansions_gets_a_warning() {
     let warnings = |source: &str| {
         generate_points(source, "t.pred", "run the generator")
             .unwrap()
@@ -412,6 +412,7 @@ fn a_type_whose_exact_coordinates_can_be_too_long_for_the_exact_stages_gets_a_wa
         "`Cube`",
         "more than 16",
         "x up to 17, y up to 17, z up to 17",
+        "the stage on big integers, which is slower, decides it",
     ] {
         assert!(cube[0].contains(part), "{cube:?}");
     }
