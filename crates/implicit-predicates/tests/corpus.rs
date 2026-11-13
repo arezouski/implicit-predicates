@@ -12,7 +12,7 @@
 //! The versioned samples are checked by default. The generated corpus is
 //! large and not versioned; its sweep is ignored, and is meant to be run in
 //! release mode with `cargo test -p implicit-predicates --release --test
-//! corpus -- --ignored --nocapture`, which also prints, for the models
+//! corpus -- --ignored --nocapture generated`, which also prints, for the models
 //! without and with self-intersections, the weighted fraction of the calls
 //! that each stage decides first, by number of implicit points.
 
@@ -183,25 +183,8 @@ fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
 
     let mut tallies = Vec::new();
     for (name, list, least) in populations {
-        let mut tally = Tally::default();
         let files = listed(list);
-        let mut checked = (0, 0);
-        // One tally per file, on several threads, merged in the order of
-        // the list.
-        map_ordered(
-            &files,
-            default_jobs(),
-            |path| {
-                let mut tally = Tally::default();
-                let checked = tally.add_corpus(&read(path));
-                (tally, checked)
-            },
-            |(of_file, (explicit, implicit))| {
-                tally.merge(&of_file);
-                checked = (checked.0 + explicit, checked.1 + implicit);
-                ControlFlow::<()>::Continue(())
-            },
-        );
+        let (tally, checked) = sweep(&files);
         println!("{} files", files.len());
         println!("{}", tally.report(name));
         tallies.push((name, tally, checked, least));
@@ -210,6 +193,56 @@ fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
         assert_no_mismatch(name, tally);
         assert_complete(name, tally, *checked, *least);
     }
+}
+
+/// The tally of the files and the calls checked, without and with implicit
+/// points: one tally per file, on several threads, merged in the order of
+/// the files.
+fn sweep(files: &[PathBuf]) -> (Tally, (usize, usize)) {
+    let mut tally = Tally::default();
+    let mut checked = (0, 0);
+    map_ordered(
+        files,
+        default_jobs(),
+        |path| {
+            let mut tally = Tally::default();
+            let checked = tally.add_corpus(&read(path));
+            (tally, checked)
+        },
+        |(of_file, (explicit, implicit))| {
+            tally.merge(&of_file);
+            checked = (checked.0 + explicit, checked.1 + implicit);
+            ControlFlow::<()>::Continue(())
+        },
+    );
+    (tally, checked)
+}
+
+/// The sweep of every model without self-intersections of the dataset, a
+/// corpus of its own next to the generated sample. It takes a few minutes.
+#[test]
+#[ignore = "needs the full corpus; prints a table; run in release mode"]
+fn orient3d_matches_the_recorded_sign_on_the_full_corpus() {
+    let dir = root().join("corpus/data/full/corpus");
+    assert!(
+        dir.is_dir(),
+        "no full corpus in {}: see corpus/tools/README.md",
+        dir.display()
+    );
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot list {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "ipcorpus"))
+        .collect();
+    files.sort();
+    let name = "every model without self-intersections";
+    let (tally, checked) = sweep(&files);
+    println!("{} files", files.len());
+    println!("{}", tally.report(name));
+    assert_no_mismatch(name, &tally);
+    // The sample of the generated corpus is part of this one.
+    assert!(files.len() >= 117, "only {} files", files.len());
+    assert_complete(name, &tally, checked, (3_163_737, 7_861_160));
 }
 
 /// Fails if a sweep of the generated corpus skipped a call or a point, or
