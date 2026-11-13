@@ -113,7 +113,12 @@ pub struct ExactCoords {
 }
 
 /// The common denominator of the exact coordinates of a point.
+///
+/// More kinds of denominator may be added: code that matches on it needs an
+/// arm for the others, in which a predicate that does not know the
+/// denominator must not give a sign.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Weight {
     /// The denominator is one: the numerators are the coordinates.
     One,
@@ -124,7 +129,11 @@ pub enum Weight {
 }
 
 /// The error of [`Point::exact`].
+///
+/// More reasons may be added: code that matches on it needs an arm for the
+/// others, in which the exact coordinates are not available.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ExactError {
     /// The arena ran out of room.
     Exhausted(ScratchExhausted),

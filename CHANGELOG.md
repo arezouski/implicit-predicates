@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `implicit-predicates` re-exports `Span` and `Mark`, so that a point type
+  written by hand needs no other crate to name the types of the `Point`
+  contract.
+- `Generated::warnings`, in `implicit-predicates-gen`: what the user of the
+  generated code should know and the code cannot enforce. The command-line
+  tool prints them to standard error. There are two for now: no input at
+  the edge of the error bound of a filter was found, so the table of edge
+  cases of its checks is empty; and a point type has an exact coordinate
+  that can have more than 16 components, which the exact stages decline.
+- `Polynomial::is_affine_in_each_coordinate`.
+
+### Changed
+
+- **Breaking:** `ExactError` and `Weight`, in `implicit-predicates-core`,
+  and `PointError` are `#[non_exhaustive]`: a `match` on them needs an arm
+  for the variants that may be added.
+- The exact stages over arena spans decline a coordinate with a zero
+  component, which no valid expansion has, instead of evaluating it.
+- A predicate whose exact stages on the stack would be too large to plan is
+  generated with the stages over arena spans alone, instead of being
+  rejected.
+- The generated `check_uncertainty_edge_cases` says that the sign at the
+  corners of the boxes of the errors is the sign in the whole boxes only
+  for a predicate that is affine in each coordinate; for any other it says
+  that the corners do not show it.
+
+### Fixed
+
+- The stages generated for a predicate without stages on the stack no
+  longer define a helper that nothing calls.
+
 ## [0.0.2] - 2026-11-11
 
 ### Added

@@ -184,3 +184,66 @@ fn the_cases_on_every_axis_are_those_of_the_axes_of_positive_degree() {
     let check = uncertainty_check(flat);
     assert!(!check.contains("=> 3,"), "{check}");
 }
+
+/// A predicate of degree 2 in one coordinate: not affine in each of them.
+const SQUARES: &str = "fn squares(a: Point3, b: Point3, c: Point3) -> Sign {\n    \
+    let d = a.x - c.x;\n    let e = b.x - c.x;\n    d*d - e*e\n}\n";
+
+/// A product of one difference per axis: its filter decides every input in
+/// range but those where it is zero, which are out of range.
+const POWERS: &str = "fn powers(a: Point3, b: Point3) -> Sign {\n    \
+    let d = a.x - b.x;\n    let e = a.y - b.y;\n    let f = a.z - b.z;\n    \
+    d*d*d*e*e*e*f*f\n}\n";
+
+/// `text` with the line breaks of its documentation comments removed, so
+/// that a sentence can be looked up whatever the wrapping.
+fn unwrapped(text: &str) -> String {
+    text.replace("\n/// ", " ")
+}
+
+#[test]
+fn the_corners_are_said_to_cover_the_boxes_only_for_a_predicate_affine_in_each_coordinate() {
+    let affine = unwrapped(&uncertainty_check(ORIENT3D));
+    assert!(
+        affine.contains("the predicate is affine in each coordinate"),
+        "{affine}"
+    );
+    assert!(affine.contains("does not hold in the boxes"), "{affine}");
+    for source in [SQUARES, POWERS] {
+        let check = unwrapped(&uncertainty_check(source));
+        assert!(check.contains("for corner in 0..1u64 <<"), "{check}");
+        assert!(!check.contains("is affine in each"), "{check}");
+        assert!(
+            check.contains("is not affine in each coordinate")
+                && check.contains("does not show that the sign holds"),
+            "{check}"
+        );
+        assert!(check.contains("does not hold at a corner"), "{check}");
+    }
+}
+
+#[test]
+fn a_predicate_without_edge_cases_says_so_and_warns() {
+    let g = generated(POWERS, "t.pred");
+    assert_eq!(case_literals(&g.checks), Vec::<&str>::new());
+    assert!(
+        unwrapped(&g.checks).contains("No such input was found for this predicate"),
+        "{}",
+        g.checks
+    );
+    assert_eq!(g.warnings.len(), 1, "{:?}", g.warnings);
+    assert!(
+        g.warnings[0].contains("`powers`") && g.warnings[0].contains("bound_edge_cases"),
+        "{:?}",
+        g.warnings
+    );
+    for (source, file) in SOURCES.into_iter().chain([(SQUARES, "t.pred")]) {
+        let g = generated(source, file);
+        assert!(!case_literals(&g.checks).is_empty(), "{file}");
+        assert!(
+            !unwrapped(&g.checks).contains("No such input was found"),
+            "{file}"
+        );
+        assert_eq!(g.warnings, Vec::<String>::new(), "{file}");
+    }
+}

@@ -22,16 +22,31 @@ use super::statements::node_statements;
 use crate::differences::DiffGraph;
 use crate::parse::Predicate;
 
+/// What the documentation of a table of edge cases says when the search
+/// found none.
+const NO_CASES: &str = "\n\nNo such input was found for this predicate: the table is empty.";
+
 /// Writes the checks module of `predicate`, whose difference form is
-/// `graph` and whose filter has the form and the emitted constants of
-/// `filter`, starting with `notice`.
+/// `graph`, whose filter has the form and the emitted constants of `filter`
+/// and whose polynomial is affine in each coordinate or not, as `affine`
+/// says, starting with `notice`. Returns a warning for each table of edge
+/// cases that came out empty.
 pub(crate) fn write_checks(
     out: &mut String,
     predicate: &Predicate,
     graph: &DiffGraph,
     filter: &FilterKind,
+    affine: bool,
     notice: &str,
-) {
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut no_cases = |table: &str, check: &str| {
+        warnings.push(format!(
+            "no input at the edge of the error bound of the filter of `{}` was found: \
+             `{table}` is empty and `{check}` checks nothing",
+            predicate.name
+        ));
+    };
     let points = predicate.params.len();
     let ty = format!("[[f64; 3]; {points}]");
     out.push_str(notice);
@@ -105,9 +120,13 @@ pub(crate) fn write_checks(
              coordinate.\n\n\
              Each pair starts from points on a grid at which the predicate is zero, or \
              changes sign, and moves one coordinate away from there. The scales go from \
-             just above `D_MIN` to just below `D_MAX`."
+             just above `D_MIN` to just below `D_MAX`.{}",
+            if cases.is_empty() { NO_CASES } else { "" }
         ),
     );
+    if cases.is_empty() {
+        no_cases("bound_edge_cases", "check_bound_edge_cases");
+    }
     writeln!(
         out,
         "pub fn bound_edge_cases() -> Vec<{ty}> {{\n\
@@ -137,12 +156,16 @@ pub(crate) fn write_checks(
     if let FilterKind::PerAxis(constants, _) = filter {
         let cases = uncertainty_edge_cases(graph, points, constants);
         write_uncertainty_cases(out, &cases, points);
+        if cases.is_empty() {
+            no_cases("uncertainty_edge_cases", "check_uncertainty_edge_cases");
+        }
     }
     let degrees = match filter {
         FilterKind::PerAxis(constants, _) => Some(constants.degrees),
         FilterKind::Global(_) => None,
     };
-    check_fns::write_check_fns(out, points, degrees);
+    check_fns::write_check_fns(out, points, degrees, affine);
+    warnings
 }
 
 /// Writes `uncertainty_edge_cases` and its table, for `points` points.
@@ -153,7 +176,8 @@ fn write_uncertainty_cases(out: &mut String, cases: &[([f64; 3], Case, Case)], p
         out,
         "///",
         0,
-        "Inputs on either side of the error bound of the filter with the uncertainty \
+        &format!(
+            "Inputs on either side of the error bound of the filter with the uncertainty \
          `e` given with each, in pairs with the same `e`: the first of each pair has an \
          exact magnitude at most the bound, `EPSILON*d^G` plus \
          `KAPPA[k]*e[k]*d^G/d_k` on each axis, the second above it, where `d_k` is \
@@ -161,7 +185,9 @@ fn write_uncertainty_cases(out: &mut String, cases: &[([f64; 3], Case, Case)], p
          computes it; the two differ by one representable value in one coordinate.\n\n\
          `e` is not zero on one axis only, for each axis, or on all of them: on those \
          axes it is a power of two between `2^-40` and `2^-8` times the scale of the \
-         grid. The points are built as in [`bound_edge_cases`].",
+         grid. The points are built as in [`bound_edge_cases`].{}",
+            if cases.is_empty() { NO_CASES } else { "" }
+        ),
     );
     writeln!(
         out,

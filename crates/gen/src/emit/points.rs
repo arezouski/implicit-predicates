@@ -21,6 +21,7 @@ use crate::error::Error;
 use crate::point::{
     ErrorProgram, LinearSum, ParamType, PointNode, PointType, error_bound, parse_points,
 };
+use crate::range::MAX_COORD_COMPONENTS;
 
 /// The largest graph whose coordinates the documentation spells out.
 pub(crate) const MAX_RENDERED_NODES: usize = 64;
@@ -58,6 +59,11 @@ pub(crate) const MAX_RENDERED_NODES: usize = 64;
 /// comparison that, after cancelling the parameters on both sides, is not
 /// one parameter against an integer of magnitude at most `2^53`, the only
 /// form emitted for now.
+///
+/// A type with an exact coordinate that can have more than
+/// [`crate::MAX_COORD_COMPONENTS`] components is generated, with a warning
+/// in the result: the exact stages of a predicate decline a call with such
+/// a coordinate.
 pub fn generate_points(
     source: &str,
     file: &str,
@@ -80,7 +86,27 @@ pub fn generate_points(
         name: "points".to_string(),
         stages,
         checks,
+        warnings: types.iter().filter_map(long_coordinates).collect(),
     }))
+}
+
+/// The warning for a point type with an exact coordinate that can have more
+/// components than the exact stages of a predicate accept, if it has one.
+fn long_coordinates(info: &TypeInfo<'_>) -> Option<String> {
+    let lengths = info.implicit.as_ref()?.exact.coordinate_lengths(info.point);
+    let long: Vec<String> = (["x", "y", "z"].iter().zip(lengths))
+        .filter(|&(_, length)| length > MAX_COORD_COMPONENTS)
+        .map(|(axis, length)| format!("{axis} up to {length}"))
+        .collect();
+    (!long.is_empty()).then(|| {
+        format!(
+            "the exact coordinates of `{}` can have more than {MAX_COORD_COMPONENTS} \
+             components ({}): the exact stages of a predicate do not decide a call with \
+             a coordinate that has more",
+            info.point.name,
+            long.join(", ")
+        )
+    })
 }
 
 /// A point type with what its emission needs.
@@ -306,8 +332,10 @@ fn write_module(out: &mut String, types: &[TypeInfo<'_>], notice: &str) {
 
 fn write_error(out: &mut String) {
     out.push_str(
-        "/// Why the constructor of a point type rejected its inputs.\n\
+        "/// Why the constructor of a point type rejected its inputs. More reasons\n\
+         /// may be added.\n\
          #[derive(Clone, Copy, Debug, PartialEq, Eq)]\n\
+         #[non_exhaustive]\n\
          pub enum PointError {\n\
          /// An input is NaN or infinite.\n\
          NonFinite,\n\

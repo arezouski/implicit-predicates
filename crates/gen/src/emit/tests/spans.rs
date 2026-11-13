@@ -96,14 +96,68 @@ fn a_stage_fits_on_the_stack_up_to_the_limit_included() {
     assert!(!fits_on_stack(usize::MAX));
 }
 
+/// `(a.x - b.x)^2` doubled `doublings` times: the worst-case length of the
+/// result doubles each time.
+fn doubled(doublings: usize) -> String {
+    let mut body = String::from("    let d = a.x - b.x;\n    let x0 = d * d;\n");
+    for i in 0..doublings {
+        body.push_str(&format!("    let x{} = x{i} + x{i};\n", i + 1));
+    }
+    format!("fn doubled(a: Point3, b: Point3) -> Sign {{\n{body}    x{doublings}\n}}\n")
+}
+
+#[test]
+fn a_form_without_a_plan_on_the_stack_is_left_to_the_stage_over_spans() {
+    let stages = |source: &str| {
+        let all = super::super::generate(source, "t.pred", "run the tests.").unwrap();
+        let stages = all[0].stages.clone();
+        [
+            "exact_differences",
+            "expansions_translated",
+            "expansions_translated_in",
+        ]
+        .map(|name| stages.contains(&format!("pub fn {name}(")))
+    };
+    // Few doublings fit on the stack.
+    assert_eq!(stages(&doubled(3)), [true, true, true]);
+    // The temporaries of the form on two components pass the limit of the
+    // stack before those of the form on one.
+    assert_eq!(stages(&doubled(9)), [true, false, true]);
+    assert_eq!(stages(&doubled(12)), [false, false, true]);
+    // A temporary of `2^32` components or more has no plan on the stack;
+    // the stage over spans still has one.
+    assert_eq!(stages(&doubled(33)), [false, false, true]);
+    // The predicates of the fixtures: every stage, and only the one over
+    // spans, because the temporaries of the others pass the limit.
+    assert_eq!(stages(ORIENT3D), [true, true, true]);
+    assert_eq!(stages(INSPHERE), [false, false, true]);
+}
+
+#[test]
+fn the_check_of_one_coordinate_is_emitted_only_with_a_stage_on_the_stack() {
+    let uses = |source: &str| {
+        let all = super::super::generate(source, "t.pred", "run the tests.").unwrap();
+        let stages = &all[0].stages;
+        (
+            stages.matches("fn in_range(").count(),
+            stages.matches(" in_range(").count() + stages.matches("!in_range(").count(),
+        )
+    };
+    // The definition and at least one call, or neither: an unused function
+    // would not compile under `deny(warnings)`.
+    let (defined, called) = uses(ORIENT3D);
+    assert!(defined == 1 && called > 1, "{defined} {called}");
+    assert_eq!(uses(INSPHERE), (0, 0));
+}
+
 #[test]
 fn every_stage_over_spans_declines_long_coordinates_and_other_weights() {
     for source in [ORIENT3D, INSPHERE, NEGATIONS] {
         for g in super::super::generate(source, "t.pred", "run the tests.").unwrap() {
             // The helper that every stage over spans calls on each
             // coordinate it reads.
-            let helper = "fn span_in_range(e: &[f64], range: (f64, f64)) -> bool {\n\
-                          e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| in_range(x, range))\n\
+            let helper = "fn span_in_range(e: &[f64], (min, max): (f64, f64)) -> bool {\n\
+                          e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| (min..=max).contains(&x.abs()))\n\
                           }\n";
             assert_eq!(g.stages.matches(helper).count(), 1, "{}", g.name);
             assert!(

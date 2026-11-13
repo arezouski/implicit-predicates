@@ -163,6 +163,9 @@ fn outputs(options: &Options) -> Result<Vec<Output>, String> {
                 ));
             }
             names.push((g.name.clone(), path.clone(), points));
+            for warning in &g.warnings {
+                eprintln!("warning: {}: {warning}", path.display());
+            }
             let file = format!("{}.rs", g.name);
             outputs.push(Output {
                 path: options.stages.join(&file),

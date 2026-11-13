@@ -107,6 +107,16 @@ impl Polynomial {
     pub fn is_zero(&self) -> bool {
         self.terms.is_empty()
     }
+
+    /// Whether the polynomial is affine in each input coordinate: no term
+    /// has a coordinate with an exponent above 1. Such a polynomial takes,
+    /// at every point of a box of coordinates, a value between the least and
+    /// the greatest of its values at the corners of the box.
+    pub fn is_affine_in_each_coordinate(&self) -> bool {
+        self.terms
+            .keys()
+            .all(|monomial| monomial.iter().all(|&(_, exponent)| exponent <= 1))
+    }
 }
 
 /// The total degree of a monomial. Every monomial [`canonical`] builds has
@@ -302,6 +312,12 @@ fn expand(graph: &Graph) -> Result<Polynomial, String> {
 /// expands to a different polynomial, and at the position of the form when
 /// [`canonical`] cannot expand it.
 pub fn check_same_polynomial(predicate: &Predicate, file: &str) -> Result<(), Error> {
+    checked_polynomial(predicate, file).map(|_| ())
+}
+
+/// The canonical polynomial of the main form of `predicate`, after the
+/// checks of [`check_same_polynomial`], with its errors.
+pub(crate) fn checked_polynomial(predicate: &Predicate, file: &str) -> Result<Polynomial, Error> {
     let main = canonical(&predicate.main, file, predicate.position)?;
     if main.is_zero() {
         return Err(Error::at(
@@ -330,7 +346,7 @@ pub fn check_same_polynomial(predicate: &Predicate, file: &str) -> Result<(), Er
             ));
         }
     }
-    Ok(())
+    Ok(main)
 }
 
 /// Expands a [`DiffGraph`] into its canonical polynomial over the input

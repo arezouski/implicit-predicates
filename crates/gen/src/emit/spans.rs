@@ -180,19 +180,19 @@ pub(crate) fn write_span_stage(out: &mut String, stage: &SpanStage, points: usiz
     .unwrap();
 }
 
-/// Writes the helper `span_in_range` that every stage over spans uses; it
-/// calls `in_range`.
+/// Writes the helper `span_in_range` that every stage over spans uses.
 pub(crate) fn write_span_in_range(out: &mut String) {
     comment(
         out,
         "///",
         0,
         "Whether the expansion `e` has at most [`MAX_COORD_COMPONENTS`] components, \
-         each zero or of a magnitude in `min..=max`.",
+         each of a magnitude in `min..=max`. A zero component is not: zero is the empty \
+         expansion, and an expansion with a zero component is not valid.",
     );
     out.push_str(
-        "fn span_in_range(e: &[f64], range: (f64, f64)) -> bool {\n\
-         e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| in_range(x, range))\n\
+        "fn span_in_range(e: &[f64], (min, max): (f64, f64)) -> bool {\n\
+         e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| (min..=max).contains(&x.abs()))\n\
          }\n\n",
     );
 }

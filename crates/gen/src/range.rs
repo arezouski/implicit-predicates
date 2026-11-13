@@ -99,9 +99,13 @@ pub struct ExactPlan {
     /// The magnitudes of the leaves for which the stage is valid.
     pub range: ExactRange,
     /// The worst-case length of the expansion of each node, in the order of
-    /// the graph: 1 or 2 for a leaf (see [`Leaves`]), 1 for a nonzero
-    /// constant and 0 for zero, `l_x + l_y` for a sum or difference,
-    /// `2 l_x l_y` for a product and `l_x` for a negation.
+    /// the graph. For a stage on the stack: 1 or 2 for a leaf (see
+    /// [`Leaves`]), 1 for a nonzero constant and 0 for zero, `l_x + l_y` for
+    /// a sum or difference, `2 l_x l_y` for a product and `l_x` for a
+    /// negation. For a stage over spans, whose coordinates are expansions
+    /// of up to [`MAX_COORD_COMPONENTS`] components, the lengths that its
+    /// plan derives for inputs in the range (see
+    /// [`exact_plan_spans_translated`]), which are shorter.
     pub lengths: Vec<usize>,
     /// The sum of `lengths`: the size of all the temporaries, each shared
     /// node counted once.

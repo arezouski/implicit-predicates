@@ -395,3 +395,41 @@ fn parameter_names_must_be_snake_case() {
         assert!(generate_points(&source, "t.pred", "x").is_ok(), "{name}");
     }
 }
+
+#[test]
+fn a_type_whose_exact_coordinates_can_be_too_long_for_the_exact_stages_gets_a_warning() {
+    let warnings = |source: &str| {
+        generate_points(source, "t.pred", "run the generator")
+            .unwrap()
+            .expect("the source declares points")
+            .warnings
+    };
+    // 2 components for `p - q`, doubled by each of the three scalings, plus
+    // one for `q`: 17, one more than the exact stages accept.
+    let cube = warnings("point Cube(p: F64x3, q: F64x3, s: f64) = q + s*s*s*(p - q);");
+    assert_eq!(cube.len(), 1, "{cube:?}");
+    for part in [
+        "`Cube`",
+        "more than 16",
+        "x up to 17, y up to 17, z up to 17",
+    ] {
+        assert!(cube[0].contains(part), "{cube:?}");
+    }
+    // One scaling fewer: 9 components.
+    let square = warnings("point Square(p: F64x3, q: F64x3, s: f64) = q + s*s*(p - q);");
+    assert_eq!(square, Vec::<String>::new());
+    assert_eq!(warnings(POINTS), Vec::<String>::new());
+    // Of the varied types, only the one with a product of expansions.
+    let varied = warnings(VARIED);
+    assert_eq!(varied.len(), 1, "{varied:?}");
+    assert!(varied[0].contains("`Products`"), "{varied:?}");
+}
+
+#[test]
+fn the_error_of_the_constructors_can_grow() {
+    let module = generated(POINTS).stages;
+    assert!(
+        module.contains("#[non_exhaustive]\npub enum PointError {"),
+        "{module}"
+    );
+}

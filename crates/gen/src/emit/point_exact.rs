@@ -145,6 +145,11 @@ impl ExactPlan {
         Ok(plan)
     }
 
+    /// The most components that each exact coordinate of `point` can have.
+    pub(crate) fn coordinate_lengths(&self, point: &PointType) -> [usize; 3] {
+        point.graph.roots.map(|root| self.length(root))
+    }
+
     /// Whether some coordinate takes an exact product.
     pub(crate) fn uses_products(&self) -> bool {
         self.ops

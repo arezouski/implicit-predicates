@@ -20,8 +20,15 @@ pub(crate) const MAX_EXHAUSTIVE_POINTS: usize = 4;
 
 /// Writes the check functions for a predicate of `points` points; the one
 /// with an uncertainty only for a per-axis filter, whose degrees in the axes
-/// are `degrees`.
-pub(crate) fn write_check_fns(out: &mut String, points: usize, degrees: Option<[u32; 3]>) {
+/// are `degrees`. `affine` says whether the predicate is affine in each
+/// coordinate, which is when its sign at the corners of a box is its sign in
+/// the whole box.
+pub(crate) fn write_check_fns(
+    out: &mut String,
+    points: usize,
+    degrees: Option<[u32; 3]>,
+    affine: bool,
+) {
     let ty = format!("[[f64; 3]; {points}]");
     out.push('\n');
     comment(
@@ -53,13 +60,14 @@ pub(crate) fn write_check_fns(out: &mut String, points: usize, degrees: Option<[
     )
     .unwrap();
     if let Some(degrees) = degrees {
-        write_check_uncertainty(out, points, degrees);
+        write_check_uncertainty(out, points, degrees, affine);
     }
 }
 
 /// Writes `check_uncertainty_edge_cases` for a per-axis filter of `points`
-/// points whose degrees in the axes are `degrees`.
-fn write_check_uncertainty(out: &mut String, points: usize, degrees: [u32; 3]) {
+/// points whose degrees in the axes are `degrees`, for a predicate that is
+/// affine in each coordinate or not, as `affine` says.
+fn write_check_uncertainty(out: &mut String, points: usize, degrees: [u32; 3], affine: bool) {
     let ty = format!("[[f64; 3]; {points}]");
     let coords = 3 * points;
     let positive: Vec<bool> = degrees.iter().map(|&d| d > 0).collect();
@@ -74,8 +82,10 @@ fn write_check_uncertainty(out: &mut String, points: usize, degrees: [u32; 3]) {
     let sampled = points > MAX_EXHAUSTIVE_POINTS;
     let held = if sampled {
         "at a corner it checks"
-    } else {
+    } else if affine {
         "in the boxes"
+    } else {
+        "at a corner"
     };
     let corners = if sampled {
         format!(
@@ -87,11 +97,17 @@ fn write_check_uncertainty(out: &mut String, points: usize, degrees: [u32; 3]) {
                  the whole boxes",
             2 * (1 + coords)
         )
-    } else {
+    } else if affine {
         format!(
             "at each of the `2^{coords}` corners of the boxes of the errors around the \
              approximations; the predicate is affine in each coordinate, so it is then the \
              exact sign at every point within them"
+        )
+    } else {
+        format!(
+            "at each of the `2^{coords}` corners of the boxes of the errors around the \
+             approximations. The predicate is not affine in each coordinate, so this does \
+             not show that the sign holds in the whole boxes"
         )
     };
     out.push('\n');

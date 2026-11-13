@@ -122,15 +122,16 @@ pub(crate) fn write_generic_chain(out: &mut String, chain: &GenericChain) {
         "///",
         0,
         "The exact coordinates of the point `p`, written to `scratch`, or `None` if \
-         its inputs are outside the range of its exact arithmetic.",
+         it cannot give them for any reason other than the room of the arena, such as \
+         inputs outside the range of its exact arithmetic.",
     );
     out.push_str(
         "fn exact(scratch: &mut Scratch<'_>, p: &impl Point) \
          -> Result<Option<ExactCoords>, ScratchExhausted> {\n\
          match p.exact(scratch) {\n\
          Ok(c) => Ok(Some(c)),\n\
-         Err(ExactError::OutOfRange) => Ok(None),\n\
          Err(ExactError::Exhausted(e)) => Err(e),\n\
+         Err(_) => Ok(None),\n\
          }\n\
          }\n\n",
     );

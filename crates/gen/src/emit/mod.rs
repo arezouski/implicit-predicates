@@ -38,7 +38,7 @@ use crate::bound::{FilterForm, MAX_DEGREE, filter_form};
 use crate::differences::difference_graph;
 use crate::error::Error;
 use crate::parse::{Predicate, parse};
-use crate::polynomial::check_same_polynomial;
+use crate::polynomial::checked_polynomial;
 use crate::range::{
     Leaves, MAX_COORD_COMPONENTS, exact_plan_differences, exact_plan_raw,
     exact_plan_spans_translated, exact_plan_spans_untranslated,
@@ -65,6 +65,11 @@ pub struct Generated {
     /// `uncertainty_edge_cases`, the same with an uncertainty. Empty when
     /// there are none, in which case no file is written.
     pub checks: String,
+    /// What the user of the generated code should know and the code itself
+    /// cannot enforce, one message each: for example, that no input at the
+    /// edge of the error bound was found, so that the checks have no such
+    /// case. Empty for most definitions.
+    pub warnings: Vec<String>,
 }
 
 /// Generates the code of every predicate defined in `source`.
@@ -169,7 +174,7 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         FilterForm::PerAxis(bound) => FilterKind::PerAxis(bound.constants(), bound.certain_zero()),
         FilterForm::Global(bound) => FilterKind::Global(bound.constants()),
     };
-    check_same_polynomial(predicate, file)?;
+    let affine = checked_polynomial(predicate, file)?.is_affine_in_each_coordinate();
     if graph.nodes.len() > edges::MAX_NODES {
         return Err(Error::at(
             file,
@@ -185,27 +190,29 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         ));
     }
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
-    // A stage on the stack is emitted only if its temporaries fit.
+    // A stage on the stack is emitted only if it has a plan and its
+    // temporaries fit. A form too large for a plan on the stack is left to
+    // the stage over spans, whose plan below reports what no stage can do.
     let stack = |leaves| {
-        exact_plan_differences(&graph, leaves, file, position, min, max).map(|plan| {
-            fits_on_stack(plan.total).then(|| {
-                (
-                    Program::differences(&graph, leaves, &plan.lengths),
-                    plan.range,
-                )
-            })
+        let plan = exact_plan_differences(&graph, leaves, file, position, min, max).ok()?;
+        fits_on_stack(plan.total).then(|| {
+            (
+                Program::differences(&graph, leaves, &plan.lengths),
+                plan.range,
+            )
         })
     };
-    let differences = stack(Leaves::One)?;
-    let translated = stack(Leaves::Two)?;
+    let differences = stack(Leaves::One);
+    let translated = stack(Leaves::Two);
     let spans =
         exact_plan_spans_translated(&graph, MAX_COORD_COMPONENTS, file, position, min, max)?;
     let (untranslated, spans_untranslated) = match &predicate.exact {
         Some(exact) => {
             let position = predicate.exact_position.unwrap_or(position);
-            let plan = exact_plan_raw(exact, file, position, min, max)?;
-            let program = |lengths: &[usize]| Program::raw(exact, lengths);
-            let stack = fits_on_stack(plan.total).then(|| (program(&plan.lengths), plan.range));
+            let stack = exact_plan_raw(exact, file, position, min, max)
+                .ok()
+                .filter(|plan| fits_on_stack(plan.total))
+                .map(|plan| (Program::raw(exact, &plan.lengths), plan.range));
             let spans = exact_plan_spans_untranslated(
                 exact,
                 MAX_COORD_COMPONENTS,
@@ -260,7 +267,10 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
     if uses_max {
         filter::write_max(&mut out);
     }
-    write_in_range(&mut out);
+    // Only the stages on the stack check single coordinates.
+    if forms.stack_stages().next().is_some() {
+        write_in_range(&mut out);
+    }
     write_span_in_range(&mut out);
     if forms
         .stack_stages()
@@ -270,11 +280,19 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         write_product(&mut out);
     }
     let mut checks = String::new();
-    checks::write_checks(&mut checks, predicate, &graph, &forms.filter, notice);
+    let warnings = checks::write_checks(
+        &mut checks,
+        predicate,
+        &graph,
+        &forms.filter,
+        affine,
+        notice,
+    );
     Ok(Generated {
         name: predicate.name.clone(),
         stages: out,
         checks,
+        warnings,
     })
 }
 

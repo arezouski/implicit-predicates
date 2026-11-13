@@ -7,6 +7,7 @@ use std::fmt::Write as _;
 
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{AnyPoint, ExactCoords, ExactError, Point, Scratch, Sign};
+use implicit_predicates_core::{eft, expansion};
 use implicit_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
 use implicit_predicates_corpus::weighted::weights;
 use implicit_predicates_corpus::{Corpus, Predicate};
@@ -83,6 +84,40 @@ fn attribute(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Result<Sig
     result
 }
 
+/// Why `Point::exact` failed on `point` with `ExactError::OutOfRange`:
+/// [`Why::ExactOutOfRange`] if its inputs are outside the range of its
+/// exact arithmetic, and [`Why::Unexplained`] if they are inside, where it
+/// should not have failed.
+pub fn why_exact_failed(point: &AnyPoint) -> Why {
+    let in_range = match point {
+        AnyPoint::Lnc(l) => lnc_in_exact_range(l.p(), l.q(), l.t()),
+        // An explicit point fails only with a coordinate that is not finite.
+        AnyPoint::Explicit(_) => point.approx().iter().all(|x| x.is_finite()),
+    };
+    if in_range {
+        Why::Unexplained
+    } else {
+        Why::ExactOutOfRange
+    }
+}
+
+/// Whether the exact arithmetic of a point on the line through `p` and `q`
+/// with parameter `t` can take them: every parent coordinate is below
+/// `2^1020`, and `t` and every component of the exact differences of the
+/// parents lie in the product domain.
+fn lnc_in_exact_range(p: &[f64; 3], q: &[f64; 3], t: f64) -> bool {
+    let limit = 2f64.powi(1020);
+    let below = |x: f64| x.abs() < limit;
+    eft::in_product_domain(t)
+        && (0..3).all(|k| {
+            let mut d = [0.0; 2];
+            below(p[k]) && below(q[k]) && {
+                let n = expansion::from_two_diff(p[k], q[k], &mut d);
+                d[..n].iter().all(|&c| eft::in_product_domain(c))
+            }
+        })
+}
+
 /// [`attribute`] after the filter, for points that are not all explicit:
 /// the stages of `exact_stages_in`, in its order.
 fn attribute_spans(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Result<Sign, Why>) {
@@ -90,8 +125,9 @@ fn attribute_spans(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Resu
     for (slot, point) in q.iter_mut().zip(p) {
         match point.exact(scratch) {
             Ok(c) => *slot = Some(c),
-            Err(ExactError::OutOfRange) => return (NONE, Err(Why::ExactOutOfRange)),
+            Err(ExactError::OutOfRange) => return (NONE, Err(why_exact_failed(point))),
             Err(ExactError::Exhausted(e)) => panic!("a growable arena is exhausted: {e:?}"),
+            Err(e) => panic!("an error of `Point::exact` that this sweep does not know: {e:?}"),
         }
     }
     let q = q.map(|c| c.expect("every point is written"));

@@ -115,6 +115,11 @@ and inputs, counted once over the three coordinates, which bounds the size
 of the emitted code. Every error is reported as `file:line:column:
 message`.
 
+A type with an exact coordinate that can have more than
+`MAX_COORD_COMPONENTS` (16) components is generated, with a warning: the
+exact stages of a predicate decline a call with a coordinate that has
+more.
+
 `parse_points` reads the declarations of a file; `parse` reads its
 predicates and checks the declarations without returning them (a file of
 only points gives no predicates, not an error). Each coordinate of a point
@@ -181,7 +186,9 @@ For each predicate the generator writes one module with:
   `e: f64`;
 - `exact_differences`, `expansions_translated` and, when there is an
   `#[exact]` form, `expansions_untranslated`: exact evaluations with
-  floating-point expansions on stack buffers;
+  floating-point expansions on stack buffers. A stage whose buffers would
+  take more than 4,096 `f64`, or too many to plan, is not emitted, and the
+  stages over arena spans take its place;
 - `staged`, which runs the filter and then the exact stages in the order:
   differences that are exact, the translated expansion form, then the
   `#[exact]` form if one is given. The order is the same for every
@@ -217,7 +224,16 @@ For the tests of each predicate it writes a second module, of checks, with:
   sign is checked at every corner of the boxes of the errors for a
   predicate of at most four points; above that the corners are too many,
   and only a fixed sample of `2 * (1 + 3 * points)` of them is checked, as
-  the documentation of the emitted function says.
+  the documentation of the emitted function says. The corners show that the
+  sign holds in the whole boxes only when the predicate is affine in each
+  coordinate, like a determinant of differences; the documentation of the
+  emitted function says which is the case.
+
+The search can find no edge case: for a product of one difference per axis,
+the filter decides every input in its range. The table is then empty, its
+documentation says so, and the result of the generation carries a warning
+(`Generated::warnings`), which the command-line tool prints to standard
+error.
 
 Generated files start with a header saying that they must not be edited
 and giving the command that regenerates them.

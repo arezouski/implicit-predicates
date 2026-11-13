@@ -291,3 +291,50 @@ fn a_small_arena_is_reported_and_left_as_it_was() {
     let mut scratch = Scratch::borrowed(&mut buf);
     assert!(point.exact(&mut scratch).is_ok());
 }
+
+/// A point type written by hand needs every type of the contract, and of
+/// the arena it writes to, from this crate alone.
+#[test]
+fn the_types_of_the_point_contract_come_from_this_crate() {
+    use implicit_predicates::{ExactCoords, ExactError, Mark, Point, Scratch, Span, Weight};
+
+    struct Origin;
+
+    impl Point for Origin {
+        fn approx(&self) -> &[f64; 3] {
+            &[0.0; 3]
+        }
+
+        fn err(&self) -> &[f64; 3] {
+            &[0.0; 3]
+        }
+
+        fn is_explicit(&self) -> bool {
+            false
+        }
+
+        fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+            let mark: Mark = scratch.mark();
+            // Zero is the empty expansion.
+            let zero: Result<Span, _> = scratch.push(&[]);
+            let Ok(zero) = zero else {
+                scratch.reset(mark);
+                return Err(ExactError::OutOfRange);
+            };
+            Ok(ExactCoords {
+                x: zero,
+                y: zero,
+                z: zero,
+                w: Weight::One,
+            })
+        }
+    }
+
+    let (a, b, c) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let mut buf = [0.0; 4096];
+    let mut scratch = Scratch::borrowed(&mut buf);
+    let origin = implicit_predicates::orient3d_in(&mut scratch, &a, &b, &c, &Origin);
+    let explicit = implicit_predicates::orient3d_in(&mut scratch, &a, &b, &c, &[0.0; 3]);
+    assert_eq!(origin, explicit);
+    assert!(matches!(origin, Ok(Some(_))), "{origin:?}");
+}

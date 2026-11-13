@@ -164,10 +164,10 @@ fn the_stages_over_spans_run_on_the_exact_coordinates_in_order_and_reset_the_are
     assert!(order.is_sorted(), "{spans}");
     let start = o.stages.find("pub fn exact_stages_in").unwrap();
     assert!(o.stages[..start].ends_with("#[cold]\n#[inline(never)]\n"));
-    // Out of range is `None`; an exhausted arena is an error.
+    // An exhausted arena is an error; any other failure, such as inputs
+    // out of range, is `None`.
     let exact = &o.stages[o.stages.find("\nfn exact(").unwrap()..];
-    assert!(exact.contains("Err(ExactError::OutOfRange) => Ok(None),"));
-    assert!(exact.contains("Err(ExactError::Exhausted(e)) => Err(e),"));
+    assert!(exact.contains("Err(ExactError::Exhausted(e)) => Err(e),\nErr(_) => Ok(None),"));
     // Without an exact form, only the translated form.
     let i = generated(INSPHERE, "predicates/insphere.pred");
     let spans = function(&i.stages, "exact_stages_in");

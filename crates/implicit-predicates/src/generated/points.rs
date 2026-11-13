@@ -11,8 +11,10 @@ use implicit_predicates_core::{
     ExactCoords, ExactError, Mark, Point, Scratch, ScratchExhausted, Span, Weight, eft, expansion,
 };
 
-/// Why the constructor of a point type rejected its inputs.
+/// Why the constructor of a point type rejected its inputs. More reasons
+/// may be added.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PointError {
     /// An input is NaN or infinite.
     NonFinite,

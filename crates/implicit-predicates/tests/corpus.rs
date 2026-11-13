@@ -273,3 +273,28 @@ fn assert_complete(name: &str, tally: &Tally, checked: (usize, usize), least: (u
         "{name}: {checked:?} calls checked, fewer than {least:?}"
     );
 }
+
+#[test]
+fn a_failure_of_the_exact_coordinates_is_accepted_only_outside_their_range() {
+    use common::corpus_sweep::{Why, why_exact_failed};
+    use implicit_predicates::{AnyPoint, Explicit, Lnc};
+
+    let (p, q) = ([1.0, 2.0, 3.0], [4.0, 6.0, 8.0]);
+    // A parameter below the product domain, and a parent that makes a
+    // difference overflow: outside the range.
+    let tiny = 2f64.powi(-600);
+    for point in [
+        Lnc::new_unchecked(p, q, tiny),
+        Lnc::new_unchecked([f64::MAX, 0.0, 0.0], [-f64::MAX, 0.0, 0.0], 0.5),
+    ] {
+        assert_eq!(why_exact_failed(&point.into()), Why::ExactOutOfRange);
+    }
+    let not_finite: AnyPoint = Explicit::new_unchecked([f64::NAN, 0.0, 0.0]).into();
+    assert_eq!(why_exact_failed(&not_finite), Why::ExactOutOfRange);
+    // Inside the range, a failure has no reason: the sweep counts it as a
+    // mismatch.
+    let inside: AnyPoint = Lnc::new_unchecked(p, q, 0.25).into();
+    assert_eq!(why_exact_failed(&inside), Why::Unexplained);
+    let explicit: AnyPoint = Explicit::new_unchecked(p).into();
+    assert_eq!(why_exact_failed(&explicit), Why::Unexplained);
+}

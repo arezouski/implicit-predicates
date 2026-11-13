@@ -733,15 +733,16 @@ pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point>(
 }
 
 /// The exact coordinates of the point `p`, written to `scratch`, or `None` if
-/// its inputs are outside the range of its exact arithmetic.
+/// it cannot give them for any reason other than the room of the arena, such as
+/// inputs outside the range of its exact arithmetic.
 fn exact(
     scratch: &mut Scratch<'_>,
     p: &impl Point,
 ) -> Result<Option<ExactCoords>, ScratchExhausted> {
     match p.exact(scratch) {
         Ok(c) => Ok(Some(c)),
-        Err(ExactError::OutOfRange) => Ok(None),
         Err(ExactError::Exhausted(e)) => Err(e),
+        Err(_) => Ok(None),
     }
 }
 
@@ -758,9 +759,10 @@ fn in_range(x: f64, (min, max): (f64, f64)) -> bool {
 }
 
 /// Whether the expansion `e` has at most [`MAX_COORD_COMPONENTS`] components,
-/// each zero or of a magnitude in `min..=max`.
-fn span_in_range(e: &[f64], range: (f64, f64)) -> bool {
-    e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| in_range(x, range))
+/// each of a magnitude in `min..=max`. A zero component is not: zero is the
+/// empty expansion, and an expansion with a zero component is not valid.
+fn span_in_range(e: &[f64], (min, max): (f64, f64)) -> bool {
+    e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| (min..=max).contains(&x.abs()))
 }
 
 /// Writes the expansion of `x * y` to `out` and returns its length: the sum of

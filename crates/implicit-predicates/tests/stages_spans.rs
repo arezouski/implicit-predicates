@@ -232,6 +232,56 @@ fn a_component_outside_the_range_is_declined() {
     assert!(matches!(small(-u.0.next_down()), (_, None)));
 }
 
+// Without debug assertions only: with them, the arena itself refuses to
+// write an expansion that is not valid.
+#[cfg(not(debug_assertions))]
+#[test]
+fn a_zero_component_is_declined() {
+    // Zero is the empty expansion: a coordinate with a zero component is
+    // not a valid expansion, wherever the zero is.
+    for zero in [0.0, -0.0] {
+        for coordinate in [vec![zero], vec![zero, 1.0], vec![1.0, zero]] {
+            let p = [
+                [coordinate.clone(), vec![], vec![]],
+                [vec![], vec![1.0], vec![]],
+                [vec![], vec![], vec![1.0]],
+                [vec![0.5], vec![0.5], vec![0.5]],
+            ];
+            let mut buf = vec![0.0; 1 << 12];
+            let mut scratch = Scratch::borrowed(&mut buf);
+            let q = p.map(|point| {
+                let [x, y, z] = point.map(|e| {
+                    scratch
+                        .write(e.len(), |out| {
+                            out[..e.len()].copy_from_slice(&e);
+                            e.len()
+                        })
+                        .unwrap()
+                });
+                ExactCoords {
+                    x,
+                    y,
+                    z,
+                    w: Weight::One,
+                }
+            });
+            let q = [&q[0], &q[1], &q[2], &q[3]];
+            let used = scratch.used();
+            assert_eq!(
+                stages::expansions_translated_in(&mut scratch, q),
+                Ok(None),
+                "{coordinate:?}"
+            );
+            assert_eq!(
+                stages::expansions_untranslated_in(&mut scratch, q),
+                Ok(None),
+                "{coordinate:?}"
+            );
+            assert_eq!(scratch.used(), used);
+        }
+    }
+}
+
 #[test]
 fn a_coordinate_of_17_components_is_declined() {
     // Powers of four: a valid expansion of any length.

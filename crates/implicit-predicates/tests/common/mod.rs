@@ -26,14 +26,25 @@ pub use implicit_predicates_test_support::Points4 as Points;
 /// A stage of the chain, as a function of the four points.
 pub type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;
 
+/// A stage of the generated module with its name, written once so that the
+/// name cannot be that of another function.
+macro_rules! stage {
+    ($name:ident) => {
+        (stringify!($name), stages::$name as Stage)
+    };
+}
+
+/// The filter for explicit points, under the name of the generated function.
+const FILTER: (&str, Stage) = ("filter", |p| stages::filter(p, [0.0; 3]));
+
 /// Every stage of the chain with its name, the filter for explicit points;
 /// then the chain itself.
 pub const STAGES: [(&str, Stage); 5] = [
-    ("filter", |p| stages::filter(p, [0.0; 3])),
-    ("exact_differences", stages::exact_differences),
-    ("expansions_translated", stages::expansions_translated),
-    ("expansions_untranslated", stages::expansions_untranslated),
-    ("staged", stages::staged),
+    FILTER,
+    stage!(exact_differences),
+    stage!(expansions_translated),
+    stage!(expansions_untranslated),
+    stage!(staged),
 ];
 
 /// The stages of the chain for explicit points, in the order `staged`
@@ -41,10 +52,10 @@ pub const STAGES: [(&str, Stage); 5] = [
 /// gives the result of `staged`, so this list cannot drift from the
 /// generated chain.
 pub const CHAIN: [(&str, Stage); 4] = [
-    ("filter", |p| stages::filter(p, [0.0; 3])),
-    ("exact_differences", stages::exact_differences),
-    ("expansions_translated", stages::expansions_translated),
-    ("expansions_untranslated", stages::expansions_untranslated),
+    FILTER,
+    stage!(exact_differences),
+    stage!(expansions_translated),
+    stage!(expansions_untranslated),
 ];
 
 /// The index in [`CHAIN`] of the first stage that decides, and its result;
