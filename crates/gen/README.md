@@ -197,16 +197,23 @@ For each predicate the generator writes one module with:
   of the points with the uncertainty of their errors (zero when every point
   is explicit); `exact_stages`, the exact stages of `staged`;
   `exact_stages_in`, the expansion forms over spans of an arena, on the
-  exact coordinates of the points; and `staged_in`, which runs
-  `filter_points`, then `exact_stages` when every point is explicit and
-  `exact_stages_in` otherwise;
+  exact coordinates of the points, followed by `big_integers_in`;
+  `exact_stages_explicit_in`, `exact_stages` followed by `big_integers_in`
+  for points that are all explicit; and `staged_in`, which runs
+  `filter_points`, then `exact_stages_explicit_in` when every point is
+  explicit and `exact_stages_in` otherwise. `staged_in` and
+  `exact_stages_in` return `Result<Sign, ScratchExhausted>`: they decide
+  every input, and fail only when the arena runs out of room. They panic on
+  a point whose exact coordinates have a weight other than one, and on a
+  point that cannot give its coordinates as big integers because an input
+  is not finite;
 - `big_integers_in`, the main form evaluated exactly with the big-integer
   operations of an arena, on the coordinates of the points as big
   integers; it always decides, and fails only when the arena runs out of
   room. `BIG_INTEGERS_EXPLICIT_ARENA` is a number of `f64` slots of the
   arena, one 64-bit word each, that suffices for it on explicit points,
   their coordinates as big integers included: a conservative bound, not a
-  tight one. The chains do not run this stage yet.
+  tight one. Both chains end with this stage.
 
 Each stage returns `None` when it cannot decide, except `big_integers_in`.
 

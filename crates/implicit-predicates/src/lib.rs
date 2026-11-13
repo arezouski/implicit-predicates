@@ -194,6 +194,9 @@ const GROWS: &str = "the arena of the thread grows as needed";
 #[cold]
 #[inline(never)]
 fn orient3d_explicit(p: [&[f64; 3]; 4]) -> Sign {
+    // `exact_stages` runs here first and again inside
+    // `exact_stages_explicit_in`, on purpose: the arena of the thread stays
+    // untouched whenever the stages on the stack decide.
     if let Some(sign) = orient3d_stages::exact_stages(p) {
         return sign;
     }
@@ -234,8 +237,8 @@ fn orient3d_in_thread_arena(
 ///
 /// # Panics
 ///
-/// As [`orient3d`]: if an input of a point is not finite, or the exact
-/// coordinates of a point have a weight other than [`Weight::One`]. After a
+/// If an input of a point is not finite, or the exact coordinates of a
+/// point have a weight other than [`Weight::One`]. After a
 /// panic `scratch` may be left above the top it had; resetting it to a mark
 /// taken before the call releases what the call wrote.
 ///

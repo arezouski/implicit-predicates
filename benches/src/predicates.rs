@@ -104,10 +104,11 @@ pub fn orient3d_sets() -> Vec<InputSet<Orient3dInput>> {
 }
 
 /// Returns three sets of explicit points outside the range of the exact
-/// stages on the stack, which the filter does not decide either: `large` and
-/// `small` are the `near_degenerate` set with every coordinate multiplied by
-/// 2^960 or 2^-960, and `mixed` multiplies the first
-/// two points by 2^960 and the last two by 2^-960.
+/// stages on the stack (the exact stages whose temporaries are on the
+/// stack), which the filter does not decide either: `large` and `small` are
+/// the `near_degenerate` set with every coordinate multiplied by 2^960 or
+/// 2^-960, and `mixed` multiplies the first two points by 2^960 and the last
+/// two by 2^-960.
 #[must_use]
 pub fn out_of_range_sets() -> Vec<InputSet<Orient3dInput>> {
     let base = near_coplanar(NEAR_DEGENERATE_SEED);

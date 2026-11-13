@@ -80,8 +80,10 @@ panic.
 predicates. Its implementation carries obligations that the predicates rely
 on without checking them: `err` must bound the error of each coordinate of
 `approx`; `is_explicit` may return `true` only when `approx` holds the exact
-coordinates, with zero error; and `exact` must write valid expansions. The
-trait documentation states them in full. An implementation that breaks them
+coordinates, with zero error; `exact` must write valid expansions; and
+`exact_big` must give the same coordinates as `exact` whenever `exact`
+succeeds, and fail with `OutOfRange` only for inputs that are not finite.
+The trait documentation states them in full. An implementation that breaks them
 makes the predicates return wrong signs, silently. The point types of this
 crate are not written by hand: `implicit-predicates-gen` emits them from
 short declarations, with error bounds it derives operation by operation.

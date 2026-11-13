@@ -113,10 +113,11 @@ pub struct Generated {
 /// `exact_stages`, and `exact_stages_in` after the stages over spans, so
 /// `staged_in` decides every input, and panics on a point that cannot give
 /// its coordinates as big integers or whose exact coordinates have a weight
-/// other than one. The module of its checks holds `exact`, the main form evaluated with the exact numbers
-/// of `implicit-predicates-oracle`, `bound_edge_cases`, pairs of inputs at
-/// the edge of the error bound of the filter for explicit points, and, for a
-/// per-axis filter, `uncertainty_edge_cases`, the same with an uncertainty.
+/// other than one. The module of its checks holds `exact`, the main form
+/// evaluated with the exact numbers of `implicit-predicates-oracle`,
+/// `bound_edge_cases`, pairs of inputs at the edge of the error bound of the
+/// filter for explicit points, and, for a per-axis filter,
+/// `uncertainty_edge_cases`, the same with an uncertainty.
 ///
 /// # Errors
 ///

@@ -20,8 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool prints them to standard error. There are two for now: no input at
   the edge of the error bound of a filter was found, so the table of edge
   cases of its checks is empty; and a point type has an exact coordinate
-  that can have more than 16 components, which the exact stages decline.
+  that can have more than 16 components: the stages on expansions decline it,
+  and the stage on big integers, which is slower, decides it.
 - `Polynomial::is_affine_in_each_coordinate`.
+- `Dyadic::from_words`, in `implicit-predicates-oracle`: builds a number
+  from its sign, the 64-bit words of its magnitude and a binary exponent.
 - `orient3d` and `orient3d_in` end with an exact stage on big integers, so
   they decide every finite input, whatever the magnitude of the
   coordinates. With explicit points outside the range of the stages on the
@@ -39,8 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `orient3d` returns `Sign` instead of `Option<Sign>`, and
   `orient3d_in` returns `Result<Sign, ScratchExhausted>` instead of
   `Result<Option<Sign>, ScratchExhausted>`: no finite input gives `None`
-  any more, and an input that is not finite, which gave `None`, panics.
-
+  any more, and an input that is not finite, which gave `None`, panics. So
+  does a point whose exact coordinates have a weight other than
+  `Weight::One`, which also gave `None`.
+- **Breaking:** the generated `staged_in` and `exact_stages_in` return
+  `Result<Sign, ScratchExhausted>` instead of
+  `Result<Option<Sign>, ScratchExhausted>`, and generated modules use `Big`
+  and `BigCoords` of `implicit-predicates-core`. Anyone who regenerates with
+  `implicit-predicates-gen` is affected.
 - **Breaking:** `Point`, in `implicit-predicates-core`, has a new required
   method, `exact_big`, which writes the exact coordinates as big integers
   (`BigCoords`) to a `Scratch` arena. `[f64; 3]` and the generated point

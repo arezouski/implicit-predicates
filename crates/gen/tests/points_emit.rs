@@ -405,7 +405,7 @@ fn a_type_whose_exact_coordinates_can_be_too_long_for_the_stages_on_expansions_g
             .warnings
     };
     // 2 components for `p - q`, doubled by each of the three scalings, plus
-    // one for `q`: 17, one more than the exact stages accept.
+    // one for `q`: 17, one more than the stages on expansions accept.
     let cube = warnings("point Cube(p: F64x3, q: F64x3, s: f64) = q + s*s*s*(p - q);");
     assert_eq!(cube.len(), 1, "{cube:?}");
     for part in [

@@ -569,6 +569,14 @@ fn each_range_over_spans_hands_over_to_the_next_stage() {
     for (case, p, stage) in cases {
         let args = p.map(|x| Arg::Lnc(x, x, 0.375));
         let points = any_points(&args);
+        // Every point has exact coordinates, so that the test reaches the
+        // range checks of the stages over spans.
+        let mut buf = vec![0.0; 1 << 12];
+        let mut scratch = Scratch::borrowed(&mut buf);
+        assert!(
+            points.iter().all(|x| x.exact(&mut scratch).is_ok()),
+            "{case}: {p:?}"
+        );
         let (name, sign) = first_deciding_over_spans(&points);
         assert_eq!(name, stage, "{case}: {p:?}");
         let expected = exact_sign(&args);
@@ -823,7 +831,10 @@ fn the_arena_of_the_explicit_stage_is_enough() {
         high_water = high_water.max(scratch.high_water());
     }
     println!("high water of the arena: {high_water} of {BIG_INTEGERS_EXPLICIT_ARENA} slots");
-    assert!(high_water <= BIG_INTEGERS_EXPLICIT_ARENA);
+    // The worst case found, well within the constant: a borrowed arena of
+    // `BIG_INTEGERS_EXPLICIT_ARENA` slots fails by itself above it, so this
+    // pins that these inputs still reach the stage and use what they did.
+    assert_eq!(high_water, 1216);
 }
 
 /// `orient3d_in` on calls that reach the stage on big integers, with
