@@ -6,7 +6,8 @@
 //! transparent wrapper of `[f64; 3]`. Every other type stores its
 //! parameters, the coordinates computed in `f64` and their error bounds,
 //! computed by its constructor with the program of [`crate::error_bound`];
-//! its exact coordinates are written by [`super::point_exact`]. The checks
+//! its exact coordinates are written by [`super::point_exact`], and as big
+//! integers by [`super::point_big`]. The checks
 //! module of [`super::point_checks`] gives the exact coordinates for tests.
 
 use std::fmt::Write;
@@ -302,7 +303,7 @@ fn write_module(out: &mut String, types: &[TypeInfo<'_>], notice: &str) {
         ),
     );
     let implicit: Vec<&Implicit> = types.iter().filter_map(|t| t.implicit.as_ref()).collect();
-    let mut core = vec!["ExactCoords", "ExactError", "Point", "Scratch"];
+    let mut core = vec!["BigCoords", "ExactCoords", "ExactError", "Point", "Scratch"];
     if !implicit.is_empty() {
         core.extend(["Mark", "ScratchExhausted", "Span", "Weight"]);
         if implicit.iter().any(|i| i.exact.uses_products()) {

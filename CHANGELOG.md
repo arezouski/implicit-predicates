@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Point`, in `implicit-predicates-core`, has a new required
+  method, `exact_big`, which writes the exact coordinates as big integers
+  (`BigCoords`) to a `Scratch` arena. `[f64; 3]` and the generated point
+  types implement it; a point type of your own must too. `implicit-predicates`
+  re-exports `Big` and `BigCoords`.
 - **Breaking:** `ExactError` and `Weight`, in `implicit-predicates-core`,
   and `PointError` are `#[non_exhaustive]`: a `match` on them needs an arm
   for the variants that may be added.

@@ -320,3 +320,72 @@ fn the_checks_compute_the_declared_polynomial_of_each_coordinate() {
         }
     }
 }
+
+#[test]
+fn write_exact_big_computes_the_declared_polynomial_of_each_coordinate() {
+    for (point, stages, _) in declarations() {
+        if point.is_explicit() {
+            continue;
+        }
+        // `write_exact_big` reads its slots as `Point::exact_big` fills them.
+        let exact_big = point_method(&stages, &point.name, "exact_big");
+        let binding = Binding::from_call(
+            &point,
+            exact_big,
+            "Self::write_exact_big",
+            "scratch, ",
+            "self.",
+        );
+        let body = method(&stages, &point.name, "write_exact_big");
+        let mut g = Graph {
+            nodes: Vec::new(),
+            root: 0,
+        };
+        let mut values: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut roots = Vec::new();
+        let value = |values: &BTreeMap<usize, usize>, text: &str| {
+            values[&text.strip_prefix('v').unwrap().parse::<usize>().unwrap()]
+        };
+        for line in body.lines() {
+            if let Some(rest) = line.strip_prefix("let v") {
+                let (name, call) = rest.trim_end_matches(';').split_once(" = ").unwrap();
+                let node = if let Some(x) = call.strip_suffix(".neg()") {
+                    let x = value(&values, x);
+                    negate(&mut g, x)
+                } else {
+                    let call = call.strip_suffix('?').unwrap_or_else(|| panic!("{line}"));
+                    let call = call.strip_prefix("scratch.").unwrap();
+                    let (function, args) = call_args(call);
+                    match function {
+                        "big_from_f64" => {
+                            leaf(&mut g, &binding, args[0]).unwrap_or_else(|| panic!("{line}"))
+                        }
+                        "big_add" | "big_sub" | "big_mul" => {
+                            let (x, y) = (value(&values, args[0]), value(&values, args[1]));
+                            push(
+                                &mut g,
+                                match function {
+                                    "big_add" => Node::Add(x, y),
+                                    "big_sub" => Node::Sub(x, y),
+                                    _ => Node::Mul(x, y),
+                                },
+                            )
+                        }
+                        _ => panic!("{line}"),
+                    }
+                };
+                values.insert(name.parse().unwrap(), node);
+            } else if let Some(inner) = line
+                .strip_prefix("Ok(BigCoords::new(")
+                .and_then(|l| l.strip_suffix("))"))
+            {
+                roots = inner.split(", ").map(|v| value(&values, v)).collect();
+            }
+        }
+        assert_eq!(roots.len(), 3, "{}", point.name);
+        for (axis, root) in roots.into_iter().enumerate() {
+            g.root = root;
+            assert_eq!(expand(&g), declared(&point, axis), "{} {axis}", point.name);
+        }
+    }
+}

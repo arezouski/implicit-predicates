@@ -4,13 +4,16 @@
 //! filter, uses [`Point::approx`], an approximation of the coordinates, and
 //! [`Point::err`], a bound on the error of each one. Only when the filter
 //! cannot decide does it ask for [`Point::exact`], the coordinates as
-//! expansions in a [`Scratch`] arena, in homogeneous form.
+//! expansions in a [`Scratch`] arena, in homogeneous form. A last exact
+//! stage asks for [`Point::exact_big`] instead: the coordinates as big
+//! integers ([`Big`]), with no weight.
 //!
 //! `[f64; 3]` implements the contract as an explicit point: its components
 //! are its exact coordinates, with no error.
 
 use core::fmt;
 
+use crate::bigint::Big;
 use crate::expansion;
 use crate::scratch::{Scratch, ScratchExhausted, Span};
 
@@ -40,7 +43,15 @@ use crate::scratch::{Scratch, ScratchExhausted, Span};
 ///   [`approx`](Self::approx), [`err`](Self::err) and
 ///   [`is_explicit`](Self::is_explicit) give the same answer every time and
 ///   [`exact`](Self::exact) the same coordinates: a type with interior
-///   mutability must not change them in the middle of a call.
+///   mutability must not change them in the middle of a call;
+/// - [`exact_big`](Self::exact_big) gives the same coordinates as
+///   [`exact`](Self::exact), `x_k / w`, whenever `exact` succeeds, and the
+///   same answer on every call; it fails with [`ExactError::OutOfRange`]
+///   only when an input of the point is not finite;
+/// - [`exact_big`](Self::exact_big) leaves the arena below the top it had
+///   when it was called as it was: it writes only above that top and never
+///   resets the arena to a mark taken before the call. After an error the
+///   arena may hold partial results above that top.
 ///
 /// A predicate given a point that breaks this contract can return a wrong
 /// sign: predicates do not check it.
@@ -94,6 +105,45 @@ pub trait Point {
     /// had before the call; resetting to a mark taken before the call
     /// releases them.
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError>;
+
+    /// Writes the exact coordinates as big integers in `scratch`: the
+    /// point is `(x, y, z)`, with no common denominator. Each coordinate has
+    /// the same value as the one that [`exact`](Self::exact) gives, when it
+    /// succeeds.
+    ///
+    /// # Errors
+    ///
+    /// - [`ExactError::Exhausted`] if `scratch` runs out of room;
+    /// - [`ExactError::OutOfRange`] only if an input of the point is not
+    ///   finite.
+    ///
+    /// The method writes only above the top the arena had before the call
+    /// and never resets below it; after an error, `scratch` may hold partial
+    /// results above that top, which resetting to a mark taken before the
+    /// call releases.
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError>;
+}
+
+/// The exact coordinates of a point as big integers: the point is
+/// `(x, y, z)`. The values belong to the arena given to
+/// [`Point::exact_big`].
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub struct BigCoords {
+    /// The first coordinate.
+    pub x: Big,
+    /// The second coordinate.
+    pub y: Big,
+    /// The third coordinate.
+    pub z: Big,
+}
+
+impl BigCoords {
+    /// The coordinates `x`, `y` and `z`.
+    #[must_use]
+    pub fn new(x: Big, y: Big, z: Big) -> BigCoords {
+        BigCoords { x, y, z }
+    }
 }
 
 /// The exact coordinates of a point, in homogeneous form: the point is
@@ -206,5 +256,19 @@ impl Point for [f64; 3] {
             z: write(self[2])?,
             w: Weight::One,
         })
+    }
+
+    /// Writes each coordinate as a big integer. Needs up to 6 free
+    /// components; on an error the arena may hold the coordinates already
+    /// written.
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        if !self.iter().all(|c| c.is_finite()) {
+            return Err(ExactError::OutOfRange);
+        }
+        Ok(BigCoords::new(
+            scratch.big_from_f64(self[0])?,
+            scratch.big_from_f64(self[1])?,
+            scratch.big_from_f64(self[2])?,
+        ))
     }
 }

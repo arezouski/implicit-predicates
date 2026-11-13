@@ -43,6 +43,6 @@ pub mod scratch;
 mod sign;
 
 pub use bigint::Big;
-pub use point::{ExactCoords, ExactError, Point, Weight};
+pub use point::{BigCoords, ExactCoords, ExactError, Point, Weight};
 pub use scratch::{Mark, Scratch, ScratchExhausted, Span};
 pub use sign::Sign;

@@ -83,3 +83,50 @@ fn exact_errors_convert_and_describe_themselves() {
     );
     assert!(ExactError::OutOfRange.source().is_none());
 }
+
+#[test]
+fn an_explicit_point_gives_its_coordinates_as_big_integers() {
+    use implicit_predicates_oracle::Dyadic;
+    use implicit_predicates_test_support::{assert_valid_big, big_to_dyadic};
+
+    let points = [
+        [1.5, 0.0, -2.0],
+        [f64::MAX, -f64::MAX, f64::MIN_POSITIVE],
+        [5e-324, -5e-324, 1e-310],
+        [0.1, -0.0, 1e300],
+    ];
+    for p in points {
+        let mut buf = [0.0; 12];
+        let mut s = Scratch::borrowed(&mut buf);
+        let coords = p.exact_big(&mut s).unwrap();
+        for (big, c) in [coords.x, coords.y, coords.z].into_iter().zip(p) {
+            assert_valid_big(&s, big);
+            assert_eq!(big_to_dyadic(&s, big), Dyadic::from_f64(c), "{p:?}");
+        }
+    }
+}
+
+#[test]
+fn a_point_that_is_not_finite_has_no_big_coordinates() {
+    for bad in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+        for axis in 0..3 {
+            let mut p = [1.0, 2.0, 3.0];
+            p[axis] = bad;
+            let mut buf = [0.0; 12];
+            let mut s = Scratch::borrowed(&mut buf);
+            let kept = s.push(&[4.0]).unwrap();
+            assert_eq!(p.exact_big(&mut s).unwrap_err(), ExactError::OutOfRange);
+            assert_eq!(s.used(), 1, "{p:?} left components in the arena");
+            assert_eq!(s.get(kept), &[4.0]);
+        }
+    }
+}
+
+#[test]
+fn a_small_arena_gives_no_big_coordinates_and_reports_exhaustion() {
+    let p = [1.5, 2.5, 3.5];
+    let mut buf = [0.0; 2];
+    let mut s = Scratch::borrowed(&mut buf);
+    let result = p.exact_big(&mut s);
+    assert_eq!(result.unwrap_err(), ExactError::Exhausted(ScratchExhausted));
+}

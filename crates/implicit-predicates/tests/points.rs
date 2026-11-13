@@ -296,7 +296,9 @@ fn a_small_arena_is_reported_and_left_as_it_was() {
 /// the arena it writes to, from this crate alone.
 #[test]
 fn the_types_of_the_point_contract_come_from_this_crate() {
-    use implicit_predicates::{ExactCoords, ExactError, Mark, Point, Scratch, Span, Weight};
+    use implicit_predicates::{
+        BigCoords, ExactCoords, ExactError, Mark, Point, Scratch, Span, Weight,
+    };
 
     struct Origin;
 
@@ -311,6 +313,11 @@ fn the_types_of_the_point_contract_come_from_this_crate() {
 
         fn is_explicit(&self) -> bool {
             false
+        }
+
+        fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+            let zero = scratch.big_from_f64(0.0)?;
+            Ok(BigCoords::new(zero, zero, zero))
         }
 
         fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
@@ -337,4 +344,91 @@ fn the_types_of_the_point_contract_come_from_this_crate() {
     let explicit = implicit_predicates::orient3d_in(&mut scratch, &a, &b, &c, &[0.0; 3]);
     assert_eq!(origin, explicit);
     assert!(matches!(origin, Ok(Some(_))), "{origin:?}");
+}
+
+/// The big-integer coordinates of `point`, as exact values.
+fn big_of(point: &impl Point, size: usize) -> Result<[Dyadic; 3], ExactError> {
+    use implicit_predicates_test_support::{assert_valid_big, big_to_dyadic};
+    let mut buf = vec![0.0; size];
+    let mut scratch = Scratch::borrowed(&mut buf);
+    let coords = point.exact_big(&mut scratch)?;
+    Ok([coords.x, coords.y, coords.z].map(|b| {
+        assert_valid_big(&scratch, b);
+        big_to_dyadic(&scratch, b)
+    }))
+}
+
+/// Fixed parameters whose expansions do not fit the exact arithmetic of
+/// `exact`, or lie at its edge.
+fn hard_lnc_params() -> Vec<LncParams> {
+    vec![
+        ([0.5, 0.25, 1.0], [1.0, -1.0, 0.125], 2f64.powi(-600)),
+        ([2f64.powi(-140); 3], [1.0, 0.75, -0.5], 0.3),
+        ([1e300, 1e300, 1e300], [-1e300, -1e300, -1e300], 0.5),
+        ([f64::MAX, 1.0, -1.0], [-f64::MAX, 0.0, 5e-324], 0.75),
+    ]
+}
+
+#[test]
+fn the_big_coordinates_of_an_lnc_are_exact() {
+    let check = |params: LncParams| {
+        let (p, q, t) = params;
+        let got = big_of(&lnc(params), 4096).unwrap();
+        for k in 0..3 {
+            let (pk, qk, tk) = (
+                Dyadic::from_f64(p[k]),
+                Dyadic::from_f64(q[k]),
+                Dyadic::from_f64(t),
+            );
+            let want = &qk + &(&tk * &(&pk - &qk));
+            assert_eq!(got[k], want, "{params:?} axis {k}");
+        }
+    };
+    hard_lnc_params().into_iter().for_each(check);
+    let mut runner = proptest::test_runner::TestRunner::new(config());
+    runner
+        .run(&lnc_params(), |params| {
+            check(params);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn big_coordinates_agree_with_the_expansions() {
+    let check = |params: LncParams| {
+        let point = lnc(params);
+        if let Ok(expansions) = exact_of(&point) {
+            let big = big_of(&point, 4096).unwrap();
+            for k in 0..3 {
+                let sum = expansions[k]
+                    .iter()
+                    .fold(Dyadic::from_f64(0.0), |acc, &c| &acc + &Dyadic::from_f64(c));
+                assert_eq!(big[k], sum, "{params:?} axis {k}");
+            }
+        }
+    };
+    let mut runner = proptest::test_runner::TestRunner::new(config());
+    runner
+        .run(&lnc_params(), |params| {
+            check(params);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn big_coordinates_of_the_other_types_and_of_any_point_are_reported() {
+    let explicit = Explicit::new([0.5, -2.0, 3.0]).unwrap();
+    let big = big_of(&explicit, 64).unwrap();
+    assert_eq!(big, [0.5, -2.0, 3.0].map(Dyadic::from_f64));
+    let any = AnyPoint::from(lnc(([1.0, 2.0, 3.0], [0.0; 3], 0.5)));
+    assert_eq!(
+        big_of(&any, 4096).unwrap(),
+        [0.5, 1.0, 1.5].map(Dyadic::from_f64)
+    );
+    let broken = Lnc::new_unchecked([f64::NAN, 0.0, 0.0], [0.0; 3], 0.5);
+    assert_eq!(big_of(&broken, 4096).unwrap_err(), ExactError::OutOfRange);
+    let tiny = lnc(([1.0, 2.0, 3.0], [0.0; 3], 0.5));
+    assert!(matches!(big_of(&tiny, 1), Err(ExactError::Exhausted(_))));
 }

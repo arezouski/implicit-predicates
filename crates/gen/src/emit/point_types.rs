@@ -3,6 +3,7 @@
 
 use std::fmt::Write;
 
+use super::point_big::write_exact_big;
 use super::point_eval::write_evaluate;
 use super::point_exact::write_exact;
 use super::points::{Bound, Implicit, MAX_RENDERED_NODES, TypeInfo};
@@ -84,7 +85,9 @@ pub(crate) fn write_explicit(out: &mut String, info: &TypeInfo<'_>) {
          #[inline]\nfn err(&self) -> &[f64; 3] {{\n&[0.0; 3]\n}}\n\n\
          #[inline]\nfn is_explicit(&self) -> bool {{\ntrue\n}}\n\n\
          #[inline]\nfn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {{\n\
-         self.0.exact(scratch)\n}}\n}}\n"
+         self.0.exact(scratch)\n}}\n\n\
+         #[inline]\nfn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {{\n\
+         self.0.exact_big(scratch)\n}}\n}}\n"
     )
     .unwrap();
 }
@@ -289,6 +292,7 @@ pub(crate) fn write_implicit(out: &mut String, info: &TypeInfo<'_>, implicit: &I
     }
     write_evaluate(out, info, implicit);
     write_exact(out, info, implicit);
+    write_exact_big(out, info);
     writeln!(
         out,
         "}}\n\nimpl Point for {name} {{\n\
@@ -296,7 +300,9 @@ pub(crate) fn write_implicit(out: &mut String, info: &TypeInfo<'_>, implicit: &I
          #[inline]\nfn err(&self) -> &[f64; 3] {{\n&self.err\n}}\n\n\
          #[inline]\nfn is_explicit(&self) -> bool {{\nfalse\n}}\n\n\
          fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {{\n\
-         Self::write_exact(scratch, {})\n}}\n}}\n",
+         Self::write_exact(scratch, {0})\n}}\n\n\
+         fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {{\n\
+         Self::write_exact_big(scratch, {0})\n}}\n}}\n",
         info.array_args("self.")
     )
     .unwrap();
@@ -321,6 +327,12 @@ pub(crate) fn write_any_point(out: &mut String, types: &[TypeInfo<'_>]) {
             "&self, scratch: &mut Scratch<'_>",
             "Result<ExactCoords, ExactError>",
             "p.exact(scratch)",
+        ),
+        (
+            "exact_big",
+            "&self, scratch: &mut Scratch<'_>",
+            "Result<BigCoords, ExactError>",
+            "p.exact_big(scratch)",
         ),
     ];
     for (i, (method, params, ty, call)) in methods.iter().enumerate() {

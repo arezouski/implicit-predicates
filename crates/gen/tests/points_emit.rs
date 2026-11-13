@@ -11,7 +11,7 @@ use implicit_predicates_gen::{
     PointNode, PointType, error_bound, generate, generate_points, parse_points,
 };
 use num_bigint::BigUint;
-use point_text::{ORIENT3D, POINTS, VARIED, declarations, generated, method};
+use point_text::{ORIENT3D, POINTS, VARIED, declarations, generated, method, point_method};
 use proc_macro2::TokenStream;
 
 /// The terms of the error of each node by the rule, written independently
@@ -432,4 +432,44 @@ fn the_error_of_the_constructors_can_grow() {
         module.contains("#[non_exhaustive]\npub enum PointError {"),
         "{module}"
     );
+}
+
+#[test]
+fn every_type_gives_its_big_coordinates_and_checks_finiteness_before_the_arena() {
+    for source in [POINTS, VARIED] {
+        let g = generated(source);
+        for point in parse_points(source, "t.pred").unwrap() {
+            let name = &point.name;
+            let in_trait = point_method(&g.stages, name, "exact_big");
+            assert!(in_trait.starts_with("fn exact_big("), "{name}");
+            if point.is_explicit() {
+                continue;
+            }
+            assert!(in_trait.contains("Self::write_exact_big("), "{name}");
+            let body = method(&g.stages, name, "write_exact_big");
+            let check = body
+                .find("if !(c.iter().flatten().all(|x| x.is_finite())")
+                .unwrap_or_else(|| panic!("{name}: no finiteness check\n{body}"));
+            assert!(
+                body[check..].contains("return Err(ExactError::OutOfRange);"),
+                "{name}"
+            );
+            let first = body.find("scratch.").expect("an arena operation");
+            assert!(
+                check < first,
+                "{name}: the check follows an arena operation"
+            );
+        }
+        let any = point_method(&g.stages, "AnyPoint", "exact_big");
+        for point in parse_points(source, "t.pred").unwrap() {
+            assert!(
+                any.contains(&format!(
+                    "AnyPoint::{0}(p) => p.exact_big(scratch),",
+                    point.name
+                )),
+                "{}",
+                point.name
+            );
+        }
+    }
 }

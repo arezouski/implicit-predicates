@@ -67,7 +67,8 @@ mod generated;
 
 pub use generated::points::{AnyPoint, Explicit, Lnc, PointError};
 pub use implicit_predicates_core::{
-    ExactCoords, ExactError, Mark, Point, Scratch, ScratchExhausted, Sign, Span, Weight,
+    Big, BigCoords, ExactCoords, ExactError, Mark, Point, Scratch, ScratchExhausted, Sign, Span,
+    Weight,
 };
 
 use generated::orient3d as orient3d_stages;

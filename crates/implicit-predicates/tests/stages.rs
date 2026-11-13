@@ -11,7 +11,9 @@ mod common;
 use common::generated::{check_bound_edge_cases, check_uncertainty_edge_cases, exact};
 use common::{Points, STAGES, all_in_range, edges, generated, orient3d, refs};
 use implicit_predicates::stages::orient3d as stages;
-use implicit_predicates::{AnyPoint, ExactCoords, ExactError, Explicit, Lnc, Point, Scratch, Sign};
+use implicit_predicates::{
+    AnyPoint, BigCoords, ExactCoords, ExactError, Explicit, Lnc, Point, Scratch, Sign,
+};
 use implicit_predicates_core::filter::uncertainty;
 use implicit_predicates_test_support::{
     config, coplanar4, extreme4, grid4, near_coplanar4, random4, repeated4, signed_zeros4,
@@ -145,6 +147,10 @@ impl Point for Approx {
     }
 
     fn exact(&self, _: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        Err(ExactError::OutOfRange)
+    }
+
+    fn exact_big(&self, _: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
         Err(ExactError::OutOfRange)
     }
 }

@@ -14,8 +14,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use common::args::{Arg, Args, any_points, exact_sign};
 use common::generated::exact_at;
 use implicit_predicates::{
-    ExactCoords, ExactError, Lnc, Point, Scratch, ScratchExhausted, Sign, Weight, orient3d,
-    orient3d_in,
+    BigCoords, ExactCoords, ExactError, Lnc, Point, Scratch, ScratchExhausted, Sign, Weight,
+    orient3d, orient3d_in,
 };
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{coplanar4, near_coplanar4, sample};
@@ -64,6 +64,19 @@ impl Point for Expansions {
             z: scratch.push(z)?,
             w: Weight::One,
         })
+    }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        let mut sum = |components: &[f64]| {
+            let mut total = scratch.big_from_f64(0.0)?;
+            for &c in components {
+                let big = scratch.big_from_f64(c)?;
+                total = scratch.big_add(total, big)?;
+            }
+            Ok::<_, ExactError>(total)
+        };
+        let [x, y, z] = &self.coords;
+        Ok(BigCoords::new(sum(x)?, sum(y)?, sum(z)?))
     }
 }
 
@@ -226,6 +239,10 @@ impl Point for Reentrant {
         self.calls.set(self.calls.get() + 1);
         self.point.exact(scratch)
     }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        self.point.exact_big(scratch)
+    }
 }
 
 #[test]
@@ -266,6 +283,10 @@ impl Point for Panics {
         // Leave something in the arena first.
         scratch.push(&[1.0])?;
         panic!("exact coordinates that panic");
+    }
+
+    fn exact_big(&self, _: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        Err(ExactError::OutOfRange)
     }
 }
 
@@ -359,6 +380,10 @@ impl Point for Probe {
             panic!("exact coordinates that panic");
         }
         [0.0; 3].exact(scratch)
+    }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        [0.0; 3].exact_big(scratch)
     }
 }
 

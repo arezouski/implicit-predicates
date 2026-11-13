@@ -8,7 +8,8 @@
 use core::fmt;
 
 use implicit_predicates_core::{
-    ExactCoords, ExactError, Mark, Point, Scratch, ScratchExhausted, Span, Weight, eft, expansion,
+    BigCoords, ExactCoords, ExactError, Mark, Point, Scratch, ScratchExhausted, Span, Weight, eft,
+    expansion,
 };
 
 /// Why the constructor of a point type rejected its inputs. More reasons
@@ -80,6 +81,11 @@ impl Point for Explicit {
     #[inline]
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
         self.0.exact(scratch)
+    }
+
+    #[inline]
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        self.0.exact_big(scratch)
     }
 }
 
@@ -292,6 +298,37 @@ impl Lnc {
             w: Weight::One,
         })
     }
+    /// Writes the exact coordinates as big integers in `scratch`, from the `F64x3`
+    /// parameters `c` and the `f64` parameters `s`, in the order of the
+    /// declaration. Fails with [`ExactError::OutOfRange`] if an input is not
+    /// finite, before it writes anything; on [`ExactError::Exhausted`] the arena
+    /// may hold partial results.
+    fn write_exact_big(
+        scratch: &mut Scratch<'_>,
+        c: [[f64; 3]; 2],
+        s: [f64; 1],
+    ) -> Result<BigCoords, ExactError> {
+        if !(c.iter().flatten().all(|x| x.is_finite()) && s.iter().all(|x| x.is_finite())) {
+            return Err(ExactError::OutOfRange);
+        }
+        let v0 = scratch.big_from_f64(c[1][0])?;
+        let v1 = scratch.big_from_f64(c[1][1])?;
+        let v2 = scratch.big_from_f64(c[1][2])?;
+        let v3 = scratch.big_from_f64(s[0])?;
+        let v4 = scratch.big_from_f64(c[0][0])?;
+        let v5 = scratch.big_from_f64(c[0][1])?;
+        let v6 = scratch.big_from_f64(c[0][2])?;
+        let v7 = scratch.big_sub(v4, v0)?;
+        let v8 = scratch.big_sub(v5, v1)?;
+        let v9 = scratch.big_sub(v6, v2)?;
+        let v10 = scratch.big_mul(v3, v7)?;
+        let v11 = scratch.big_mul(v3, v8)?;
+        let v12 = scratch.big_mul(v3, v9)?;
+        let v13 = scratch.big_add(v0, v10)?;
+        let v14 = scratch.big_add(v1, v11)?;
+        let v15 = scratch.big_add(v2, v12)?;
+        Ok(BigCoords::new(v13, v14, v15))
+    }
 }
 
 impl Point for Lnc {
@@ -312,6 +349,10 @@ impl Point for Lnc {
 
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
         Self::write_exact(scratch, [self.p, self.q], [self.t])
+    }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        Self::write_exact_big(scratch, [self.p, self.q], [self.t])
     }
 }
 
@@ -354,6 +395,14 @@ impl Point for AnyPoint {
         match self {
             AnyPoint::Explicit(p) => p.exact(scratch),
             AnyPoint::Lnc(p) => p.exact(scratch),
+        }
+    }
+
+    #[inline]
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        match self {
+            AnyPoint::Explicit(p) => p.exact_big(scratch),
+            AnyPoint::Lnc(p) => p.exact_big(scratch),
         }
     }
 }

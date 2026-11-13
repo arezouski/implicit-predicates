@@ -127,11 +127,12 @@ impl Binding {
             .find(&format!("{callee}({before}"))
             .unwrap_or_else(|| panic!("no call of {callee} in {body}"));
         let rest = &body[start + callee.len() + 1 + before.len()..];
+        // The call ends the body when its method is the last of its block.
         let end = [");", ")\n"]
             .iter()
             .filter_map(|e| rest.find(e))
             .min()
-            .expect("the end of the call");
+            .unwrap_or_else(|| rest.strip_suffix(')').expect("the end of the call").len());
         let args = &rest[..end];
         let arrays: Vec<&str> = args
             .split("], ")
