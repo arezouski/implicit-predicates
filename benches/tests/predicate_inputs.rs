@@ -6,10 +6,11 @@ use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{AnyPoint, Point, Scratch, orient3d_in};
 use implicit_predicates_benches::predicates::{
     ImplicitInput, InSphereInput, InputSet, MAX_IMPLICIT, Orient3dInput, SET_SIZE,
-    any_explicit_sets, exact_sets, geometry_insphere_sign, geometry_orient3d_sign,
-    implicit_predicates_orient3d_any_sign, implicit_predicates_orient3d_sign,
-    implicit_recorded_signs, implicit_set_name, implicit_sets, insphere_sets, naive_insphere,
-    naive_orient3d, orient3d_sets, robust_insphere_sign, robust_orient3d_sign,
+    any_explicit_sets, big_integers_stage, exact_sets, geometry_insphere_sign,
+    geometry_orient3d_sign, implicit_predicates_orient3d_any_sign,
+    implicit_predicates_orient3d_sign, implicit_recorded_signs, implicit_set_name, implicit_sets,
+    insphere_sets, naive_insphere, naive_orient3d, orient3d_sets, out_of_range_sets,
+    robust_insphere_sign, robust_orient3d_sign,
 };
 use implicit_predicates_corpus::exact;
 use implicit_predicates_oracle::Dyadic;
@@ -327,7 +328,46 @@ fn exact_sets_need_the_exact_stages_and_every_form_decides_them() {
             assert_eq!(translated.map(i8::from), exact, "{case:?}");
             assert_eq!(untranslated.map(i8::from), exact, "{case:?}");
             assert_eq!(Some(i8::from(chain)), exact, "{case:?}");
+            let big = big_integers_stage(s, case);
+            assert_eq!(Some(i8::from(big)), exact, "{case:?}");
             assert_eq!(s.used(), used, "the stages leave the arena as it was");
+        }
+    }
+}
+
+#[test]
+fn the_stage_on_big_integers_has_the_exact_sign_on_the_explicit_sets_it_is_benchmarked_on() {
+    let mut scratch = Scratch::growable(1 << 16);
+    let sets = any_explicit_sets();
+    for name in ["near_degenerate", "degenerate"] {
+        for case in &set(&sets, name).cases {
+            let used = scratch.used();
+            let sign = big_integers_stage(&mut scratch, case);
+            assert_eq!(
+                Some(i8::from(sign)),
+                Some(exact_orient3d_any(case)),
+                "{case:?}"
+            );
+            assert_eq!(scratch.used(), used, "the stage leaves the arena as it was");
+        }
+    }
+}
+
+#[test]
+fn out_of_range_sets_are_decided_by_no_stage_on_the_stack_and_have_the_exact_sign() {
+    for set in out_of_range_sets() {
+        assert_eq!(set.cases.len(), SET_SIZE, "{}", set.name);
+        for case in &set.cases {
+            let p = [&case[0], &case[1], &case[2], &case[3]];
+            assert_eq!(stages::filter(p, [0.0; 3]), None, "{}: {case:?}", set.name);
+            assert_eq!(stages::exact_stages(p), None, "{}: {case:?}", set.name);
+            let sign = implicit_predicates::orient3d(&case[0], &case[1], &case[2], &case[3]);
+            assert_eq!(
+                i8::from(sign),
+                exact_orient3d(case),
+                "{}: {case:?}",
+                set.name
+            );
         }
     }
 }

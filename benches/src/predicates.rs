@@ -42,7 +42,8 @@ pub use contenders::{
 };
 pub use implicit::{
     CORPUS_DIR, EXACT_SEED, ExactSet, IMPLICIT_SEED, ImplicitInput, MAX_IMPLICIT,
-    any_explicit_sets, exact_sets, implicit_recorded_signs, implicit_set_name, implicit_sets,
+    any_explicit_sets, big_integers_stage, exact_sets, implicit_recorded_signs, implicit_set_name,
+    implicit_sets,
 };
 
 /// Four points of `orient3d`.
@@ -99,6 +100,43 @@ pub fn orient3d_sets() -> Vec<InputSet<Orient3dInput>> {
             cases: coplanar(DEGENERATE_SEED),
         },
         corpus_set(Predicate::Orient3d),
+    ]
+}
+
+/// Returns three sets of explicit points outside the range of the exact
+/// stages on the stack, which the filter does not decide either: `large` and
+/// `small` are the `near_degenerate` set with every coordinate multiplied by
+/// 2^960 or 2^-960, and `mixed` multiplies the first
+/// two points by 2^960 and the last two by 2^-960.
+#[must_use]
+pub fn out_of_range_sets() -> Vec<InputSet<Orient3dInput>> {
+    let base = near_coplanar(NEAR_DEGENERATE_SEED);
+    let big = 2f64.powi(960);
+    let small = 2f64.powi(-960);
+    let scaled = |factors: [f64; 4]| -> Vec<Orient3dInput> {
+        base.iter()
+            .map(|case| {
+                let mut out = *case;
+                for (point, f) in out.iter_mut().zip(factors) {
+                    *point = point.map(|x| x * f);
+                }
+                out
+            })
+            .collect()
+    };
+    vec![
+        InputSet {
+            name: "large",
+            cases: scaled([big; 4]),
+        },
+        InputSet {
+            name: "small",
+            cases: scaled([small; 4]),
+        },
+        InputSet {
+            name: "mixed",
+            cases: scaled([big, big, small, small]),
+        },
     ]
 }
 

@@ -12,7 +12,7 @@
 //! of that crate use, so the two mappings cannot drift apart.
 
 use implicit_predicates::stages::orient3d as stages;
-use implicit_predicates::{AnyPoint, ExactCoords, Explicit, Point, Scratch};
+use implicit_predicates::{AnyPoint, ExactCoords, Explicit, Point, Scratch, Sign};
 use implicit_predicates_corpus::exact::REFERENCE_ORIENT3D_FACTOR;
 use implicit_predicates_corpus::weighted::weighted_sample;
 use implicit_predicates_corpus::{Call, Corpus, Predicate};
@@ -162,6 +162,25 @@ pub fn any_explicit_sets() -> Vec<InputSet<ImplicitInput>> {
 fn undecided_by_the_filter(p: &ImplicitInput) -> bool {
     let [a, b, c, d] = p;
     stages::filter_points(a, b, c, d).is_none()
+}
+
+/// The stage on big integers on the points of one call, as the chain runs
+/// it: the big-integer coordinates of the four points are written to
+/// `scratch`, the stage evaluates the predicate, and the arena is left as it
+/// was.
+///
+/// # Panics
+///
+/// Panics if the arena is exhausted (use a growable one) or a point has a
+/// non-finite input.
+pub fn big_integers_stage(scratch: &mut Scratch<'_>, p: &ImplicitInput) -> Sign {
+    let mark = scratch.mark();
+    let [q0, q1, q2, q3] = p
+        .each_ref()
+        .map(|q| q.exact_big(scratch).expect("big-integer coordinates"));
+    let sign = stages::big_integers_in(scratch, [&q0, &q1, &q2, &q3]).expect("a growable arena");
+    scratch.reset(mark);
+    sign
 }
 
 /// The recorded calls with `k` implicit points that the filter does not

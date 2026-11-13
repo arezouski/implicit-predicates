@@ -12,7 +12,10 @@
 //! implicit points. `expansions_translated_in` and
 //! `expansions_untranslated_in` are measured on exact coordinates computed
 //! beforehand; `exact_stages_in` computes them, then runs the stages in the
-//! order of the chain.
+//! order of the chain. `big_integers_in` is measured with the cost of
+//! `exact_big` for the four points, which writes their coordinates to the
+//! arena: on the explicit `near_degenerate` and `degenerate` sets and on the
+//! same recorded calls as the stages over spans.
 //!
 //! As in the `predicates` benchmark, each measurement is one pass over a
 //! whole set, every stage is called through a function pointer, and the
@@ -31,8 +34,8 @@ use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterio
 use implicit_predicates::stages::orient3d;
 use implicit_predicates::{ExactCoords, Scratch, ScratchExhausted, Sign};
 use implicit_predicates_benches::predicates::{
-    ImplicitInput, InputSet, Orient3dInput, any_explicit_sets, exact_sets, implicit_sets,
-    orient3d_sets,
+    ImplicitInput, InputSet, Orient3dInput, any_explicit_sets, big_integers_stage, exact_sets,
+    implicit_sets, orient3d_sets, out_of_range_sets,
 };
 
 /// A stage of `orient3d`, as a function of the four points.
@@ -101,6 +104,17 @@ fn bench<T>(
     });
 }
 
+/// One measurement of a stage that always decides, over every case of
+/// `cases`.
+fn bench_sign<T>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    name: String,
+    cases: &[T],
+    mut f: impl FnMut(&T) -> Sign,
+) {
+    bench(group, name, cases, |c| Some(f(c)));
+}
+
 fn explicit_stages(group: &mut BenchmarkGroup<'_, WallTime>) {
     let sets = orient3d_sets();
     for (name, stage, set_names) in STAGES {
@@ -142,11 +156,42 @@ fn spans_stages(group: &mut BenchmarkGroup<'_, WallTime>) {
     }
 }
 
+fn big_integers(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let mut scratch = Scratch::growable(1 << 16);
+    for set in any_explicit_sets()
+        .iter()
+        .filter(|s| matches!(s.name, "near_degenerate" | "degenerate"))
+    {
+        let name = format!("big_integers_in/{}", set.name);
+        bench_sign(group, name, &set.cases, |p| {
+            big_integers_stage(&mut scratch, p)
+        });
+    }
+    for mut set in exact_sets() {
+        let name = format!("big_integers_in/{}", set.name);
+        bench_sign(group, name, &set.points, |p| {
+            big_integers_stage(&mut set.scratch, p)
+        });
+    }
+}
+
+/// The whole predicate on explicit points that no stage on the stack decides.
+fn out_of_range(group: &mut BenchmarkGroup<'_, WallTime>) {
+    for set in out_of_range_sets() {
+        let name = format!("orient3d_out_of_range/{}", set.name);
+        bench_sign(group, name, &set.cases, |c| {
+            implicit_predicates::orient3d(&c[0], &c[1], &c[2], &c[3])
+        });
+    }
+}
+
 fn stages(c: &mut Criterion) {
     let mut group = c.benchmark_group("orient3d_stages");
     explicit_stages(&mut group);
     filter_points(&mut group);
     spans_stages(&mut group);
+    big_integers(&mut group);
+    out_of_range(&mut group);
     group.finish();
 }
 
