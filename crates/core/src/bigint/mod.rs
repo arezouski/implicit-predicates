@@ -6,6 +6,9 @@
 //! the highest word of a nonzero magnitude is zero, and zero is the empty
 //! magnitude with a positive sign and exponent zero.
 
+mod limbs;
+mod ops;
+
 use crate::scratch::{Scratch, ScratchExhausted, Span};
 use crate::sign::Sign;
 

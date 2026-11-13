@@ -1,8 +1,51 @@
 //! Checks and exact values of big integers, read from their stored words
 //! without the arithmetic under test.
 
-use implicit_predicates_core::{Big, Scratch};
+use implicit_predicates_core::{Big, Scratch, ScratchExhausted};
 use implicit_predicates_oracle::Dyadic;
+use proptest::prelude::*;
+
+/// A description of a big integer: sign, words (least significant first,
+/// possibly with zero words at either end) and exponent. [`build`](Self::build)
+/// stores it normalized.
+#[derive(Clone, Debug)]
+pub struct BigSpec {
+    /// The sign flag.
+    pub negative: bool,
+    /// The words of the magnitude, least significant first.
+    pub words: Vec<u64>,
+    /// The exponent, in words.
+    pub exp: i32,
+}
+
+impl BigSpec {
+    /// Stores the integer in `s`.
+    pub fn build(&self, s: &mut Scratch<'_>) -> Result<Big, ScratchExhausted> {
+        s.big_from_words(self.negative, &self.words, self.exp)
+    }
+}
+
+/// Integers of 1 to 6 words, with words that favor the edges that carry and
+/// borrow (zero, one, all ones) and exponents in -40..40.
+pub fn any_big() -> impl Strategy<Value = BigSpec> {
+    let word = prop_oneof![
+        Just(0u64),
+        Just(1),
+        Just(u64::MAX),
+        Just(1 << 63),
+        any::<u64>()
+    ];
+    (
+        any::<bool>(),
+        prop::collection::vec(word, 1..=6),
+        -40i32..40,
+    )
+        .prop_map(|(negative, words, exp)| BigSpec {
+            negative,
+            words,
+            exp,
+        })
+}
 
 /// The exact value of `b`, from its words and exponent.
 pub fn big_to_dyadic(s: &Scratch<'_>, b: Big) -> Dyadic {
