@@ -77,6 +77,7 @@ fn the_edges_of_f64_convert() {
         assert_eq!(big_to_dyadic(&s, b), Dyadic::from_f64(x), "{x:e}");
         if x == 0.0 {
             assert!(b.is_zero());
+            assert!(!b.is_negative());
             assert_eq!(b.sign(), Sign::Zero);
         }
     }
@@ -122,6 +123,7 @@ fn an_arena_without_room_is_left_as_it_was() {
 #[test]
 fn the_negation_of_zero_is_zero() {
     assert_eq!(Big::ZERO.neg().sign(), Sign::Zero);
+    assert!(!Big::ZERO.neg().is_negative());
     let mut buf = [0.0; 4];
     let mut s = Scratch::borrowed(&mut buf);
     let z = s.big_from_f64(-0.0).unwrap();
@@ -138,5 +140,11 @@ fn words_are_normalized_when_stored() {
     let z = s.big_from_words(true, &[0, 0], 9).unwrap();
     assert!(z.is_zero());
     assert_eq!((z.exponent(), z.sign()), (0, Sign::Zero));
+    assert_eq!((z.exponent(), z.is_negative()), (0, false));
     assert_eq!(s.used(), 1);
+    // Zero words between nonzero ones are kept.
+    let m = s.big_from_words(false, &[0, 5, 0, 7, 0], 4).unwrap();
+    assert_eq!((m.len(), m.exponent()), (3, 5));
+    let limbs: Vec<u64> = (0..3).map(|i| s.big_limb(m, i)).collect();
+    assert_eq!(limbs, [5, 0, 7]);
 }

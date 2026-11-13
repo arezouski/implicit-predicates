@@ -21,12 +21,17 @@ pub fn assert_valid_big(s: &Scratch<'_>, b: Big) {
     if b.is_zero() {
         assert_eq!(b.len(), 0, "zero has no words");
         assert_eq!(b.exponent(), 0, "zero has exponent zero");
+        assert!(!b.is_negative(), "zero is not negative");
         assert_eq!(
             b.sign(),
             implicit_predicates_core::Sign::Zero,
             "zero has no sign"
         );
         assert_eq!(b.neg().sign(), implicit_predicates_core::Sign::Zero);
+        assert!(
+            !b.neg().is_negative(),
+            "the negation of zero is not negative"
+        );
         return;
     }
     assert_ne!(s.big_limb(b, 0), 0, "the lowest word is zero");

@@ -63,6 +63,14 @@ impl Big {
         }
     }
 
+    /// Returns the raw sign flag, which is `false` for zero. Only for tests
+    /// of the representation; use [`sign`](Self::sign).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn is_negative(self) -> bool {
+        self.negative
+    }
+
     /// Returns the opposite value, sharing the same words. The negation of
     /// zero is zero.
     ///
@@ -201,7 +209,7 @@ impl Scratch<'_> {
 
     /// Stores `±words · 2^(64·exp)` normalized: words of zero at either end
     /// are dropped, the low ones into the exponent, and zero becomes
-    /// [`Big::ZERO`]. Only for tests.
+    /// [`Big::ZERO`]. Public only for tests.
     ///
     /// # Errors
     ///
