@@ -20,7 +20,7 @@ use implicit_predicates_corpus::weighted::weights;
 use implicit_predicates_corpus::{Corpus, Predicate};
 
 use super::corpus_points::{Mapped, call_points, implicit_count, points};
-use super::insphere as insphere_chain;
+use super::insphere::{self as insphere_chain, Decision};
 pub use super::why::{Why, why_exact_failed};
 use super::{CHAIN, STAGED, all_in_range, first_deciding, in_range, refs};
 
@@ -642,19 +642,40 @@ pub struct InSphereTally {
     scratch: Scratch<'static>,
     /// The recorded sign is taken to be this factor times ours.
     factor: i8,
+    /// How much each call is cross-checked.
+    cross_check: CrossCheck,
+}
+
+/// How much a sweep of `insphere` cross-checks each call, beyond the chain
+/// against the recorded sign, the stage that decides first with its reason,
+/// and the arena left as it was. Both give the same table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossCheck {
+    /// Also every stage of the chain alone on every call: each that decides
+    /// must give the sign of the chain, and the first that does must be the
+    /// one the chain stops at.
+    EveryStageAlone,
+    /// No stage alone: the stages over spans run only on calls that the
+    /// filter does not decide, and the sign of the stage on big integers is
+    /// that of the chain, which reaches it only when no stage on expansions
+    /// decides.
+    ChainOnly,
 }
 
 impl Default for InSphereTally {
+    /// A sweep with the factor of the reference and
+    /// [`CrossCheck::EveryStageAlone`].
     fn default() -> Self {
-        InSphereTally::with_factor(REFERENCE_INSPHERE_FACTOR)
+        InSphereTally::new(REFERENCE_INSPHERE_FACTOR, CrossCheck::EveryStageAlone)
     }
 }
 
 impl InSphereTally {
-    /// A sweep that takes the recorded sign to be `factor` times ours; the
-    /// default is the factor of the reference, and any other must give
+    /// A sweep that takes the recorded sign to be `factor` times ours and
+    /// cross-checks each call as `cross_check` says. The factor of the
+    /// reference is `REFERENCE_INSPHERE_FACTOR`; any other must give
     /// mismatches on calls whose recorded sign is not zero.
-    pub fn with_factor(factor: i8) -> InSphereTally {
+    pub fn new(factor: i8, cross_check: CrossCheck) -> InSphereTally {
         InSphereTally {
             buckets: Default::default(),
             explicit_past_filter: (0, 0.0),
@@ -666,6 +687,7 @@ impl InSphereTally {
             arenas: std::array::from_fn(|_| Scratch::growable(1 << 14)),
             scratch: Scratch::growable(1 << 14),
             factor,
+            cross_check,
         }
     }
 }
@@ -751,36 +773,55 @@ impl InSphereTally {
         implicit: usize,
         p: &[AnyPoint; 5],
     ) {
-        let decision = insphere_chain::first_deciding(&mut self.scratch, p);
-        let alone: [Option<Sign>; INSPHERE_COLUMNS.len()] =
-            std::array::from_fn(|stage| insphere_chain::run_stage(stage, &mut self.scratch, p));
+        let on_expansions = insphere_chain::deciding_on_expansions(&mut self.scratch, p);
+        // In `EveryStageAlone`, every stage alone; otherwise none.
+        let alone: Option<[Option<Sign>; INSPHERE_COLUMNS.len()]> =
+            (self.cross_check == CrossCheck::EveryStageAlone).then(|| {
+                std::array::from_fn(|stage| insphere_chain::run_stage(stage, &mut self.scratch, p))
+            });
         let [a, b, c, d, e] = p;
         let arena = &mut self.arenas[implicit];
         let chain = insphere_stages::staged_in(arena, a, b, c, d, e)
             .unwrap_or_else(|e| panic!("a growable arena is exhausted: {e:?}"));
+        // When no stage on expansions decides, the sign of the stage on big
+        // integers: the one it gave alone, or else the one of the chain,
+        // which ends with it.
+        let decision = on_expansions.map(Some).unwrap_or_else(|why| {
+            let sign = match alone {
+                Some(alone) => alone[insphere_chain::BIG_INTEGERS],
+                None => Some(chain),
+            };
+            sign.map(|sign| Decision {
+                stage: insphere_chain::BIG_INTEGERS,
+                sign,
+                why: Some(why),
+            })
+        });
         let describe = || {
-            let alone: Vec<_> = INSPHERE_COLUMNS
-                .iter()
-                .zip(alone)
-                .map(|(name, sign)| format!("{name} {sign:?}"))
-                .collect();
+            let alone = match alone {
+                Some(alone) => INSPHERE_COLUMNS
+                    .iter()
+                    .zip(alone)
+                    .map(|(name, sign)| format!("{name} {sign:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                None => "not run".into(),
+            };
             format!(
                 "{} call {index}: recorded {recorded}, decision {decision:?}, staged_in {chain:?}, \
-                 alone: {}, points {p:?}",
-                corpus.model,
-                alone.join(", ")
+                 alone: {alone}, points {p:?}",
+                corpus.model
             )
         };
         let agrees = decision.is_some_and(|d| {
             d.sign == chain
                 && d.why != Some(Why::Unexplained)
-                && alone.iter().position(Option::is_some) == Some(d.stage)
+                && alone.is_none_or(|alone| {
+                    alone.iter().position(Option::is_some) == Some(d.stage)
+                        && alone.iter().all(|s| s.is_none_or(|s| s == chain))
+                })
         });
-        if self.factor * i8::from(chain) != recorded
-            || !agrees
-            || alone.iter().any(|s| s.is_some_and(|s| s != chain))
-            || arena.used() != 0
-        {
+        if self.factor * i8::from(chain) != recorded || !agrees || arena.used() != 0 {
             self.mismatches.add(describe);
         }
         // A call without a decision has an input that is not finite, which

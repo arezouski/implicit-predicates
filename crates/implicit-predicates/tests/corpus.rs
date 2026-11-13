@@ -35,7 +35,8 @@ use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
-use common::corpus_sweep::{BigAlone, InSphereTally, PointCounts, Sweep, Tally};
+use common::corpus_sweep::{BigAlone, CrossCheck, InSphereTally, PointCounts, Sweep, Tally};
+use implicit_predicates_corpus::exact::REFERENCE_INSPHERE_FACTOR;
 use implicit_predicates_corpus::parallel::{default_jobs, map_ordered};
 use implicit_predicates_corpus::{Corpus, Predicate};
 
@@ -130,6 +131,11 @@ fn insphere_matches_the_recorded_sign_on_the_samples() {
             "{}: no explicit insphere call checked",
             path.display()
         );
+        assert!(
+            implicit > 0,
+            "{}: no insphere call with implicit points checked",
+            path.display()
+        );
         total = (total.0 + explicit, total.1 + implicit);
     }
     println!("{}", tally.report("insphere: samples"));
@@ -141,6 +147,12 @@ fn insphere_matches_the_recorded_sign_on_the_samples() {
     }
     assert_big_alone("insphere: samples", &alone, total.0 + total.1);
     assert!(
+        tally.big_integers.counts.is_empty() && tally.big_integers_explicit.counts.is_empty(),
+        "insphere calls decided on big integers on the samples: {:?} {:?}",
+        tally.big_integers.examples,
+        tally.big_integers_explicit.examples
+    );
+    assert!(
         total.0 >= SAMPLE_INSPHERE_CALLS.0 && total.1 >= SAMPLE_INSPHERE_CALLS.1,
         "the samples check {total:?} insphere calls, fewer than {SAMPLE_INSPHERE_CALLS:?}"
     );
@@ -151,7 +163,7 @@ fn insphere_matches_the_recorded_sign_on_the_samples() {
 /// compares the sign of the chain with the recorded one through the factor.
 #[test]
 fn the_sweep_of_insphere_fails_without_the_factor_of_the_reference() {
-    let mut tally = InSphereTally::with_factor(1);
+    let mut tally = InSphereTally::new(1, CrossCheck::EveryStageAlone);
     let mut not_zero = 0;
     for path in samples() {
         let corpus = read(&path);
@@ -167,6 +179,41 @@ fn the_sweep_of_insphere_fails_without_the_factor_of_the_reference() {
         "no insphere call with a nonzero recorded sign"
     );
     assert_eq!(tally.mismatches.count, not_zero);
+}
+
+/// The two ways of cross-checking the `insphere` calls give the same table
+/// and the same number of mismatches on the samples, also without the
+/// factor of the reference, where every call with a nonzero recorded sign
+/// is one. Only the descriptions of the mismatches differ: those of
+/// `ChainOnly` have no stage alone.
+#[test]
+fn both_cross_checks_of_insphere_give_the_same_table_on_the_samples() {
+    for factor in [REFERENCE_INSPHERE_FACTOR, 1] {
+        let [every, chain] =
+            [CrossCheck::EveryStageAlone, CrossCheck::ChainOnly].map(|cross_check| {
+                let mut tally = InSphereTally::new(factor, cross_check);
+                for path in samples() {
+                    tally.add_corpus(&read(&path));
+                }
+                tally
+            });
+        let table = |t: &InSphereTally| {
+            let described = &t.mismatches.described;
+            t.report("samples")
+                .lines()
+                .filter(|line| !described.iter().any(|m| line.trim() == m))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert_eq!(table(&every), table(&chain));
+        assert_eq!(every.counts(), chain.counts());
+        assert_eq!(every.sums(), chain.sums());
+        assert_eq!(every.mismatches.count, chain.mismatches.count);
+        assert_eq!(
+            every.mismatches.count > 0,
+            factor != REFERENCE_INSPHERE_FACTOR
+        );
+    }
 }
 
 /// Fails unless one tally per sample, merged in order, counts what
@@ -304,6 +351,10 @@ const INSPHERE_NOSI: (usize, usize) = (2_646_414, 9_367_609);
 /// [`ORIENT3D_SI`] for `insphere`.
 const INSPHERE_SI: (usize, usize) = (2_048_538, 7_936_005);
 
+/// The sweep of the generated corpus, both populations. `insphere` is
+/// swept with [`CrossCheck::EveryStageAlone`]: every stage alone on every
+/// call, including the stage on big integers, which the chain leaves few
+/// calls; the full corpus, of which this is part, is swept with less.
 #[test]
 #[ignore = "needs the generated corpus; prints the tables; run in release mode"]
 fn orient3d_and_insphere_match_the_recorded_sign_on_the_generated_corpus() {
@@ -347,7 +398,7 @@ fn orient3d_and_insphere_match_the_recorded_sign_on_the_generated_corpus() {
     for (name, list, least, least_insphere) in populations {
         let files = listed(list);
         let start = std::time::Instant::now();
-        let both = sweep(&files);
+        let both = sweep(&files, CrossCheck::EveryStageAlone);
         println!("{} files", files.len());
         println!("{}", both.orient3d.report(name));
         println!("{}", both.insphere.report(&format!("insphere: {name}")));
@@ -377,11 +428,11 @@ struct Swept {
 
 /// The tallies of the files: each file read once and swept for both
 /// predicates, one file per thread, merged in the order of the files.
-fn sweep(files: &[PathBuf]) -> Swept {
+fn sweep(files: &[PathBuf], cross_check: CrossCheck) -> Swept {
     let mut swept = Swept {
         orient3d: Tally::default(),
         orient3d_checked: (0, 0),
-        insphere: InSphereTally::default(),
+        insphere: InSphereTally::new(REFERENCE_INSPHERE_FACTOR, cross_check),
         insphere_checked: (0, 0),
     };
     let add = |a: (usize, usize), b: (usize, usize)| (a.0 + b.0, a.1 + b.1);
@@ -392,7 +443,7 @@ fn sweep(files: &[PathBuf]) -> Swept {
             let corpus = read(path);
             let mut orient3d = Tally::default();
             let orient3d_checked = orient3d.add_corpus(&corpus);
-            let mut insphere = InSphereTally::default();
+            let mut insphere = InSphereTally::new(REFERENCE_INSPHERE_FACTOR, cross_check);
             let insphere_checked = insphere.add_corpus(&corpus);
             Swept {
                 orient3d,
@@ -413,7 +464,12 @@ fn sweep(files: &[PathBuf]) -> Swept {
 }
 
 /// The sweep of every model without self-intersections of the dataset, a
-/// corpus of its own next to the generated sample. It takes a few minutes.
+/// corpus of its own next to the generated sample. `insphere` is swept with
+/// [`CrossCheck::ChainOnly`]: the chain against the recorded sign, with the
+/// stage that decides first and its reason, but no stage alone, which would
+/// make the sweep many times longer. Every stage alone, the stage on big
+/// integers included, is checked on every call of the generated sample,
+/// which is part of this corpus.
 #[test]
 #[ignore = "needs the full corpus; prints the tables; run in release mode"]
 fn orient3d_and_insphere_match_the_recorded_sign_on_the_full_corpus() {
@@ -431,7 +487,7 @@ fn orient3d_and_insphere_match_the_recorded_sign_on_the_full_corpus() {
     files.sort();
     let name = "every model without self-intersections";
     let start = std::time::Instant::now();
-    let both = sweep(&files);
+    let both = sweep(&files, CrossCheck::ChainOnly);
     println!("{} files", files.len());
     println!("{}", both.orient3d.report(name));
     let insphere = format!("insphere: {name}");

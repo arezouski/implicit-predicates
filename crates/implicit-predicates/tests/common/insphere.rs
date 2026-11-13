@@ -170,15 +170,50 @@ pub fn first_deciding_with<P: Point>(
     p: &[P; 5],
     exact_failed: impl Fn(&P) -> Why,
 ) -> Option<Decision> {
+    match deciding_on_expansions_with(scratch, p, exact_failed) {
+        Ok(decision) => Some(decision),
+        Err(why) => run_stage(BIG_INTEGERS, scratch, p).map(|sign| Decision {
+            stage: BIG_INTEGERS,
+            sign,
+            why: Some(why),
+        }),
+    }
+}
+
+/// [`first_deciding`] without the stage on big integers: the first stage
+/// on expansions that decides on `p`, or, when none does, why, with the
+/// same precedence of reasons. `scratch` is left as it was.
+///
+/// # Panics
+///
+/// As [`first_deciding`].
+pub fn deciding_on_expansions(
+    scratch: &mut Scratch<'_>,
+    p: &[AnyPoint; 5],
+) -> Result<Decision, Why> {
+    deciding_on_expansions_with(scratch, p, why_exact_failed)
+}
+
+/// [`deciding_on_expansions`] on points of any one type, with
+/// `exact_failed` as in [`first_deciding_with`].
+///
+/// # Panics
+///
+/// As [`first_deciding_with`].
+pub fn deciding_on_expansions_with<P: Point>(
+    scratch: &mut Scratch<'_>,
+    p: &[P; 5],
+    exact_failed: impl Fn(&P) -> Why,
+) -> Result<Decision, Why> {
     let decided = |stage, sign| Decision {
         stage,
         sign,
         why: None,
     };
     if let Some(sign) = run_stage(FILTER, scratch, p) {
-        return Some(decided(FILTER, sign));
+        return Ok(decided(FILTER, sign));
     }
-    let why = in_mark(scratch, |scratch| {
+    in_mark(scratch, |scratch| {
         let mut q = Vec::with_capacity(5);
         for point in p {
             match point.exact(scratch) {
@@ -214,15 +249,7 @@ pub fn first_deciding_with<P: Point>(
                 Why::Unexplained
             },
         )
-    });
-    match why {
-        Ok(decision) => Some(decision),
-        Err(why) => run_stage(BIG_INTEGERS, scratch, p).map(|sign| Decision {
-            stage: BIG_INTEGERS,
-            sign,
-            why: Some(why),
-        }),
-    }
+    })
 }
 
 /// `staged_in` on points of any type, in an arena of its own, large enough
