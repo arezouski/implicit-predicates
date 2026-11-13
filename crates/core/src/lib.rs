@@ -18,6 +18,8 @@
 //!   approximation of its coordinates, a bound on their error, and its exact
 //!   coordinates as expansions in an arena. `[f64; 3]` implements it as an
 //!   explicit point;
+//! - [`bigint`], [`Big`], exact integers of arbitrary size in an arena, built
+//!   from `f64` values, with exact addition, subtraction and multiplication;
 //! - [`filter`], the helpers that turn the errors of the points of a call
 //!   into the uncertainty of the floating-point filter of a predicate.
 //!

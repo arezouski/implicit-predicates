@@ -1,4 +1,4 @@
-//! Exact addition and subtraction of big integers.
+//! Exact addition, subtraction and multiplication of big integers.
 
 use core::cmp::Ordering;
 
@@ -125,6 +125,72 @@ impl Scratch<'_> {
             limbs,
             exp,
             negative,
+        })
+    }
+
+    /// Returns the exact product `a * b`, written above the top of the
+    /// arena.
+    ///
+    /// The result is in its unique representation: a product with a zero
+    /// factor is [`Big::ZERO`] and writes nothing, and the zero words that
+    /// the product may have at either end are dropped, so only the real
+    /// result stays. Space for `a.len() + b.len()` words is reserved (and
+    /// counted by [`high_water`](Self::high_water)) while the operation
+    /// runs.
+    ///
+    /// # Errors
+    ///
+    /// [`ScratchExhausted`] if that space is not free, or if the exponent
+    /// of the product leaves the range of `i32`, which cannot happen for
+    /// operands whose exponents come from fewer than `u32::MAX` words; the
+    /// arena is unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use implicit_predicates_core::{Scratch, Sign};
+    ///
+    /// let mut buf = [0.0; 16];
+    /// let mut scratch = Scratch::borrowed(&mut buf);
+    /// let a = scratch.big_from_f64(-3.0)?;
+    /// let b = scratch.big_from_f64(5.0)?;
+    /// let p = scratch.big_mul(a, b)?;
+    /// assert_eq!(p.sign(), Sign::Negative);
+    /// assert_eq!(scratch.big_limb(p, 0), 15);
+    /// # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
+    /// ```
+    pub fn big_mul(&mut self, a: Big, b: Big) -> Result<Big, ScratchExhausted> {
+        if a.is_zero() || b.is_zero() {
+            return Ok(Big::ZERO);
+        }
+        // The lowest word of each factor is nonzero, so the product has
+        // exactly `tz_a + tz_b` trailing zero bits, fewer than 128: it
+        // loses zero or one low word, known before anything is written.
+        let low_zeros = |x: Big, s: &Self| s.words(x.limbs)[0].to_bits().trailing_zeros();
+        let lost = u64::from((low_zeros(a, self) + low_zeros(b, self)) / 64);
+        // Lengths and exponents in 64 bits, checked: see `big_add`.
+        let needed = (a.len() as u64)
+            .checked_add(b.len() as u64)
+            .ok_or(ScratchExhausted)?;
+        if needed > u64::from(u32::MAX) {
+            return Err(ScratchExhausted);
+        }
+        let exp = i32::try_from(i64::from(a.exp) + i64::from(b.exp) + lost as i64)
+            .map_err(|_| ScratchExhausted)?;
+        // Fits in `u32`, hence in `usize`.
+        let frame = usize::try_from(needed).expect("a frame length fits in usize");
+        let limbs = self.write_words([a.limbs, b.limbs], needed, |[wa, wb], out| {
+            let out = &mut out[..frame];
+            limbs::mul(out, wa, wb);
+            let (len, low) = limbs::trim_and_shift(out, frame);
+            debug_assert!(len > 0, "a product of nonzero factors came out zero");
+            debug_assert_eq!(low as u64, lost, "the product lost the predicted words");
+            len
+        })?;
+        Ok(Big {
+            limbs,
+            exp,
+            negative: a.negative != b.negative,
         })
     }
 

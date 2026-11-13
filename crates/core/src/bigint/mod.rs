@@ -5,6 +5,41 @@
 //! counts whole words. The representation is unique: neither the lowest nor
 //! the highest word of a nonzero magnitude is zero, and zero is the empty
 //! magnitude with a positive sign and exponent zero.
+//!
+//! [`Scratch::big_from_f64`] converts a finite `f64` exactly, and
+//! [`Scratch::big_add`], [`Scratch::big_sub`] and [`Scratch::big_mul`] are
+//! exact whatever the size of the operands, so intermediate values never
+//! overflow or round. Every operation writes its result above the top of
+//! the arena and fails with [`ScratchExhausted`] if the words do not fit,
+//! leaving the arena as it was; a result that is no longer needed is
+//! released with [`Scratch::reset`], like any other span.
+//!
+//! # Examples
+//!
+//! The determinant of `[[a, b], [c, d]]` for values whose products overflow
+//! `f64`:
+//!
+//! ```
+//! use implicit_predicates_core::{Scratch, Sign};
+//!
+//! // In `f64` both products are infinite and the difference is NaN.
+//! assert!((1e200_f64 * 1e200 - 1e200 * 1e200).is_nan());
+//!
+//! let mut buf = [0.0; 64];
+//! let mut scratch = Scratch::borrowed(&mut buf);
+//! let a = scratch.big_from_f64(1e200)?;
+//! let d = scratch.big_from_f64(1e200)?;
+//! let (b, c) = (a, a);
+//! let ad = scratch.big_mul(a, d)?;
+//! let bc = scratch.big_mul(b, c)?;
+//! // The determinant is exactly zero.
+//! assert_eq!(scratch.big_sub(ad, bc)?.sign(), Sign::Zero);
+//!
+//! // Flip one sign and it is exactly negative.
+//! let bc = scratch.big_mul(b, c.neg())?;
+//! assert_eq!(scratch.big_sub(ad, bc)?.sign(), Sign::Positive);
+//! # Ok::<(), implicit_predicates_core::ScratchExhausted>(())
+//! ```
 
 mod limbs;
 mod ops;

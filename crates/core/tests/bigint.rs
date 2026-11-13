@@ -1,4 +1,4 @@
-//! Big integers built from `f64` values.
+//! Big integers: construction, sums, differences, products and chains.
 
 use implicit_predicates_core::{Big, Scratch, ScratchExhausted, Sign};
 use implicit_predicates_oracle::Dyadic;
@@ -29,8 +29,118 @@ fn check_sum_and_difference(s: &mut Scratch<'_>, a: Big, b: Big) -> Result<(), T
     Ok(())
 }
 
+fn check_product(s: &mut Scratch<'_>, a: Big, b: Big) -> Result<(), TestCaseError> {
+    let (da, db) = (big_to_dyadic(s, a), big_to_dyadic(s, b));
+    let used = s.used();
+    let p = s.big_mul(a, b).unwrap();
+    assert_valid_big(s, p);
+    prop_assert_eq!(big_to_dyadic(s, p), &da * &db);
+    prop_assert_eq!(p.sign(), oracle_sign(&(&da * &db)));
+    // Only the result stays above the operands.
+    prop_assert_eq!(s.used(), used + p.len());
+    // The operands are untouched.
+    prop_assert_eq!(big_to_dyadic(s, a), da);
+    prop_assert_eq!(big_to_dyadic(s, b), db);
+    Ok(())
+}
+
+/// One step of a random program over the values computed so far.
+#[derive(Clone, Copy, Debug)]
+struct Step {
+    op: u8,
+    i: usize,
+    j: usize,
+}
+
+fn any_program() -> impl Strategy<Value = (Vec<f64>, Vec<Step>)> {
+    let step = (0u8..4, any::<usize>(), any::<usize>()).prop_map(|(op, i, j)| Step { op, i, j });
+    (
+        prop::collection::vec(any_finite(), 1..=6),
+        prop::collection::vec(step, 0..=12),
+    )
+}
+
 proptest! {
     #![proptest_config(config())]
+
+    #[test]
+    fn products_have_their_value(
+        x in any_finite(),
+        y in any_finite(),
+        p in any_big(),
+        q in any_big(),
+    ) {
+        let mut buf = [0.0; 400];
+        let mut s = Scratch::borrowed(&mut buf);
+        let a = s.big_from_f64(x).unwrap();
+        let b = s.big_from_f64(y).unwrap();
+        check_product(&mut s, a, b)?;
+        check_product(&mut s, b, a)?;
+        let mut s = Scratch::borrowed(&mut buf);
+        let a = p.build(&mut s).unwrap();
+        let b = q.build(&mut s).unwrap();
+        check_product(&mut s, a, b)?;
+        check_product(&mut s, a, a)?;
+    }
+
+    #[test]
+    fn chains_have_their_value((leaves, steps) in any_program()) {
+        let mut s = Scratch::growable(64);
+        let start = s.mark();
+        let mut values: Vec<Big> = leaves.iter().map(|&x| s.big_from_f64(x).unwrap()).collect();
+        let mut exact: Vec<Dyadic> = leaves.iter().map(|&x| Dyadic::from_f64(x)).collect();
+        for Step { op, i, j } in steps {
+            let (i, j) = (i % values.len(), j % values.len());
+            let (a, b) = (values[i], values[j]);
+            let (da, db) = (&exact[i], &exact[j]);
+            let (r, d) = match op {
+                0 => (s.big_add(a, b).unwrap(), da + db),
+                1 => (s.big_sub(a, b).unwrap(), da - db),
+                2 => (s.big_mul(a, b).unwrap(), da * db),
+                _ => (a.neg(), -da),
+            };
+            assert_valid_big(&s, r);
+            prop_assert_eq!(big_to_dyadic(&s, r), d.clone());
+            prop_assert_eq!(r.sign(), oracle_sign(&d));
+            values.push(r);
+            exact.push(d);
+        }
+        for (v, d) in values.iter().zip(&exact) {
+            prop_assert_eq!(big_to_dyadic(&s, *v), d.clone());
+        }
+        s.reset(start);
+        prop_assert_eq!(s.used(), 0);
+    }
+
+    #[test]
+    fn a_3x3_determinant_of_extreme_values_has_its_sign(
+        m in prop::collection::vec(
+            prop::sample::select(vec![
+                5e-324, -5e-324, f64::MAX, -f64::MAX, 1.0, -1.0, 0.0,
+            ]),
+            9,
+        ),
+    ) {
+        let mut s = Scratch::growable(64);
+        let v: Vec<Big> = m.iter().map(|&x| s.big_from_f64(x).unwrap()).collect();
+        let d: Vec<Dyadic> = m.iter().map(|&x| Dyadic::from_f64(x)).collect();
+        // Cofactor expansion along the first row.
+        let mut det = Big::ZERO;
+        let mut exact = Dyadic::from_f64(0.0);
+        for c in 0..3 {
+            let (c1, c2) = ((c + 1) % 3, (c + 2) % 3);
+            let p = s.big_mul(v[3 + c1], v[6 + c2]).unwrap();
+            let q = s.big_mul(v[3 + c2], v[6 + c1]).unwrap();
+            let minor = s.big_sub(p, q).unwrap();
+            let term = s.big_mul(v[c], minor).unwrap();
+            det = s.big_add(det, term).unwrap();
+            let em = &(&d[3 + c1] * &d[6 + c2]) - &(&d[3 + c2] * &d[6 + c1]);
+            exact = &exact + &(&d[c] * &em);
+        }
+        assert_valid_big(&s, det);
+        prop_assert_eq!(det.sign(), oracle_sign(&exact));
+        prop_assert_eq!(big_to_dyadic(&s, det), exact);
+    }
 
     #[test]
     fn a_big_from_an_f64_has_its_value(x in any_finite()) {
@@ -337,5 +447,114 @@ fn exponents_too_far_apart_to_align_are_an_exhausted_arena() {
             assert_eq!(r.unwrap_err(), ScratchExhausted);
             assert_eq!((s.used(), s.capacity()), (used, capacity));
         }
+    }
+}
+
+#[test]
+fn a_product_with_every_carry() {
+    let mut buf = [0.0; 64];
+    let mut s = Scratch::borrowed(&mut buf);
+    let all = |n: usize| vec![u64::MAX; n];
+    for (la, lb) in [(1, 1), (2, 1), (3, 3)] {
+        let a = s.big_from_words(false, &all(la), 0).unwrap();
+        let b = s.big_from_words(false, &all(lb), 0).unwrap();
+        let (da, db) = (value_of(&s, a), value_of(&s, b));
+        let p = s.big_mul(a, b).unwrap();
+        assert_eq!(value_of(&s, p), &da * &db, "{la} x {lb} words");
+        // (2^(64a) - 1)(2^(64b) - 1) fills a + b words.
+        assert_eq!(p.len(), la + lb);
+        let n = s.big_mul(a, b.neg()).unwrap();
+        assert_eq!(value_of(&s, n), -&(&da * &db));
+    }
+}
+
+#[test]
+fn a_product_drops_its_zero_words_at_both_ends() {
+    let mut buf = [0.0; 64];
+    let mut s = Scratch::borrowed(&mut buf);
+    // 2^32 * 2^32 = 2^64: the low word of the partial product is zero.
+    let a = s.big_from_words(false, &[1 << 32], 3).unwrap();
+    let b = s.big_from_words(true, &[1 << 32], -5).unwrap();
+    let used = s.used();
+    let p = s.big_mul(a, b).unwrap();
+    assert_eq!(
+        value_of(&s, p),
+        &Dyadic::from_words(true, &[1 << 32], 192) * &Dyadic::from_words(false, &[1 << 32], -320)
+    );
+    assert_eq!((p.len(), p.exponent(), p.is_negative()), (1, -1, true));
+    assert_eq!(s.big_limb(p, 0), 1);
+    assert_eq!(s.used(), used + 1);
+    // Zero words inside stay.
+    let c = s.big_from_words(false, &[1, 0, 1], 0).unwrap();
+    let q = s.big_mul(c, c).unwrap();
+    assert_eq!(value_of(&s, q), &value_of(&s, c) * &value_of(&s, c));
+    assert_eq!(q.len(), 5);
+}
+
+#[test]
+fn a_zero_factor_gives_zero_without_writing() {
+    let mut buf = [0.0; 8];
+    let mut s = Scratch::borrowed(&mut buf);
+    let b = s.big_from_f64(-6.0).unwrap();
+    let used = s.used();
+    for z in [
+        s.big_mul(Big::ZERO, b).unwrap(),
+        s.big_mul(b, Big::ZERO).unwrap(),
+        s.big_mul(Big::ZERO, Big::ZERO).unwrap(),
+    ] {
+        assert_valid_big(&s, z);
+        assert!(z.is_zero());
+    }
+    assert_eq!(s.used(), used);
+}
+
+#[test]
+fn products_without_room_leave_the_arena_as_it_was() {
+    // Operands of 3 and 2 words: the product reserves 5.
+    let needed = 5;
+    for capacity in 0..12 {
+        let mut buf = vec![0.0; capacity];
+        let mut s = Scratch::borrowed(&mut buf);
+        let (Ok(a), Ok(b)) = (
+            s.big_from_words(false, &[1, 2, 3], 0),
+            s.big_from_words(true, &[4, 5], 0),
+        ) else {
+            continue;
+        };
+        let used = s.used();
+        let r = s.big_mul(a, b);
+        if capacity - used < needed {
+            assert_eq!(r.unwrap_err(), ScratchExhausted, "capacity {capacity}");
+            assert_eq!(s.used(), used, "capacity {capacity}");
+        } else {
+            assert!(r.unwrap().len() >= 4);
+        }
+    }
+}
+
+#[test]
+fn exponents_that_leave_i32_in_a_product_are_an_exhausted_arena() {
+    let mut grow = Scratch::growable(8);
+    let mut buf = [0.0; 8];
+    let mut fixed = Scratch::borrowed(&mut buf);
+    for s in [&mut grow, &mut fixed] {
+        let hi = s.big_from_words(false, &[1], i32::MAX).unwrap();
+        let lo = s.big_from_words(false, &[1], i32::MIN).unwrap();
+        // The sum of exponents is above i32::MAX, below i32::MIN, or ends
+        // up above i32::MAX only after the product loses a low word.
+        let low_zero = s.big_from_words(false, &[1 << 32], i32::MAX).unwrap();
+        let word = s.big_from_words(false, &[1 << 32], 0).unwrap();
+        let (used, capacity) = (s.used(), s.capacity());
+        for r in [
+            s.big_mul(hi, hi),
+            s.big_mul(lo, lo),
+            s.big_mul(low_zero, word),
+        ] {
+            assert_eq!(r.unwrap_err(), ScratchExhausted);
+            assert_eq!((s.used(), s.capacity()), (used, capacity));
+        }
+        // The extremes that do fit multiply.
+        let r = s.big_mul(hi, lo).unwrap();
+        assert_eq!(r.exponent(), -1);
     }
 }

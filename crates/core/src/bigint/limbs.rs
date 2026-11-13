@@ -80,6 +80,32 @@ pub(super) fn sub(out: &mut [f64], big: Placed<'_>, small: Placed<'_>) {
     debug_assert!(!borrow, "the subtrahend is the larger magnitude");
 }
 
+/// Writes `a * b` into `out`, which must be exactly `a.len() + b.len()`
+/// words long: the product of two magnitudes always fits. Schoolbook
+/// multiplication, one row per word of `b`; each partial product, the
+/// carry and the two addends fit in a `u128`.
+pub(super) fn mul(out: &mut [f64], a: &[f64], b: &[f64]) {
+    debug_assert_eq!(
+        out.len(),
+        a.len() + b.len(),
+        "the product has the wrong frame"
+    );
+    out.fill(0.0);
+    for (j, wb) in b.iter().enumerate() {
+        let wb = u128::from(wb.to_bits());
+        let mut carry = 0u128;
+        for (i, wa) in a.iter().enumerate() {
+            let slot = &mut out[i + j];
+            // (2^64 - 1)^2 + 2 * (2^64 - 1) = 2^128 - 1: no overflow.
+            let t = u128::from(wa.to_bits()) * wb + u128::from(slot.to_bits()) + carry;
+            *slot = f64::from_bits(t as u64);
+            carry = t >> 64;
+        }
+        // This slot has not been written by an earlier row.
+        out[a.len() + j] = f64::from_bits(carry as u64);
+    }
+}
+
 /// Drops the zero words at both ends of `out[..len]`, moving the rest down
 /// to the start. Returns the new length and how many low words were
 /// dropped.
