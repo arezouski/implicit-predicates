@@ -25,12 +25,30 @@ impl Placed<'_> {
     }
 }
 
-/// Compares two magnitudes placed in a frame of `frame` words.
+/// Compares two magnitudes placed in a frame of `frame` words. Only the
+/// stretches where an operand has words are visited, so the cost does not
+/// depend on the gap between distant operands.
 pub(super) fn compare(a: Placed<'_>, b: Placed<'_>, frame: usize) -> Ordering {
-    for i in (0..frame).rev() {
-        match a.at(i).cmp(&b.at(i)) {
-            Ordering::Equal => {}
-            other => return other,
+    let mut i = frame;
+    while i > 0 {
+        i -= 1;
+        let (wa, wb) = (a.at(i), b.at(i));
+        if wa != wb {
+            return wa.cmp(&wb);
+        }
+        // Below an operand's lowest position it contributes nothing; when
+        // neither covers `i`, jump to the highest top of an operand beneath.
+        let covers = |p: Placed<'_>| i >= p.offset && i < p.offset + p.words.len();
+        if !covers(a) && !covers(b) {
+            let next = [a, b]
+                .iter()
+                .map(|p| p.offset + p.words.len())
+                .filter(|&e| e <= i)
+                .max();
+            match next {
+                Some(e) => i = e,
+                None => return Ordering::Equal,
+            }
         }
     }
     Ordering::Equal

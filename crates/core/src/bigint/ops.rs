@@ -18,8 +18,9 @@ impl Scratch<'_> {
     ///
     /// # Errors
     ///
-    /// [`ScratchExhausted`] if that space is not free; the arena is
-    /// unchanged.
+    /// [`ScratchExhausted`] if that space is not free, or if the exponents
+    /// are so far apart that the result would be wider than `u32::MAX`
+    /// words; the arena is unchanged.
     ///
     /// # Panics
     ///
@@ -47,13 +48,24 @@ impl Scratch<'_> {
         // The frame starts at the lower exponent; each operand sits at its
         // distance from it. One extra word takes a final carry.
         let base = a.exp.min(b.exp);
+        // Everything here is in u64 with checked operations: on a 32-bit
+        // target a distance between exponents can exceed `usize`. A frame
+        // wider than any arena can be is exhausted space, not a wrong sum.
         let offset = |x: Big| {
-            usize::try_from(i64::from(x.exp) - i64::from(base)).expect("an offset is not negative")
+            u64::try_from(i64::from(x.exp) - i64::from(base)).expect("an offset is not negative")
         };
         let (off_a, off_b) = (offset(a), offset(b));
-        let top = (off_a + a.len()).max(off_b + b.len());
+        let end = |off: u64, x: Big| off.checked_add(x.len() as u64).ok_or(ScratchExhausted);
+        let top = end(off_a, a)?.max(end(off_b, b)?);
+        let needed = top.checked_add(1).ok_or(ScratchExhausted)?;
+        if needed > u64::from(u32::MAX) {
+            return Err(ScratchExhausted);
+        }
+        // Every value below fits in `u32`, hence in `usize`.
+        let to_index = |n: u64| usize::try_from(n).expect("a frame position fits in usize");
+        let (off_a, off_b) = (to_index(off_a), to_index(off_b));
+        let top = to_index(top);
         let frame = top + 1;
-        let needed = u64::try_from(frame).unwrap_or(u64::MAX);
 
         let same_sign = a.negative == b.negative;
         // For opposite signs the larger magnitude is the minuend; the
@@ -74,15 +86,13 @@ impl Scratch<'_> {
         if order == Ordering::Equal {
             return Ok(Big::ZERO);
         }
-        let (negative, first, second) = match order {
-            Ordering::Less => (b.negative, b, a),
-            _ => (a.negative, a, b),
-        };
-        let (off_first, off_second) = if order == Ordering::Less {
-            (off_b, off_a)
+        // The larger magnitude is the minuend and gives the sign.
+        let ((first, off_first), (second, off_second)) = if order == Ordering::Less {
+            ((b, off_b), (a, off_a))
         } else {
-            (off_a, off_b)
+            ((a, off_a), (b, off_b))
         };
+        let negative = first.negative;
 
         let mut dropped = 0;
         let limbs = self.write_words([first.limbs, second.limbs], needed, |[wf, ws], out| {
@@ -104,6 +114,9 @@ impl Scratch<'_> {
             // nothing but the result stays reserved.
             let (len, low) = limbs::trim_and_shift(out, frame);
             dropped = low;
+            // Unequal magnitudes cannot cancel; a zero here would not be
+            // the unique zero.
+            debug_assert!(len > 0, "a sum of unequal magnitudes came out zero");
             len
         })?;
         let exp = i32::try_from(i64::from(base) + i64::try_from(dropped).unwrap_or(i64::MAX))
@@ -119,8 +132,8 @@ impl Scratch<'_> {
     ///
     /// # Errors
     ///
-    /// [`ScratchExhausted`] if the space is not free; the arena is
-    /// unchanged.
+    /// [`ScratchExhausted`] if the space is not free or the exponents are
+    /// too far apart; the arena is unchanged.
     ///
     /// # Panics
     ///

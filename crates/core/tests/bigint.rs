@@ -235,6 +235,10 @@ fn a_partial_cancellation_is_normalized() {
     let d = s.big_sub(x, p130).unwrap();
     assert_eq!(value_of(&s, d), Dyadic::from_words(false, &[1], 64));
     assert_eq!((d.len(), d.exponent()), (1, 1));
+    // Only the result stays above the operands, whichever words were trimmed.
+    let used = s.used();
+    let again = s.big_sub(x, p130).unwrap();
+    assert_eq!(s.used(), used + again.len());
 
     // 2^64 - 1 borrows across a word.
     let d = s.big_sub(p64, one).unwrap();
@@ -310,6 +314,28 @@ fn sums_without_room_leave_the_arena_as_it_was() {
                 s.reset(s.mark());
                 break;
             }
+        }
+    }
+}
+
+#[test]
+fn exponents_too_far_apart_to_align_are_an_exhausted_arena() {
+    let mut grow = Scratch::growable(8);
+    let mut buf = [0.0; 8];
+    let mut fixed = Scratch::borrowed(&mut buf);
+    for s in [&mut grow, &mut fixed] {
+        let hi = s.big_from_words(false, &[1], i32::MAX).unwrap();
+        let lo = s.big_from_words(false, &[1], i32::MIN).unwrap();
+        let (used, capacity) = (s.used(), s.capacity());
+        for r in [
+            s.big_add(hi, lo),
+            s.big_sub(hi, lo),
+            s.big_add(lo, hi),
+            s.big_sub(lo, hi),
+            s.big_add(hi, lo.neg()),
+        ] {
+            assert_eq!(r.unwrap_err(), ScratchExhausted);
+            assert_eq!((s.used(), s.capacity()), (used, capacity));
         }
     }
 }
