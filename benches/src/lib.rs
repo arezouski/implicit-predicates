@@ -20,7 +20,12 @@
 //!   filter on the random set and the exact stages on the nearly degenerate
 //!   and exactly degenerate sets; the filter of points of any type on the
 //!   recorded calls with implicit points, and the exact stages over arena
-//!   spans on those of them that the filter does not decide.
+//!   spans on those of them that the filter does not decide;
+//! - `insphere_stages`: each stage of the generated `insphere` alone, the
+//!   filter on the random and nearly degenerate sets and on the recorded
+//!   calls with implicit points, and the exact stages on the recorded calls
+//!   that the filter does not decide, apart for those that a stage over
+//!   spans decides and those that go to the stage on big integers.
 //!
 //! This library holds the deterministic input builders and the seeds they
 //! use, and the determinant routine, shared by the benchmarks and by the

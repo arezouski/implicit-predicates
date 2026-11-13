@@ -1,19 +1,36 @@
 //! Checks that the predicate benchmark inputs are what the benchmarks claim,
 //! and that the baseline libraries and `implicit-predicates` agree with the
 //! exact signs on them, on explicit points and on points of any type.
+//!
+//! The group of each recorded `insphere` call that the filter does not
+//! decide is checked with the logic of the corpus sweep of
+//! `implicit-predicates`, whose test helpers are included from that crate.
 
+use implicit_predicates::stages::insphere;
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{AnyPoint, Point, Scratch, orient3d_in};
 use implicit_predicates_benches::predicates::{
-    ImplicitInput, InSphereInput, InputSet, MAX_IMPLICIT, Orient3dInput, SET_SIZE,
-    any_explicit_sets, big_integers_stage, exact_sets, geometry_insphere_sign,
-    geometry_orient3d_sign, implicit_predicates_orient3d_any_sign,
-    implicit_predicates_orient3d_sign, implicit_recorded_signs, implicit_set_name, implicit_sets,
+    CORPUS_DIR, INSPHERE_MAX_IMPLICIT, ImplicitInput, InSphereGroup, InSphereImplicitInput,
+    InSphereInput, InputSet, MAX_IMPLICIT, Orient3dInput, SET_SIZE, any_explicit_sets,
+    big_integers_stage, exact_sets, geometry_insphere_sign, geometry_orient3d_sign,
+    implicit_predicates_orient3d_any_sign, implicit_predicates_orient3d_sign,
+    implicit_recorded_signs, implicit_set_name, implicit_sets, insphere_any_explicit_sets,
+    insphere_big_integers_stage, insphere_exact_sets, insphere_implicit_sets, insphere_set_name,
     insphere_sets, naive_insphere, naive_orient3d, orient3d_sets, out_of_range_sets,
     robust_insphere_sign, robust_orient3d_sign,
 };
 use implicit_predicates_corpus::exact;
 use implicit_predicates_oracle::Dyadic;
+
+// The helpers are written for the tests of `implicit-predicates`, whose
+// `std` feature this package does not have.
+#[allow(unexpected_cfgs)]
+#[path = "../../crates/implicit-predicates/tests/common/mod.rs"]
+mod common;
+
+use common::insphere::{BIG_INTEGERS, FILTER, deciding_on_expansions};
+use common::sign_of;
+use common::why::Why;
 
 fn exact_orient3d(p: &Orient3dInput) -> i8 {
     let [a, b, c, d] = p.map(|q| q.map(Dyadic::from_f64));
@@ -370,4 +387,161 @@ fn out_of_range_sets_are_decided_by_no_stage_on_the_stack_and_have_the_exact_sig
             );
         }
     }
+}
+
+fn exact_insphere_any(p: &InSphereImplicitInput) -> i8 {
+    let [a, b, c, d, e] = p.each_ref().map(exact_point);
+    exact::insphere(&a, &b, &c, &d, &e)
+}
+
+fn insphere_implicit_count(p: &InSphereImplicitInput) -> usize {
+    p.iter().filter(|q| !q.is_explicit()).count()
+}
+
+#[test]
+fn the_stages_of_insphere_decide_the_sets_they_are_benchmarked_on() {
+    let sets = insphere_sets();
+    let decided = |name: &str| {
+        let cases = &set(&sets, name).cases;
+        let count = cases
+            .iter()
+            .filter(|c| insphere::filter([&c[0], &c[1], &c[2], &c[3], &c[4]], 0.0).is_some())
+            .count();
+        (count, cases.len())
+    };
+    let (count, len) = decided("random");
+    assert_eq!(count, len, "the filter on random");
+    // One coordinate moved by a few ulps is far below what the filter can
+    // resolve: it declines on every case of `near_degenerate`.
+    let (count, _) = decided("near_degenerate");
+    assert_eq!(count, 0, "the filter on near_degenerate");
+}
+
+#[test]
+fn insphere_any_explicit_sets_are_the_explicit_sets() {
+    let explicit = insphere_sets();
+    let any = insphere_any_explicit_sets();
+    assert_eq!(explicit.len(), any.len());
+    for (x, y) in explicit.iter().zip(&any) {
+        assert_eq!(x.name, y.name);
+        assert_eq!(x.cases.len(), y.cases.len(), "{}", x.name);
+        for (a, b) in x.cases.iter().zip(&y.cases) {
+            assert!(
+                b.iter().all(|q| matches!(q, AnyPoint::Explicit(_))),
+                "{}: {b:?}",
+                x.name
+            );
+            assert_eq!(*a, b.map(|q| *q.approx()), "{}", x.name);
+        }
+    }
+}
+
+#[test]
+fn insphere_implicit_sets_have_their_counts_and_the_recorded_and_exact_signs() {
+    let (first, second) = (insphere_implicit_sets(), insphere_implicit_sets());
+    assert_eq!(first.len(), INSPHERE_MAX_IMPLICIT + 1);
+    let mut scratch = Scratch::growable(1 << 16);
+    for (k, ((x, signs), (y, _))) in first.iter().zip(&second).enumerate() {
+        assert_eq!(x.name, insphere_set_name(k));
+        assert_eq!(x.cases, y.cases, "{}", x.name);
+        assert_eq!(x.cases.len(), SET_SIZE, "{}", x.name);
+        assert_eq!(signs.len(), SET_SIZE, "{}", x.name);
+        for (case, &sign) in x.cases.iter().zip(signs) {
+            let count = insphere_implicit_count(case);
+            if k == 0 {
+                assert!(
+                    (1..=INSPHERE_MAX_IMPLICIT).contains(&count),
+                    "{}: {case:?}",
+                    x.name
+                );
+            } else {
+                assert_eq!(count, k, "{}: {case:?}", x.name);
+            }
+            let exact = exact_insphere_any(case);
+            assert_eq!(exact, sign, "{}: {case:?}", x.name);
+            let [a, b, c, d, e] = case;
+            let staged = insphere::staged_in(&mut scratch, a, b, c, d, e).expect("room");
+            assert_eq!(i8::from(staged), exact, "{}: {case:?}", x.name);
+            if let Some(filtered) = insphere::filter_points(a, b, c, d, e) {
+                assert_eq!(i8::from(filtered), exact, "{}: {case:?}", x.name);
+            }
+        }
+    }
+}
+
+/// Every case of every set of [`insphere_exact_sets`] is in its group by the
+/// logic of the corpus sweep, which decides the calls of the group
+/// [`InSphereGroup::Spans`] on a stage over spans and gives
+/// [`Why::ComponentOutOfRange`] for the calls of
+/// [`InSphereGroup::OutOfRange`]; and every stage measured on it has the
+/// sign of the independent oracle, which is also the recorded one.
+#[test]
+fn insphere_exact_sets_are_in_their_group_and_have_the_exact_sign_at_every_stage() {
+    let mut sets = insphere_exact_sets();
+    assert!(!sets.is_empty());
+    let mut sweep = Scratch::growable(1 << 16);
+    for set in &mut sets {
+        let name = set.name();
+        assert_eq!(set.points.len(), SET_SIZE, "{name}");
+        assert_eq!(set.coords.len(), SET_SIZE, "{name}");
+        assert_eq!(set.recorded.len(), SET_SIZE, "{name}");
+        let used = set.scratch.used();
+        for ((case, coords), &recorded) in set.points.iter().zip(&set.coords).zip(&set.recorded) {
+            assert_eq!(
+                insphere_implicit_count(case),
+                set.implicit,
+                "{name}: {case:?}"
+            );
+            let exact = exact_insphere_any(case);
+            assert_eq!(recorded, exact, "{name}: {case:?}");
+            let sign = Some(sign_of(exact));
+            let [a, b, c, d, e] = case;
+            assert_eq!(
+                insphere::filter_points(a, b, c, d, e),
+                None,
+                "{name}: {case:?}"
+            );
+            let decision = deciding_on_expansions(&mut sweep, case);
+            let q = coords.each_ref();
+            let s = &mut set.scratch;
+            let translated = insphere::expansions_translated_in(s, q).expect("room");
+            let untranslated = insphere::expansions_untranslated_in(s, q).expect("room");
+            match set.group {
+                InSphereGroup::Spans => {
+                    let decision = decision.unwrap_or_else(|why| panic!("{name}: {why:?}"));
+                    assert_ne!(decision.stage, FILTER, "{name}: {case:?}");
+                    assert_ne!(decision.stage, BIG_INTEGERS, "{name}: {case:?}");
+                    assert_eq!(Some(decision.sign), sign, "{name}: {case:?}");
+                    assert_eq!(translated, sign, "{name}: {case:?}");
+                    assert_eq!(untranslated, sign, "{name}: {case:?}");
+                }
+                InSphereGroup::OutOfRange => {
+                    assert_eq!(decision, Err(Why::ComponentOutOfRange), "{name}: {case:?}");
+                    assert_eq!(translated, None, "{name}: {case:?}");
+                    assert_eq!(untranslated, None, "{name}: {case:?}");
+                }
+            }
+            let chain = insphere::exact_stages_in(s, a, b, c, d, e).expect("room");
+            assert_eq!(Some(chain), sign, "{name}: {case:?}");
+            let big = insphere_big_integers_stage(s, case);
+            assert_eq!(Some(big), sign, "{name}: {case:?}");
+            assert_eq!(s.used(), used, "the stages leave the arena as it was");
+        }
+    }
+}
+
+/// The versioned samples have no `insphere` call that no stage over spans
+/// decides, so they give only the group [`InSphereGroup::Spans`], for every
+/// number of implicit points. The other group needs larger corpora, named by
+/// [`CORPUS_DIR`].
+#[test]
+fn the_versioned_samples_give_only_calls_that_a_stage_over_spans_decides() {
+    if std::env::var_os(CORPUS_DIR).is_some() {
+        return;
+    }
+    let names: Vec<_> = insphere_exact_sets().iter().map(|s| s.name()).collect();
+    let expected: Vec<_> = (0..=INSPHERE_MAX_IMPLICIT)
+        .map(|k| format!("spans/{k}_implicit"))
+        .collect();
+    assert_eq!(names, expected);
 }

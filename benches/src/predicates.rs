@@ -5,8 +5,10 @@
 //! drawn from the calls of the versioned sample corpora whose points are all
 //! explicit, weighted by how many calls of the recording run each stored
 //! call stands for. The sets of [`implicit_sets`], [`any_explicit_sets`] and
-//! [`exact_sets`] hold points of any type of `implicit-predicates`, among
-//! them the recorded calls with implicit points.
+//! [`exact_sets`] for `orient3d`, and of [`insphere_implicit_sets`],
+//! [`insphere_any_explicit_sets`] and [`insphere_exact_sets`] for
+//! `insphere`, hold points of any type of `implicit-predicates`, among them
+//! the recorded calls with implicit points.
 //!
 //! The contenders are `implicit-predicates` (`orient3d` only, so far), the
 //! `robust` and `geometry-predicates` crates and an unprotected `f64`
@@ -41,9 +43,11 @@ pub use contenders::{
     naive_orient3d_sign, robust_insphere_sign, robust_orient3d_sign,
 };
 pub use implicit::{
-    CORPUS_DIR, EXACT_SEED, ExactSet, IMPLICIT_SEED, ImplicitInput, MAX_IMPLICIT,
-    any_explicit_sets, big_integers_stage, exact_sets, implicit_recorded_signs, implicit_set_name,
-    implicit_sets,
+    CORPUS_DIR, EXACT_SEED, ExactSet, IMPLICIT_SEED, INSPHERE_EXACT_SEED, INSPHERE_IMPLICIT_SEED,
+    INSPHERE_MAX_IMPLICIT, ImplicitInput, InSphereExactSet, InSphereGroup, InSphereImplicitInput,
+    MAX_IMPLICIT, any_explicit_sets, big_integers_stage, exact_sets, implicit_recorded_signs,
+    implicit_set_name, implicit_sets, insphere_any_explicit_sets, insphere_big_integers_stage,
+    insphere_exact_sets, insphere_implicit_sets, insphere_set_name,
 };
 
 /// Four points of `orient3d`.

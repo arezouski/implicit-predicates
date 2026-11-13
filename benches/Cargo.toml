@@ -42,3 +42,7 @@ harness = false
 [[bench]]
 name = "orient3d_stages"
 harness = false
+
+[[bench]]
+name = "insphere_stages"
+harness = false
