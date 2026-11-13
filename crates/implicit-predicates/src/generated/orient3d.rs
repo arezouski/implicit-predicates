@@ -10,7 +10,8 @@
 //! [`staged_in`] on points of any type.
 
 use implicit_predicates_core::{
-    ExactCoords, ExactError, Point, Scratch, ScratchExhausted, Sign, Span, Weight, eft, expansion,
+    Big, BigCoords, ExactCoords, ExactError, Point, Scratch, ScratchExhausted, Sign, Span, Weight,
+    eft, expansion,
 };
 
 /// The degree `G_k` of the predicate in the differences of coordinates of each
@@ -61,6 +62,13 @@ pub const SPANS_TRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 2.760698
 /// `(min, max)`, `(2^-188, 2^235)`: [`expansions_untranslated_in`] decides when
 /// every nonzero component of every coordinate has a magnitude in `min..=max`.
 pub const SPANS_UNTRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 5.521397077432451e70);
+
+/// The `f64` slots of the arena, one 64-bit word each, that suffice for
+/// [`big_integers_in`] on explicit points, their coordinates included: writing
+/// the coordinates of the points as big integers and running the stage take at
+/// most this many slots above the top of the arena. Points with an implicit
+/// coordinate can need more.
+pub const BIG_INTEGERS_EXPLICIT_ARENA: usize = 1456;
 
 /// The sign of the predicate from an evaluation of its main form in `f64`, when
 /// the rounding error cannot change it.
@@ -599,6 +607,59 @@ pub fn expansions_untranslated_in(
     let sign = evaluate(scratch, c);
     scratch.reset(mark);
     sign.map(Some)
+}
+
+/// The exact sign of the predicate for points given by their coordinates as big
+/// integers: its main form evaluated with the big-integer operations of
+/// `scratch`, which are exact whatever the size of the values, so this stage
+/// always decides.
+///
+/// For explicit points, [`BIG_INTEGERS_EXPLICIT_ARENA`] slots of `scratch`, the
+/// coordinates included, suffice.
+///
+/// The arena is left as it was, on success and on error.
+///
+/// # Errors
+///
+/// [`ScratchExhausted`] if `scratch` runs out of room.
+#[cold]
+#[inline(never)]
+pub fn big_integers_in(
+    scratch: &mut Scratch<'_>,
+    p: [&BigCoords; 4],
+) -> Result<Sign, ScratchExhausted> {
+    fn evaluate(scratch: &mut Scratch<'_>, c: [[Big; 3]; 4]) -> Result<Sign, ScratchExhausted> {
+        let e0 = scratch.big_sub(c[0][0], c[3][0])?;
+        let e1 = scratch.big_sub(c[0][1], c[3][1])?;
+        let e2 = scratch.big_sub(c[0][2], c[3][2])?;
+        let e3 = scratch.big_sub(c[1][0], c[3][0])?;
+        let e4 = scratch.big_sub(c[1][1], c[3][1])?;
+        let e5 = scratch.big_sub(c[1][2], c[3][2])?;
+        let e6 = scratch.big_sub(c[2][0], c[3][0])?;
+        let e7 = scratch.big_sub(c[2][1], c[3][1])?;
+        let e8 = scratch.big_sub(c[2][2], c[3][2])?;
+        let e9 = scratch.big_mul(e4, e8)?;
+        let e10 = scratch.big_mul(e5, e7)?;
+        let e11 = scratch.big_sub(e9, e10)?;
+        let e12 = scratch.big_mul(e0, e11)?;
+        let e13 = scratch.big_mul(e3, e8)?;
+        let e14 = scratch.big_mul(e5, e6)?;
+        let e15 = scratch.big_sub(e13, e14)?;
+        let e16 = scratch.big_mul(e1, e15)?;
+        let e17 = scratch.big_sub(e12, e16)?;
+        let e18 = scratch.big_mul(e3, e7)?;
+        let e19 = scratch.big_mul(e4, e6)?;
+        let e20 = scratch.big_sub(e18, e19)?;
+        let e21 = scratch.big_mul(e2, e20)?;
+        let e22 = scratch.big_add(e17, e21)?;
+        Ok(e22.sign())
+    }
+    // The arena is reset to its mark whatever the evaluation returns.
+    let c = p.map(|q| [q.x, q.y, q.z]);
+    let mark = scratch.mark();
+    let sign = evaluate(scratch, c);
+    scratch.reset(mark);
+    sign
 }
 
 /// The sign of the predicate for explicit points, from the first stage that

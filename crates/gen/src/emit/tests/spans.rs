@@ -98,7 +98,7 @@ fn a_stage_fits_on_the_stack_up_to_the_limit_included() {
 
 /// `(a.x - b.x)^2` doubled `doublings` times: the worst-case length of the
 /// result doubles each time.
-fn doubled(doublings: usize) -> String {
+pub(super) fn doubled(doublings: usize) -> String {
     let mut body = String::from("    let d = a.x - b.x;\n    let x0 = d * d;\n");
     for i in 0..doublings {
         body.push_str(&format!("    let x{} = x{i} + x{i};\n", i + 1));

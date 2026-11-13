@@ -356,3 +356,84 @@ pub(super) fn interpret_span_stage(code: &str) -> Graph {
     assert!(order.is_sorted(), "{rest}");
     g.finish(root.expect("the sign of an expansion is returned"))
 }
+
+/// The value of an emitted stage on big integers, read back from its text:
+/// the nested `evaluate` may only call the big-integer operations of the
+/// arena, `big_add`, `big_sub`, `big_mul` and `big_from_f64`, or negate a
+/// value with `.neg()`, each read as the operation it performs, and the
+/// result is the value whose sign it returns. Also checks that the arena is
+/// reset to the mark taken before the evaluation, before the result is
+/// returned.
+pub(super) fn interpret_big_stage(code: &str) -> Graph {
+    let start = code.find("fn evaluate(").expect("a nested evaluate");
+    let body = &code[start..];
+    let end = body.find("\n}\n").expect("the end of evaluate");
+    let (evaluate, rest) = (&body[..end], &body[end..]);
+    let mut g = Symbolic::default();
+    let mut values: BTreeMap<String, NodeId> = BTreeMap::new();
+    let operand = |g: &mut Symbolic, values: &BTreeMap<String, NodeId>, text: &str| {
+        if let Some((point, axis)) = coordinate(text, "c") {
+            g.coordinate(point, axis)
+        } else {
+            values[text]
+        }
+    };
+    let mut root = None;
+    for line in evaluate.lines().skip(1).map(str::trim) {
+        if let Some(text) = line
+            .strip_prefix("Ok(")
+            .and_then(|t| t.strip_suffix(".sign())"))
+        {
+            root = Some(operand(&mut g, &values, text));
+            continue;
+        }
+        let (name, value) = line
+            .strip_prefix("let ")
+            .and_then(|t| t.strip_suffix(';'))
+            .and_then(|t| t.split_once(" = "))
+            .unwrap_or_else(|| panic!("not a statement: {line}"));
+        let id = if let Some(x) = value.strip_suffix(".neg()") {
+            let x = operand(&mut g, &values, x);
+            g.negate(x)
+        } else {
+            let call = value
+                .strip_prefix("scratch.")
+                .and_then(|t| t.strip_suffix(")?"))
+                .unwrap_or_else(|| panic!("not an operation of the arena: {line}"));
+            let (op, arguments) = call.split_once('(').unwrap_or_else(|| panic!("{line}"));
+            if op == "big_from_f64" {
+                let c: f64 = arguments.parse().unwrap_or_else(|_| panic!("{line}"));
+                assert_eq!(c.fract(), 0.0, "{line}");
+                g.push(Node::Int(c as i64))
+            } else {
+                let (x, y) = arguments
+                    .split_once(", ")
+                    .unwrap_or_else(|| panic!("{line}"));
+                let (x, y) = (operand(&mut g, &values, x), operand(&mut g, &values, y));
+                g.push(match op {
+                    "big_add" => Node::Add(x, y),
+                    "big_sub" => Node::Sub(x, y),
+                    "big_mul" => Node::Mul(x, y),
+                    _ => panic!("not a big-integer operation of the arena: {line}"),
+                })
+            }
+        };
+        assert!(
+            values.insert(name.to_string(), id).is_none(),
+            "{name} written twice"
+        );
+    }
+    let order = [
+        "let mark = scratch.mark();",
+        "let sign = evaluate(scratch, c);",
+        "scratch.reset(mark);",
+        "sign",
+    ]
+    .map(|line| {
+        rest.lines()
+            .position(|l| l.trim() == line)
+            .unwrap_or_else(|| panic!("no `{line}`"))
+    });
+    assert!(order.is_sorted(), "{rest}");
+    g.finish(root.expect("the sign of a big integer is returned"))
+}

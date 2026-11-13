@@ -6,6 +6,7 @@
 //! its tests use ([`checks`]). The output is built as text, in a fixed
 //! order, so it is the same on every run; it is not formatted.
 
+mod big;
 mod chain;
 mod check_fns;
 mod checks;
@@ -41,7 +42,7 @@ use crate::error::Error;
 use crate::parse::{Predicate, parse};
 use crate::polynomial::checked_polynomial;
 use crate::range::{
-    Leaves, MAX_COORD_COMPONENTS, exact_plan_differences, exact_plan_raw,
+    Leaves, MAX_COORD_COMPONENTS, big_explicit_arena, exact_plan_differences, exact_plan_raw,
     exact_plan_spans_translated, exact_plan_spans_untranslated,
 };
 use chain::ChainStage;
@@ -101,7 +102,12 @@ pub struct Generated {
 /// filter with the uncertainty of the errors of the points, then
 /// `exact_stages`, the exact stages of `staged`, when every point is
 /// explicit, and otherwise `exact_stages_in`, the stages over spans on the
-/// exact coordinates of the points, the translated form first. The module of
+/// exact coordinates of the points, the translated form first.
+/// `big_integers_in` evaluates the main form exactly with the big-integer
+/// operations of an arena, on the coordinates of the points as big integers,
+/// and `BIG_INTEGERS_EXPLICIT_ARENA` is a number of `f64` slots of the arena
+/// that suffices for it on explicit points; the chains do not run it yet.
+/// The module of
 /// its checks holds `exact`, the main form evaluated with the exact numbers
 /// of `implicit-predicates-oracle`, `bound_edge_cases`, pairs of inputs at
 /// the edge of the error bound of the filter for explicit points, and, for a
@@ -114,7 +120,9 @@ pub struct Generated {
 /// degree above the 1022 that the filter accepts, a definition too large to
 /// derive the filter bound for or to expand, an `#[exact]` form that is a
 /// different polynomial, a main form with more than 256 distinct
-/// subexpressions, or a predicate that the exact stages cannot support.
+/// subexpressions, or a predicate that the exact stages cannot support,
+/// including one whose stage on big integers would need an arena of more
+/// than `u32::MAX` words for explicit points.
 ///
 /// # Work
 ///
@@ -226,6 +234,8 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         }
         None => (None, None),
     };
+    let points = predicate.params.len();
+    let big_arena = big_explicit_arena(&graph, points, file, position)?;
     let forms = Forms {
         filter,
         differences,
@@ -234,10 +244,10 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         spans_translated: (&graph, spans.range),
         spans_untranslated,
     };
-    let points = predicate.params.len();
     let mut out = String::new();
     write_header(&mut out, predicate, notice, &forms);
     write_constants(&mut out, &forms);
+    big::write_big_arena(&mut out, big_arena);
     let (uses_max, explicit) = match &forms.filter {
         FilterKind::Global(c) => (
             filter::write_filter(&mut out, &graph, points, c.degree),
@@ -249,6 +259,7 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         ),
     };
     write_exact_stages(&mut out, points, &forms);
+    big::write_big_stage(&mut out, &graph, points);
     let explicit_stages = chain_stages(&forms);
     chain::write_chain(&mut out, points, &explicit_stages, explicit);
     let spans: &[&str] = if forms.spans_untranslated.is_some() {
@@ -332,6 +343,8 @@ fn write_header(out: &mut String, predicate: &Predicate, notice: &str, forms: &F
     );
     // The names the module uses, in the order rustfmt sorts them.
     let mut names = vec![
+        "Big",
+        "BigCoords",
         "ExactCoords",
         "ExactError",
         "Point",

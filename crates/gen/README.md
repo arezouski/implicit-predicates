@@ -199,9 +199,16 @@ For each predicate the generator writes one module with:
   `exact_stages_in`, the expansion forms over spans of an arena, on the
   exact coordinates of the points; and `staged_in`, which runs
   `filter_points`, then `exact_stages` when every point is explicit and
-  `exact_stages_in` otherwise.
+  `exact_stages_in` otherwise;
+- `big_integers_in`, the main form evaluated exactly with the big-integer
+  operations of an arena, on the coordinates of the points as big
+  integers; it always decides, and fails only when the arena runs out of
+  room. `BIG_INTEGERS_EXPLICIT_ARENA` is a number of `f64` slots of the
+  arena, one 64-bit word each, that suffices for it on explicit points,
+  their coordinates as big integers included: a conservative bound, not a
+  tight one. The chains do not run this stage yet.
 
-Each stage returns `None` when it cannot decide.
+Each stage returns `None` when it cannot decide, except `big_integers_in`.
 
 For the tests of each predicate it writes a second module, of checks, with:
 

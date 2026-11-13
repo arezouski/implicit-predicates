@@ -9,6 +9,7 @@
 //! derives the inputs for which that holds, and how long each temporary
 //! expansion can get.
 
+mod big;
 mod shape;
 mod spans;
 
@@ -17,6 +18,7 @@ use crate::dyadic::Dyadic;
 use crate::error::Error;
 use crate::graph::Graph;
 use crate::parse::Position;
+pub(crate) use big::big_explicit_arena;
 use shape::{MAX_LENGTH, Shape};
 pub use spans::{MAX_COORD_COMPONENTS, exact_plan_spans_translated, exact_plan_spans_untranslated};
 
