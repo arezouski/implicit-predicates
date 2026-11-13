@@ -1,24 +1,28 @@
-//! `orient3d` on the calls recorded from a tetrahedral mesher: every stored
-//! `orient3d` call, with explicit points and with points on a line, must
-//! get the recorded sign, and the public functions must agree with the
-//! first stage of the chain that decides.
+//! `orient3d` and `insphere` on the calls recorded from a tetrahedral
+//! mesher: every stored call, with explicit points and with points on a
+//! line, must get the recorded sign, and the chain must agree with the
+//! first of its stages that decides, and with every stage that decides
+//! alone.
 //!
 //! The recording program uses the opposite sign convention, so the recorded
-//! sign is `REFERENCE_ORIENT3D_FACTOR` times ours. Calls with a kind of
-//! point that this crate does not provide yet are counted and reported.
-//! Every call is decided: a call that no stage on expansions decides goes
-//! to the stage on big integers, and is reported with the reason (see
-//! `common::corpus_sweep::Why`); on the samples there must be none. On the
-//! generated corpus, the stage on big integers alone must also give the
-//! recorded sign of every call.
+//! sign is `REFERENCE_ORIENT3D_FACTOR` times ours for `orient3d`, and
+//! `REFERENCE_INSPHERE_FACTOR` times ours for `insphere`. `insphere` has no
+//! public function: its chain is `staged_in` of the hidden module. Calls
+//! with a kind of point that this crate does not provide yet are counted
+//! and reported. Every call is decided: a call that no stage on expansions
+//! decides goes to the stage on big integers, and is reported with the
+//! reason (see `common::corpus_sweep::Why`); on the samples there must be
+//! none for `orient3d`. On the generated corpus, the stage on big integers
+//! alone must also give the recorded sign of every call.
 //!
 //! The versioned samples are checked by default. The generated corpus is
 //! large and not versioned; its sweep is ignored, and is meant to be run in
 //! release mode with `cargo test -p implicit-predicates --release --test
 //! corpus -- --ignored --nocapture generated`, which also prints, for the models
-//! without and with self-intersections, the weighted fraction of the calls
-//! that each stage decides first, by number of implicit points, and the
-//! number of calls and the time of the sweep of the stage on big integers.
+//! without and with self-intersections and for each predicate, the weighted
+//! fraction of the calls that each stage decides first, by number of
+//! implicit points, and the number of calls and the time of the sweeps of
+//! the stage on big integers.
 
 // `orient3d` needs the `std` feature.
 #![cfg(feature = "std")]
@@ -31,9 +35,9 @@ use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
-use common::corpus_sweep::{BigAlone, Tally};
-use implicit_predicates_corpus::Corpus;
+use common::corpus_sweep::{BigAlone, InSphereTally, PointCounts, Sweep, Tally};
 use implicit_predicates_corpus::parallel::{default_jobs, map_ordered};
+use implicit_predicates_corpus::{Corpus, Predicate};
 
 /// The root of the workspace.
 fn root() -> PathBuf {
@@ -58,17 +62,28 @@ fn read(path: &Path) -> Corpus {
         .unwrap_or_else(|e| panic!("invalid corpus {}: {e:?}", path.display()))
 }
 
+/// The fewest `insphere` calls without and with implicit points that the
+/// samples check: as many as they hold.
+const SAMPLE_INSPHERE_CALLS: (usize, usize) = (1200, 3358);
+
 /// Fails, after the report, if a call got a sign other than the recorded
-/// one, the public functions disagree with the stages, or no stage on
-/// expansions decided a call whose inputs are inside their documented
-/// ranges.
-fn assert_no_mismatch(name: &str, tally: &Tally) {
+/// one, the chain disagrees with the stages, or no stage on expansions
+/// decided a call whose inputs are inside their documented ranges.
+fn assert_no_mismatch(name: &str, tally: &impl Sweep) {
+    let mismatches = tally.mismatches();
     assert!(
-        tally.mismatch_count == 0,
+        mismatches.count == 0,
         "{name}: {} mismatches, the first: {}",
-        tally.mismatch_count,
-        tally.mismatches[0]
+        mismatches.count,
+        mismatches.described[0]
     );
+}
+
+/// The paths of the versioned samples.
+fn samples() -> impl Iterator<Item = PathBuf> {
+    SAMPLES
+        .into_iter()
+        .map(|name| root().join("corpus/samples").join(name))
 }
 
 #[test]
@@ -86,7 +101,7 @@ fn orient3d_matches_the_recorded_sign_on_the_samples() {
         total = (total.0 + explicit, total.1 + implicit);
     }
     println!("{}", tally.report("samples"));
-    assert_merging_is_adding(&tally);
+    assert_merging_is_adding::<Tally>(&tally);
     assert_no_mismatch("samples", &tally);
     let mut alone = BigAlone::default();
     for name in SAMPLES {
@@ -94,9 +109,9 @@ fn orient3d_matches_the_recorded_sign_on_the_samples() {
     }
     assert_big_alone("samples", &alone, total.0 + total.1);
     assert!(
-        tally.big_integers.is_empty(),
+        tally.big_integers.counts.is_empty(),
         "calls decided on big integers on the samples: {:?}",
-        tally.examples
+        tally.big_integers.examples
     );
     assert!(
         total.0 >= SAMPLE_CALLS.0 && total.1 >= SAMPLE_CALLS.1,
@@ -104,39 +119,71 @@ fn orient3d_matches_the_recorded_sign_on_the_samples() {
     );
 }
 
+#[test]
+fn insphere_matches_the_recorded_sign_on_the_samples() {
+    let mut tally = InSphereTally::default();
+    let mut total = (0, 0);
+    for path in samples() {
+        let (explicit, implicit) = tally.add_corpus(&read(&path));
+        assert!(
+            explicit > 0,
+            "{}: no explicit insphere call checked",
+            path.display()
+        );
+        total = (total.0 + explicit, total.1 + implicit);
+    }
+    println!("{}", tally.report("insphere: samples"));
+    assert_merging_is_adding::<InSphereTally>(&tally);
+    assert_no_mismatch("insphere: samples", &tally);
+    let mut alone = BigAlone::default();
+    for path in samples() {
+        alone.add_insphere_corpus(&read(&path));
+    }
+    assert_big_alone("insphere: samples", &alone, total.0 + total.1);
+    assert!(
+        total.0 >= SAMPLE_INSPHERE_CALLS.0 && total.1 >= SAMPLE_INSPHERE_CALLS.1,
+        "the samples check {total:?} insphere calls, fewer than {SAMPLE_INSPHERE_CALLS:?}"
+    );
+}
+
+/// Without the factor of the reference, every `insphere` call of the samples
+/// whose recorded sign is not zero is a mismatch, and no other: the sweep
+/// compares the sign of the chain with the recorded one through the factor.
+#[test]
+fn the_sweep_of_insphere_fails_without_the_factor_of_the_reference() {
+    let mut tally = InSphereTally::with_factor(1);
+    let mut not_zero = 0;
+    for path in samples() {
+        let corpus = read(&path);
+        tally.add_corpus(&corpus);
+        not_zero += corpus
+            .calls
+            .iter()
+            .filter(|c| c.predicate == Predicate::InSphere && c.sign != 0)
+            .count();
+    }
+    assert!(
+        not_zero > 0,
+        "no insphere call with a nonzero recorded sign"
+    );
+    assert_eq!(tally.mismatches.count, not_zero);
+}
+
 /// Fails unless one tally per sample, merged in order, counts what
 /// `expected` does: the tally of the samples added one after another.
-fn assert_merging_is_adding(expected: &Tally) {
-    let mut merged = Tally::default();
-    for name in SAMPLES {
-        let mut of_file = Tally::default();
-        of_file.add_corpus(&read(&root().join("corpus/samples").join(name)));
+fn assert_merging_is_adding<T: Sweep>(expected: &T) {
+    let mut merged = T::default();
+    for path in samples() {
+        let mut of_file = T::default();
+        of_file.add_corpus(&read(&path));
         merged.merge(&of_file);
     }
-    let counts = |t: &Tally| {
-        let buckets: Vec<_> = t
-            .buckets
-            .iter()
-            .map(|b| (b.stored, b.unsupported, b.unchecked))
-            .collect();
-        let points = (
-            t.points_unsupported,
-            t.points_non_finite,
-            t.points_unchecked,
-        );
-        (buckets, points, t.mismatch_count, t.high_water)
-    };
-    assert_eq!(counts(&merged), counts(expected));
+    assert_eq!(merged.counts(), expected.counts());
     // The weights are sums of `f64` in another order: equal up to rounding.
-    for (a, b) in merged.buckets.iter().zip(&expected.buckets) {
-        let sums = |x: &common::corpus_sweep::Bucket| {
-            let mut sums = x.columns.to_vec();
-            sums.extend([x.weight, x.recorded_zero]);
-            sums
-        };
-        for (x, y) in sums(a).into_iter().zip(sums(b)) {
-            assert!((x - y).abs() <= 1e-9 * y.abs(), "{x} is not {y}");
-        }
+    let (a, b) = (merged.sums(), expected.sums());
+    assert_eq!(a.len(), b.len());
+    for (x, y) in a.into_iter().zip(b) {
+        assert!((x - y).abs() <= 1e-9 * y.abs(), "{x} is not {y}");
     }
 }
 
@@ -144,10 +191,10 @@ fn assert_merging_is_adding(expected: &Tally) {
 /// recorded one, skipped a call, or checked fewer than `least` calls.
 fn assert_big_alone(name: &str, alone: &BigAlone, least: usize) {
     assert!(
-        alone.mismatch_count == 0,
+        alone.mismatches.count == 0,
         "{name}: {} mismatches of the stage on big integers, the first: {}",
-        alone.mismatch_count,
-        alone.mismatches[0]
+        alone.mismatches.count,
+        alone.mismatches.described[0]
     );
     assert_eq!(alone.unsupported, 0, "{name}: calls skipped");
     assert!(
@@ -157,13 +204,8 @@ fn assert_big_alone(name: &str, alone: &BigAlone, least: usize) {
     );
 }
 
-/// The stage on big integers alone, without the stages before it, on every
-/// `orient3d` call of the generated corpus, in both populations: the only
-/// way to run it on real calls in number, since the chain leaves it very
-/// few.
-#[test]
-#[ignore = "needs the generated corpus; run in release mode"]
-fn the_big_integers_alone_match_the_recorded_sign_on_the_generated_corpus() {
+/// The files of the generated corpus, in order.
+fn generated_files() -> Vec<PathBuf> {
     let dir = root().join("corpus/data/corpus");
     assert!(
         dir.is_dir(),
@@ -176,6 +218,14 @@ fn the_big_integers_alone_match_the_recorded_sign_on_the_generated_corpus() {
         .filter(|path| path.extension().is_some_and(|e| e == "ipcorpus"))
         .collect();
     files.sort();
+    files
+}
+
+/// `add` of a [`BigAlone`] on every file of the generated corpus, on
+/// several threads; prints the number of files and calls, the mismatches
+/// and the time under `name`.
+fn big_alone_on_the_generated_corpus(name: &str, add: fn(&mut BigAlone, &Corpus)) -> BigAlone {
+    let files = generated_files();
     let start = std::time::Instant::now();
     let mut alone = BigAlone::default();
     map_ordered(
@@ -183,7 +233,7 @@ fn the_big_integers_alone_match_the_recorded_sign_on_the_generated_corpus() {
         default_jobs(),
         |path| {
             let mut of_file = BigAlone::default();
-            of_file.add_corpus(&read(path));
+            add(&mut of_file, &read(path));
             of_file
         },
         |of_file| {
@@ -193,14 +243,38 @@ fn the_big_integers_alone_match_the_recorded_sign_on_the_generated_corpus() {
     );
     let seconds = start.elapsed().as_secs_f64();
     println!(
-        "big integers alone: {} files, {} calls, {} mismatches, {seconds:.1} s",
+        "{name}: {} files, {} calls, {} mismatches, {seconds:.1} s",
         files.len(),
         alone.calls,
-        alone.mismatch_count
+        alone.mismatches.count
     );
+    alone
+}
+
+/// The stage on big integers alone, without the stages before it, on every
+/// `orient3d` call of the generated corpus, in both populations: the only
+/// way to run it on real calls in number, since the chain leaves it very
+/// few.
+#[test]
+#[ignore = "needs the generated corpus; run in release mode"]
+fn the_big_integers_alone_match_the_recorded_sign_on_the_generated_corpus() {
+    let alone = big_alone_on_the_generated_corpus("big integers alone", BigAlone::add_corpus);
     // Every call of the two populations of the sweep of the chain.
-    let least = 3_163_737 + 7_861_160 + 2_738_941 + 6_560_056;
+    let least = ORIENT3D_NOSI.0 + ORIENT3D_NOSI.1 + ORIENT3D_SI.0 + ORIENT3D_SI.1;
     assert_big_alone("generated corpus", &alone, least);
+}
+
+/// [`the_big_integers_alone_match_the_recorded_sign_on_the_generated_corpus`]
+/// for `insphere`.
+#[test]
+#[ignore = "needs the generated corpus; run in release mode"]
+fn the_big_integers_alone_match_the_recorded_sign_of_insphere_on_the_generated_corpus() {
+    let alone = big_alone_on_the_generated_corpus(
+        "insphere: big integers alone",
+        BigAlone::add_insphere_corpus,
+    );
+    let least = INSPHERE_NOSI.0 + INSPHERE_NOSI.1 + INSPHERE_SI.0 + INSPHERE_SI.1;
+    assert_big_alone("insphere: generated corpus", &alone, least);
 }
 
 /// The files listed in `list`, relative to the root of the workspace.
@@ -215,87 +289,134 @@ fn listed(list: &str) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The `orient3d` calls without and with implicit points of the models
+/// without self-intersections of the generated corpus: the fewest that a
+/// sweep of them must check, so that it cannot pass if calls stop being
+/// checked.
+const ORIENT3D_NOSI: (usize, usize) = (3_163_737, 7_861_160);
+
+/// [`ORIENT3D_NOSI`] for the models with self-intersections.
+const ORIENT3D_SI: (usize, usize) = (2_738_941, 6_560_056);
+
+/// [`ORIENT3D_NOSI`] for `insphere`.
+const INSPHERE_NOSI: (usize, usize) = (2_646_414, 9_367_609);
+
+/// [`ORIENT3D_SI`] for `insphere`.
+const INSPHERE_SI: (usize, usize) = (2_048_538, 7_936_005);
+
 #[test]
-#[ignore = "needs the generated corpus; prints a table; run in release mode"]
-fn orient3d_matches_the_recorded_sign_on_the_generated_corpus() {
+#[ignore = "needs the generated corpus; prints the tables; run in release mode"]
+fn orient3d_and_insphere_match_the_recorded_sign_on_the_generated_corpus() {
     let dir = root().join("corpus/data/corpus");
-    assert!(
-        dir.is_dir(),
-        "no generated corpus in {}: build it with `python3 corpus/tools/corpus.py all`",
-        dir.display()
-    );
-    // Each population with the fewest calls without and with implicit
-    // points that its sweep must check: as many as the generated corpus
-    // holds, so that the sweep cannot pass if calls stop being checked.
+    let in_dir: BTreeSet<_> = generated_files()
+        .iter()
+        .map(|path| path.file_name().expect("a file name").to_owned())
+        .collect();
+    // Each population with the fewest calls of each predicate that its
+    // sweep must check.
     let populations = [
         (
             "models without self-intersections",
             "corpus/data/nosi.txt",
-            (3_163_737, 7_861_160),
+            ORIENT3D_NOSI,
+            INSPHERE_NOSI,
         ),
         (
             "models with self-intersections",
             "corpus/data/si.txt",
-            (2_738_941, 6_560_056),
+            ORIENT3D_SI,
+            INSPHERE_SI,
         ),
     ];
     // The two lists split the generated corpus.
-    let in_dir: BTreeSet<_> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot list {}: {e}", dir.display()))
-        .map(|entry| entry.expect("a directory entry").file_name())
-        .filter(|name| Path::new(name).extension().is_some_and(|e| e == "ipcorpus"))
-        .collect();
     let mut seen = BTreeSet::new();
-    for (_, list, _) in populations {
+    for (_, list, ..) in populations {
         for path in listed(list) {
             let name = path.file_name().expect("a file name").to_owned();
             assert!(seen.insert(name), "{} listed twice", path.display());
         }
     }
-    assert_eq!(seen, in_dir, "the lists do not split the generated corpus");
+    assert_eq!(
+        seen,
+        in_dir,
+        "the lists do not split the generated corpus in {}",
+        dir.display()
+    );
 
-    let mut tallies = Vec::new();
-    for (name, list, least) in populations {
+    let mut swept = Vec::new();
+    for (name, list, least, least_insphere) in populations {
         let files = listed(list);
-        let (tally, checked) = sweep(&files);
+        let start = std::time::Instant::now();
+        let both = sweep(&files);
         println!("{} files", files.len());
-        println!("{}", tally.report(name));
-        tallies.push((name, tally, checked, least));
+        println!("{}", both.orient3d.report(name));
+        println!("{}", both.insphere.report(&format!("insphere: {name}")));
+        println!(
+            "sweep of both predicates: {:.1} s",
+            start.elapsed().as_secs_f64()
+        );
+        swept.push((name, both, least, least_insphere));
     }
-    for (name, tally, checked, least) in &tallies {
-        assert_no_mismatch(name, tally);
-        assert_complete(name, tally, *checked, *least);
+    for (name, both, least, least_insphere) in &swept {
+        assert_no_mismatch(name, &both.orient3d);
+        assert_complete(name, &orient3d_completeness(both), *least);
+        let insphere = format!("insphere: {name}");
+        assert_no_mismatch(&insphere, &both.insphere);
+        assert_complete(&insphere, &insphere_completeness(both), *least_insphere);
     }
 }
 
-/// The tally of the files and the calls checked, without and with implicit
-/// points: one tally per file, on several threads, merged in the order of
-/// the files.
-fn sweep(files: &[PathBuf]) -> (Tally, (usize, usize)) {
-    let mut tally = Tally::default();
-    let mut checked = (0, 0);
+/// What a sweep of files found, for each predicate, with the calls checked
+/// without and with implicit points.
+struct Swept {
+    orient3d: Tally,
+    orient3d_checked: (usize, usize),
+    insphere: InSphereTally,
+    insphere_checked: (usize, usize),
+}
+
+/// The tallies of the files: each file read once and swept for both
+/// predicates, one file per thread, merged in the order of the files.
+fn sweep(files: &[PathBuf]) -> Swept {
+    let mut swept = Swept {
+        orient3d: Tally::default(),
+        orient3d_checked: (0, 0),
+        insphere: InSphereTally::default(),
+        insphere_checked: (0, 0),
+    };
+    let add = |a: (usize, usize), b: (usize, usize)| (a.0 + b.0, a.1 + b.1);
     map_ordered(
         files,
         default_jobs(),
         |path| {
-            let mut tally = Tally::default();
-            let checked = tally.add_corpus(&read(path));
-            (tally, checked)
+            let corpus = read(path);
+            let mut orient3d = Tally::default();
+            let orient3d_checked = orient3d.add_corpus(&corpus);
+            let mut insphere = InSphereTally::default();
+            let insphere_checked = insphere.add_corpus(&corpus);
+            Swept {
+                orient3d,
+                orient3d_checked,
+                insphere,
+                insphere_checked,
+            }
         },
-        |(of_file, (explicit, implicit))| {
-            tally.merge(&of_file);
-            checked = (checked.0 + explicit, checked.1 + implicit);
+        |of_file| {
+            swept.orient3d.merge(&of_file.orient3d);
+            swept.orient3d_checked = add(swept.orient3d_checked, of_file.orient3d_checked);
+            swept.insphere.merge(&of_file.insphere);
+            swept.insphere_checked = add(swept.insphere_checked, of_file.insphere_checked);
             ControlFlow::<()>::Continue(())
         },
     );
-    (tally, checked)
+    swept
 }
 
 /// The sweep of every model without self-intersections of the dataset, a
 /// corpus of its own next to the generated sample. It takes a few minutes.
 #[test]
-#[ignore = "needs the full corpus; prints a table; run in release mode"]
-fn orient3d_matches_the_recorded_sign_on_the_full_corpus() {
+#[ignore = "needs the full corpus; prints the tables; run in release mode"]
+fn orient3d_and_insphere_match_the_recorded_sign_on_the_full_corpus() {
     let dir = root().join("corpus/data/full/corpus");
     assert!(
         dir.is_dir(),
@@ -309,13 +430,53 @@ fn orient3d_matches_the_recorded_sign_on_the_full_corpus() {
         .collect();
     files.sort();
     let name = "every model without self-intersections";
-    let (tally, checked) = sweep(&files);
+    let start = std::time::Instant::now();
+    let both = sweep(&files);
     println!("{} files", files.len());
-    println!("{}", tally.report(name));
-    assert_no_mismatch(name, &tally);
+    println!("{}", both.orient3d.report(name));
+    let insphere = format!("insphere: {name}");
+    println!("{}", both.insphere.report(&insphere));
+    println!(
+        "sweep of both predicates: {:.1} s",
+        start.elapsed().as_secs_f64()
+    );
+    assert_no_mismatch(name, &both.orient3d);
+    assert_no_mismatch(&insphere, &both.insphere);
     // The sample of the generated corpus is part of this one.
     assert!(files.len() >= 117, "only {} files", files.len());
-    assert_complete(name, &tally, checked, (3_163_737, 7_861_160));
+    assert_complete(name, &orient3d_completeness(&both), ORIENT3D_NOSI);
+    assert_complete(&insphere, &insphere_completeness(&both), INSPHERE_NOSI);
+}
+
+/// What [`assert_complete`] checks of a sweep of one predicate.
+struct Completeness {
+    /// The stored calls checked, by number of implicit points.
+    stored: Vec<usize>,
+    /// The stored calls skipped, by number of implicit points.
+    unsupported: Vec<usize>,
+    points: PointCounts,
+    /// The calls checked without and with implicit points.
+    checked: (usize, usize),
+}
+
+fn orient3d_completeness(swept: &Swept) -> Completeness {
+    let buckets = &swept.orient3d.buckets;
+    Completeness {
+        stored: buckets.iter().map(|b| b.stored).collect(),
+        unsupported: buckets.iter().map(|b| b.unsupported).collect(),
+        points: swept.orient3d.points,
+        checked: swept.orient3d_checked,
+    }
+}
+
+fn insphere_completeness(swept: &Swept) -> Completeness {
+    let buckets = &swept.insphere.buckets;
+    Completeness {
+        stored: buckets.iter().map(|b| b.stored).collect(),
+        unsupported: buckets.iter().map(|b| b.unsupported).collect(),
+        points: swept.insphere.points,
+        checked: swept.insphere_checked,
+    }
 }
 
 /// Fails if a sweep of the generated corpus skipped a call or a point, or
@@ -325,18 +486,22 @@ fn orient3d_matches_the_recorded_sign_on_the_full_corpus() {
 /// no point with an input that is not finite, and no point on a line with a
 /// parameter outside `[0, 1]`. If a new corpus has any, support them, or
 /// state here how many are allowed and why.
-fn assert_complete(name: &str, tally: &Tally, checked: (usize, usize), least: (usize, usize)) {
-    let unsupported: Vec<_> = tally.buckets.iter().map(|b| b.unsupported).collect();
+fn assert_complete(name: &str, swept: &Completeness, least: (usize, usize)) {
+    let Completeness {
+        stored,
+        unsupported,
+        points,
+        checked,
+    } = swept;
     assert!(
-        unsupported.iter().all(|&n| n == 0) && tally.points_unsupported == 0,
+        unsupported.iter().all(|&n| n == 0) && points.unsupported == 0,
         "{name}: calls with points of an unsupported kind, by implicit count: {unsupported:?}"
     );
-    assert_eq!(tally.points_non_finite, 0, "{name}: points not finite");
+    assert_eq!(points.non_finite, 0, "{name}: points not finite");
     assert_eq!(
-        tally.points_unchecked, 0,
+        points.unchecked, 0,
         "{name}: points on a line with t outside [0, 1]"
     );
-    let stored: Vec<_> = tally.buckets.iter().map(|b| b.stored).collect();
     assert!(
         stored.iter().all(|&n| n > 0),
         "{name}: no call checked for some number of implicit points: {stored:?}"

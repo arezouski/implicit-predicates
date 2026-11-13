@@ -144,6 +144,12 @@ pub fn run_stage<P: Point>(stage: usize, scratch: &mut Scratch<'_>, p: &[P; 5]) 
 /// stage on big integers, why no stage on expansions decides it; `None`
 /// only when an input is not finite. `scratch` is left as it was.
 ///
+/// A call can have several reasons; the one given is the first of: a point
+/// whose `Point::exact` fails ([`Why::ExactOutOfRange`], or
+/// [`Why::Unexplained`] inside the range of its exact arithmetic), an
+/// exact coordinate with too many components ([`Why::TooManyComponents`]),
+/// a component out of range ([`Why::ComponentOutOfRange`]).
+///
 /// # Panics
 ///
 /// Panics if `scratch` runs out of room, or if the exact coordinates of a
