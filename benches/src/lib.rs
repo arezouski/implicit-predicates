@@ -24,7 +24,7 @@
 //! - `insphere_stages`: each stage of the generated `insphere` alone, the
 //!   filter on the random and nearly degenerate sets and on the recorded
 //!   calls with implicit points, and the exact stages on the recorded calls
-//!   that the filter does not decide, apart for those that a stage over
+//!   that the filter does not decide, separately for those that a stage over
 //!   spans decides and those that go to the stage on big integers.
 //!
 //! This library holds the deterministic input builders and the seeds they

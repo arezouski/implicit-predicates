@@ -12,7 +12,7 @@
 //! and reported. Every call is decided: a call that no stage on expansions
 //! decides goes to the stage on big integers, and is reported with the
 //! reason (see `common::corpus_sweep::Why`); on the samples there must be
-//! none for `orient3d`. On the generated corpus, the stage on big integers
+//! none, for either predicate. On the generated corpus, the stage on big integers
 //! alone must also give the recorded sign of every call.
 //!
 //! The versioned samples are checked by default. The generated corpus is

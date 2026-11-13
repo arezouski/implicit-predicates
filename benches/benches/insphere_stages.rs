@@ -112,8 +112,44 @@ fn filter_points(group: &mut BenchmarkGroup<'_, WallTime>) {
     }
 }
 
+/// Fewer distinct recorded calls than this make a set unrepresentative.
+const FEW_DISTINCT_CALLS: usize = 16;
+
+/// Tells on standard error which groups are not measured and which sets
+/// were drawn from very few distinct calls.
+fn report_exact_sets(sets: &[implicit_predicates_benches::predicates::InSphereExactSet]) {
+    for group in InSphereGroup::ALL {
+        let missing: Vec<String> = (0..=5)
+            .filter(|k| !sets.iter().any(|s| s.group == group && s.implicit == *k))
+            .map(|k| k.to_string())
+            .collect();
+        if !missing.is_empty() {
+            eprintln!(
+                "insphere_stages: group `{}` has no recorded calls with {} implicit points: \
+                 skipped; set IMPLICIT_PREDICATES_CORPUS_DIR to a corpus that has them",
+                group.name(),
+                missing.join(", ")
+            );
+        }
+    }
+    for set in sets {
+        let distinct: std::collections::HashSet<String> =
+            set.points.iter().map(|p| format!("{p:?}")).collect();
+        if distinct.len() < FEW_DISTINCT_CALLS {
+            eprintln!(
+                "insphere_stages: set `{}` is drawn from only {} distinct recorded calls: \
+                 its timing is not representative",
+                set.name(),
+                distinct.len()
+            );
+        }
+    }
+}
+
 fn exact_stages(group: &mut BenchmarkGroup<'_, WallTime>) {
-    for mut set in insphere_exact_sets() {
+    let sets = insphere_exact_sets();
+    report_exact_sets(&sets);
+    for mut set in sets {
         let name = set.name();
         if set.group == InSphereGroup::Spans {
             for (stage_name, stage) in SPANS_STAGES {

@@ -870,10 +870,11 @@ fn uncertain_points() -> impl Strategy<Value = (Points5, i32)> {
 /// whose constants `the_emitted_constants_are_those_of_the_derivation`
 /// checks. Nor can it tell the derived `KAPPA` from a smaller one above the
 /// first-order coefficient that inputs reach, which a search over points on
-/// a sphere put near 40, against 360: that slack is the derivation's,
-/// which bounds every term separately. With `KAPPA` replaced, this test
-/// fails at 4 and passes at 8, so it guards the presence of the term, and
-/// the constants test its value. The sample includes cases that the filter
+/// a sphere put well below the derived one: that slack is the derivation's,
+/// which bounds every term separately. With a much smaller `KAPPA`
+/// this test fails, so it guards the presence of the term, and the
+/// constants test its value (the figures were measured when the test was
+/// written, and depend on the seed and the number of cases). The sample includes cases that the filter
 /// decides and cases that it does not.
 #[test]
 fn a_sign_given_with_uncertainty_holds_in_the_whole_box() {
@@ -1023,7 +1024,7 @@ fn extremes(large: u32, negative: u32) -> Points5 {
 /// exactly `BIG_INTEGERS_EXPLICIT_ARENA` slots suffices for `staged_in` and
 /// for the stage alone, and the sign is that of the oracle.
 ///
-/// The 98,304 calls take about 90 s in a debug build, so there it runs one
+/// The 98,304 calls take over a minute in a debug build, so there it runs one
 /// call in 64 and the call of the worst case found by the whole run, in a
 /// release build; the high water is the same.
 #[test]

@@ -364,6 +364,10 @@ impl InSphereGroup {
 /// a point cannot give its exact coordinates, or no stage over spans decides
 /// it for another reason than a component out of range. `scratch` is left
 /// as it was.
+///
+/// This is the same range test that the corpus sweep uses, and
+/// `benches/tests/predicate_inputs.rs` checks every drawn case against the
+/// sweep's own logic.
 fn insphere_group(scratch: &mut Scratch<'_>, p: &InSphereImplicitInput) -> Option<InSphereGroup> {
     let [a, b, c, d, e] = p;
     if insphere::filter_points(a, b, c, d, e).is_some() {
