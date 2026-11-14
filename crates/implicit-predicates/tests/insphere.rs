@@ -600,7 +600,7 @@ fn centred(s: f64, a: f64) -> Points5 {
 fn the_range_of_the_filter_hands_over_to_the_big_integers() {
     let (d_min, d_max) = (stages::D_MIN, stages::D_MAX);
     let up = f64::next_up;
-    let [filter, big] = CHAIN;
+    let [filter, _, big] = CHAIN;
     let mut cases: Vec<(String, Points5, &str)> = vec![
         ("D_MAX".into(), centred(d_max, d_max), filter),
         ("above D_MAX".into(), centred(d_max, up(d_max)), big),

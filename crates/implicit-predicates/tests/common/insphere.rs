@@ -50,17 +50,22 @@ pub fn oracle_args(args: &[Arg; 5]) -> Sign {
 }
 
 /// The stages of the chain of `insphere`, in the order in which `staged_in`
-/// tries them, by name: the filter, on the approximations of the points
-/// with their uncertainty, and the stage on big integers, which decides
-/// every call that the filter does not. `insphere` is of degree five, so it
-/// has no stage on expansions, for points of any type.
-pub const CHAIN: [&str; 2] = ["filter", "big_integers"];
+/// tries them, by name: the two tests of the filter, on the approximations
+/// of the points with their uncertainty, `filter` and then `filter_axes`,
+/// with one size per axis; and the stage on big integers, which decides
+/// every call that neither test of the filter does. `insphere` is of degree
+/// five, so it has no stage on expansions, for points of any type.
+pub const CHAIN: [&str; 3] = ["filter", "filter_axes", "big_integers"];
 
-/// The index of the filter in [`CHAIN`].
+/// The index of the filter, its first test, in [`CHAIN`].
 pub const FILTER: usize = 0;
 
+/// The index of the second test of the filter, `filter_axes`, in
+/// [`CHAIN`].
+pub const FILTER_AXES: usize = 1;
+
 /// The index of the stage on big integers in [`CHAIN`].
-pub const BIG_INTEGERS: usize = 1;
+pub const BIG_INTEGERS: usize = 2;
 
 /// The stage that decides a call first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,7 +100,8 @@ fn in_mark<T>(scratch: &mut Scratch<'_>, f: impl FnOnce(&mut Scratch<'_>) -> T) 
 }
 
 /// What `stage` of [`CHAIN`] alone gives on `p`, `None` when it does not
-/// decide: `filter_points`; or `big_integers_in` on the coordinates of the
+/// decide: `filter_points`; `filter_axes_points`; or `big_integers_in` on
+/// the coordinates of the
 /// points as big integers, which does not decide only when a point cannot
 /// give them, when an input is not finite. `scratch` is left as it was.
 ///
@@ -107,6 +113,7 @@ pub fn run_stage<P: Point>(stage: usize, scratch: &mut Scratch<'_>, p: &[P; 5]) 
     let [a, b, c, d, e] = p;
     in_mark(scratch, |scratch| match stage {
         FILTER => stages::filter_points(a, b, c, d, e),
+        FILTER_AXES => stages::filter_axes_points(a, b, c, d, e),
         BIG_INTEGERS => {
             let q: Vec<_> = p
                 .iter()
@@ -137,22 +144,24 @@ pub fn first_deciding<P: Point>(scratch: &mut Scratch<'_>, p: &[P; 5]) -> Option
     }
 }
 
-/// [`first_deciding`] without the stage on big integers: the filter, when it
-/// decides on `p`, or, when it does not, why the stage on big integers
-/// decides, [`Why::BigIntegersOnly`]: `insphere` has no stage on
-/// expansions. `scratch` is left as it was.
+/// [`first_deciding`] without the stage on big integers: the first test of
+/// the filter that decides on `p`, or, when neither does, why the stage on
+/// big integers decides, [`Why::BigIntegersOnly`]: `insphere` has no stage
+/// on expansions. `scratch` is left as it was.
 pub fn deciding_before_big_integers<P: Point>(
     scratch: &mut Scratch<'_>,
     p: &[P; 5],
 ) -> Result<Decision, Why> {
-    match run_stage(FILTER, scratch, p) {
-        Some(sign) => Ok(Decision {
-            stage: FILTER,
-            sign,
-            why: None,
-        }),
-        None => Err(Why::BigIntegersOnly),
-    }
+    [FILTER, FILTER_AXES]
+        .into_iter()
+        .find_map(|stage| {
+            run_stage(stage, scratch, p).map(|sign| Decision {
+                stage,
+                sign,
+                why: None,
+            })
+        })
+        .ok_or(Why::BigIntegersOnly)
 }
 
 /// `staged_in` on points of any type, in an arena of its own, large enough

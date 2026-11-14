@@ -1,9 +1,11 @@
 //! Input sets of `orient3d` and `insphere` on points of any type: the
 //! recorded calls with implicit points, the explicit sets as [`AnyPoint`],
 //! and the recorded calls that the filter does not decide, with their exact
-//! coordinates for `orient3d`. `insphere` has no stage on expansions, so
-//! those of its calls all go to the stage on big integers, in one group for
-//! each number of implicit points.
+//! coordinates for `orient3d`. For `insphere`, those are the calls that the
+//! first test of its filter does not decide, in one group for each number
+//! of implicit points: the second test, `filter_axes`, decides some of them,
+//! and `insphere` has no stage on expansions, so the others go to the stage
+//! on big integers.
 //!
 //! The recorded calls are drawn from the sample corpora, or from the corpus
 //! files of the directory named by the environment variable
@@ -328,9 +330,10 @@ pub fn insphere_any_explicit_sets() -> Vec<InputSet<InSphereImplicitInput>> {
         .collect()
 }
 
-/// Whether the filter of `insphere` declines a call: `insphere` has no
-/// stage on expansions, so every such call, with explicit points too, goes
-/// to the stage on big integers.
+/// Whether the first test of the filter of `insphere`, `filter_points`,
+/// declines a call: the second, `filter_axes_points`, decides some of these
+/// calls, and `insphere` has no stage on expansions, so every other, with
+/// explicit points too, goes to the stage on big integers.
 ///
 /// `benches/tests/predicate_inputs.rs` checks every drawn case against the
 /// logic of the corpus sweep.
@@ -359,8 +362,8 @@ pub fn insphere_big_integers_stage(scratch: &mut Scratch<'_>, p: &InSphereImplic
     sign
 }
 
-/// The recorded `insphere` calls with `k` implicit points that the filter
-/// does not decide.
+/// The recorded `insphere` calls with `k` implicit points that the first
+/// test of the filter does not decide.
 pub struct InSphereExactSet {
     /// The number of implicit points of each call, zero to five.
     pub implicit: usize,
@@ -383,7 +386,8 @@ impl InSphereExactSet {
 }
 
 /// For `k` from zero to five, the [`SET_SIZE`] recorded `insphere` calls
-/// with `k` implicit points that the filter does not decide, drawn by
+/// with `k` implicit points that the first test of the filter does not
+/// decide, drawn by
 /// weighted resampling with seed `INSPHERE_EXACT_SEED + 2 k`. A number of
 /// implicit points with no such call in the corpora read is left out.
 #[must_use]

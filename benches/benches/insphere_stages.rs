@@ -8,14 +8,20 @@
 //! recorded calls with implicit points, as a mix and by number of implicit
 //! points.
 //!
-//! The exact stage, on the recorded calls that the filter does not decide,
-//! by number of implicit points, zero to five, in one group, `undecided`.
-//! `insphere` is of degree five, so the stage on big integers is its only
-//! exact stage, for explicit points too. `exact_stages_in` writes the
-//! coordinates of the points as big integers to the arena and runs the
-//! stage on big integers: the cost of the chain after the filter.
-//! `big_integers_in` is measured with the cost of `exact_big` for the five
-//! points, as the chain runs it.
+//! The stages after the first test of the filter, on the recorded calls
+//! that it does not decide, by number of implicit points, zero to five, in
+//! one group, `undecided`. The second test of the filter, `filter_axes` on
+//! the explicit calls (`[f64; 3]`) and `filter_axes_points`, with the
+//! uncertainty of the errors of the points, on the calls with implicit
+//! points: it decides some of them, and declines the others, whose cost is
+//! then that of declining. `insphere` is of degree five, so the stage on big
+//! integers is its only exact stage, for explicit points too.
+//! `exact_stages_in` runs `filter_axes_points` and, when it does not decide,
+//! writes the coordinates of the points as big integers to the arena and
+//! runs the stage on big integers: the cost of the chain after the first
+//! test of the filter, the second test included. `big_integers_in` is
+//! measured alone, with the cost of `exact_big` for the five points, as the
+//! chain runs it.
 //!
 //! The recorded calls come from the versioned samples, or from the corpus
 //! files of the directory named by `IMPLICIT_PREDICATES_CORPUS_DIR`. A
@@ -31,8 +37,8 @@ use std::hint::black_box;
 
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main};
-use implicit_predicates::Sign;
 use implicit_predicates::stages::insphere;
+use implicit_predicates::{Point, Sign};
 use implicit_predicates_benches::predicates::{
     InSphereExactSet, InSphereImplicitInput, InSphereInput, InputSet, insphere_any_explicit_sets,
     insphere_big_integers_stage, insphere_exact_sets, insphere_implicit_sets, insphere_sets,
@@ -127,6 +133,25 @@ fn exact_stages(group: &mut BenchmarkGroup<'_, WallTime>) {
     report_exact_sets(&sets);
     for mut set in sets {
         let name = set.name();
+        if set.implicit == 0 {
+            let explicit: Vec<InSphereInput> = set
+                .points
+                .iter()
+                .map(|p| p.each_ref().map(|q| *q.approx()))
+                .collect();
+            let stage: fn(&InSphereInput) -> Option<Sign> =
+                |[a, b, c, d, e]| insphere::filter_axes([a, b, c, d, e], [0.0; 3]);
+            bench(group, format!("filter_axes/{name}"), &explicit, stage);
+        } else {
+            let stage: fn(&InSphereImplicitInput) -> Option<Sign> =
+                |[a, b, c, d, e]| insphere::filter_axes_points(a, b, c, d, e);
+            bench(
+                group,
+                format!("filter_axes_points/{name}"),
+                &set.points,
+                stage,
+            );
+        }
         let scratch = &mut set.scratch;
         bench(
             group,

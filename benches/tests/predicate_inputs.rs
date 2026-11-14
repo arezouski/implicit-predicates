@@ -3,9 +3,9 @@
 //! exact signs on them, on explicit points and on points of any type.
 //!
 //! That each recorded `insphere` call of the sets of its exact stage is one
-//! that the filter does not decide is checked with the logic of the corpus
-//! sweep of `implicit-predicates`, whose test helpers are included from that
-//! crate.
+//! that the first test of the filter does not decide, and which stage
+//! decides it then, is checked with the logic of the corpus sweep of
+//! `implicit-predicates`, whose test helpers are included from that crate.
 
 use implicit_predicates::stages::insphere;
 use implicit_predicates::stages::orient3d as stages;
@@ -29,7 +29,7 @@ use implicit_predicates_oracle::Dyadic;
 #[path = "../../crates/implicit-predicates/tests/common/mod.rs"]
 mod common;
 
-use common::insphere::deciding_before_big_integers;
+use common::insphere::{FILTER_AXES, deciding_before_big_integers};
 use common::sign_of;
 use common::why::Why;
 
@@ -479,10 +479,15 @@ fn insphere_implicit_sets_have_their_counts_and_the_recorded_and_exact_signs() {
     }
 }
 
-/// Every case of every set of [`insphere_exact_sets`] is one that the filter
-/// does not decide, by the logic of the corpus sweep, which gives it
-/// [`Why::BigIntegersOnly`]; and every stage measured on it has the sign of
-/// the independent oracle, which is also the recorded one.
+/// Every case of every set of [`insphere_exact_sets`] is one that the first
+/// test of the filter does not decide; by the logic of the corpus sweep,
+/// the second, `filter_axes`, decides it or the stage on big integers does,
+/// for the reason [`Why::BigIntegersOnly`]; and every stage measured on it
+/// has the sign of the independent oracle when it decides, which is also
+/// the recorded one: `filter_axes` on the explicit calls and
+/// `filter_axes_points` on the others, the second test of the filter that
+/// the benchmark measures, `exact_stages_in`, which starts with it, the
+/// stage on big integers alone and `staged_in`.
 #[test]
 fn insphere_exact_sets_are_undecided_by_the_filter_and_have_the_exact_sign_at_every_stage() {
     let mut sets = insphere_exact_sets();
@@ -493,6 +498,7 @@ fn insphere_exact_sets_are_undecided_by_the_filter_and_have_the_exact_sign_at_ev
         assert_eq!(set.points.len(), SET_SIZE, "{name}");
         assert_eq!(set.recorded.len(), SET_SIZE, "{name}");
         let used = set.scratch.used();
+        let mut by_axes = [0usize; 2];
         for (case, &recorded) in set.points.iter().zip(&set.recorded) {
             assert_eq!(
                 insphere_implicit_count(case),
@@ -508,8 +514,21 @@ fn insphere_exact_sets_are_undecided_by_the_filter_and_have_the_exact_sign_at_ev
                 None,
                 "{name}: {case:?}"
             );
+            let axes = insphere::filter_axes_points(a, b, c, d, e);
+            if set.implicit == 0 {
+                let p = case.each_ref().map(|q| q.approx());
+                assert_eq!(insphere::filter_axes(p, [0.0; 3]), axes, "{name}: {case:?}");
+            }
+            assert!(axes.is_none_or(|s| s == sign), "{name}: {case:?}");
+            by_axes[usize::from(axes.is_none())] += 1;
             let decision = deciding_before_big_integers(&mut sweep, case);
-            assert_eq!(decision, Err(Why::BigIntegersOnly), "{name}: {case:?}");
+            match axes {
+                Some(_) => {
+                    let decision = decision.expect("decided by filter_axes");
+                    assert_eq!((decision.stage, decision.sign), (FILTER_AXES, sign));
+                }
+                None => assert_eq!(decision, Err(Why::BigIntegersOnly), "{name}: {case:?}"),
+            }
             let s = &mut set.scratch;
             let chain = insphere::exact_stages_in(s, a, b, c, d, e).expect("room");
             assert_eq!(chain, sign, "{name}: {case:?}");
@@ -519,6 +538,10 @@ fn insphere_exact_sets_are_undecided_by_the_filter_and_have_the_exact_sign_at_ev
             assert_eq!(staged, sign, "{name}: {case:?}");
             assert_eq!(s.used(), used, "the stages leave the arena as it was");
         }
+        println!(
+            "{name}: filter_axes decides {}, declines {}",
+            by_axes[0], by_axes[1]
+        );
     }
 }
 

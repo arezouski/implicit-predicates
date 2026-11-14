@@ -147,8 +147,8 @@ fn insphere_matches_the_recorded_sign_on_the_samples() {
     }
     assert_big_alone("insphere: samples", &alone, total.0 + total.1);
     // The stage on big integers, the only exact stage of `insphere`, decides
-    // exactly the calls that the filter does not, all for that reason. With
-    // a single reason this is close to what the sweep counts by
+    // exactly the calls that neither test of the filter does, all for that
+    // reason. With a single reason this is close to what the sweep counts by
     // construction; it guards that no call is lost on the way.
     assert_eq!(
         tally
@@ -157,11 +157,15 @@ fn insphere_matches_the_recorded_sign_on_the_samples() {
             .iter()
             .map(|&(why, n, _)| (why, n))
             .collect::<Vec<_>>(),
-        [(Why::BigIntegersOnly, tally.explicit_past_filter.0)],
+        [(Why::BigIntegersOnly, tally.explicit_past_filters.0)],
         "{:?}",
         tally.big_integers_explicit.examples
     );
-    assert!(tally.explicit_past_filter.0 > 0);
+    assert!(tally.explicit_past_filters.0 > 0);
+    // `filter_axes` decides some of the explicit calls that `filter` does
+    // not, and they are in its column.
+    assert!(tally.explicit_past_filter.0 > tally.explicit_past_filters.0);
+    assert!(tally.buckets[0].columns[1] > 0.0);
     let implicit = tally.implicit();
     let close = |x: f64, y: f64| (x - y).abs() <= 1e-9 * y.abs();
     let [(why, stored, weight)] = tally.big_integers.counts[..] else {
@@ -169,11 +173,14 @@ fn insphere_matches_the_recorded_sign_on_the_samples() {
     };
     assert_eq!(why, Why::BigIntegersOnly);
     assert!(stored > 0);
-    let [filter, big] = implicit.columns[..] else {
-        panic!("the columns of insphere are not the filter and the big integers");
+    let [filter, axes, big] = implicit.columns[..] else {
+        panic!("the columns of insphere are not the two tests of the filter and the big integers");
     };
     assert!(close(weight, big), "{weight} {big}");
-    assert!(close(filter + big, implicit.weight), "{filter} {big}");
+    assert!(
+        close(filter + axes + big, implicit.weight),
+        "{filter} {axes} {big}"
+    );
     assert!(
         total.0 >= SAMPLE_INSPHERE_CALLS.0 && total.1 >= SAMPLE_INSPHERE_CALLS.1,
         "the samples check {total:?} insphere calls, fewer than {SAMPLE_INSPHERE_CALLS:?}"

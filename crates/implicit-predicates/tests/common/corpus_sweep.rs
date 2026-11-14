@@ -602,22 +602,26 @@ impl Tally {
 }
 
 /// The stages a call of `insphere` can be attributed to: those of its
-/// chain, in its order.
-pub const INSPHERE_COLUMNS: [&str; 2] = insphere_chain::CHAIN;
+/// chain, in its order, the two tests of the filter and the stage on big
+/// integers. A certain zero of `filter_axes` is in its column.
+pub const INSPHERE_COLUMNS: [&str; 3] = insphere_chain::CHAIN;
 
 /// What a sweep of the `insphere` calls found, by number of implicit points
 /// (0 to 5).
 ///
 /// `insphere` has no public function and no stage on expansions: the sweep
-/// calls `staged_in` of the hidden module, and every call that the filter
-/// does not decide, with explicit points too, goes to the stage on big
-/// integers, in the arena, for the reason [`Why::BigIntegersOnly`].
+/// calls `staged_in` of the hidden module, and every call that neither test
+/// of the filter decides, with explicit points too, goes to the stage on
+/// big integers, in the arena, for the reason [`Why::BigIntegersOnly`].
 #[derive(Debug)]
 pub struct InSphereTally {
     pub buckets: [Bucket<{ INSPHERE_COLUMNS.len() }>; 6],
     /// The stored count and the weight of the explicit calls that the
-    /// filter does not decide: those that use the arena.
+    /// first test of the filter does not decide.
     pub explicit_past_filter: (usize, f64),
+    /// The stored count and the weight of the explicit calls that neither
+    /// test of the filter decides: those that use the arena.
+    pub explicit_past_filters: (usize, f64),
     /// The calls with implicit points that the stage on big integers
     /// decides, by reason.
     pub big_integers: Reasons,
@@ -673,6 +677,7 @@ impl InSphereTally {
         InSphereTally {
             buckets: Default::default(),
             explicit_past_filter: (0, 0.0),
+            explicit_past_filters: (0, 0.0),
             big_integers: Reasons::default(),
             big_integers_explicit: Reasons::default(),
             mismatches: Mismatches::default(),
@@ -719,6 +724,8 @@ impl Sweep for InSphereTally {
         }
         self.explicit_past_filter.0 += other.explicit_past_filter.0;
         self.explicit_past_filter.1 += other.explicit_past_filter.1;
+        self.explicit_past_filters.0 += other.explicit_past_filters.0;
+        self.explicit_past_filters.1 += other.explicit_past_filters.1;
         self.big_integers.merge(&other.big_integers);
         self.big_integers_explicit
             .merge(&other.big_integers_explicit);
@@ -737,7 +744,7 @@ impl Sweep for InSphereTally {
             unchecked,
         } = self.points;
         counts.extend([unsupported, non_finite, unchecked, self.mismatches.count]);
-        counts.push(self.explicit_past_filter.0);
+        counts.extend([self.explicit_past_filter.0, self.explicit_past_filters.0]);
         counts.extend(self.high_water);
         for reasons in [&self.big_integers, &self.big_integers_explicit] {
             counts.extend(reasons.sorted().iter().map(|&(_, n, _)| n));
@@ -747,7 +754,7 @@ impl Sweep for InSphereTally {
 
     fn sums(&self) -> Vec<f64> {
         let mut sums: Vec<_> = self.buckets.iter().flat_map(Bucket::sums).collect();
-        sums.push(self.explicit_past_filter.1);
+        sums.extend([self.explicit_past_filter.1, self.explicit_past_filters.1]);
         sums
     }
 
@@ -777,8 +784,8 @@ impl InSphereTally {
         let arena = &mut self.arenas[implicit];
         let chain = insphere_stages::staged_in(arena, a, b, c, d, e)
             .unwrap_or_else(|e| panic!("a growable arena is exhausted: {e:?}"));
-        // When the filter does not decide, the sign of the stage on big
-        // integers: the one it gave alone, or else the one of the chain,
+        // When neither test of the filter decides, the sign of the stage on
+        // big integers: the one it gave alone, or else the one of the chain,
         // which ends with it.
         let decision = before_big.map(Some).unwrap_or_else(|why| {
             let sign = match alone {
@@ -828,6 +835,10 @@ impl InSphereTally {
             self.explicit_past_filter.0 += 1;
             self.explicit_past_filter.1 += weight;
         }
+        if explicit && column == insphere_chain::BIG_INTEGERS {
+            self.explicit_past_filters.0 += 1;
+            self.explicit_past_filters.1 += weight;
+        }
         if let Some(why) = decision.and_then(|d| d.why) {
             let reasons = if explicit {
                 &mut self.big_integers_explicit
@@ -844,9 +855,10 @@ impl InSphereTally {
     }
 
     /// The table of weighted fractions, one row per number of implicit
-    /// points; then the explicit calls that the filter does not decide, and
-    /// the calls that the stage on big integers decides, by reason, for the
-    /// calls with implicit points and for the explicit ones.
+    /// points; then the explicit calls that the first test of the filter
+    /// does not decide and those that neither test decides, and the calls
+    /// that the stage on big integers decides, by reason, for the calls with
+    /// implicit points and for the explicit ones.
     pub fn report(&self, name: &str) -> String {
         lines(|line| {
             let mut line = |s| line(s);
@@ -859,12 +871,19 @@ impl InSphereTally {
                 &self.high_water,
             );
             self.points.report(&mut line);
-            let (stored, weight) = self.explicit_past_filter;
-            line(format!(
-                "explicit calls that the filter does not decide: {stored} stored, weight {weight:.1}, \
-                 {:.6} % of the weight of explicit calls",
-                100.0 * weight / explicit_weight
-            ));
+            for (what, (stored, weight)) in [
+                (
+                    "the first test of the filter does not",
+                    self.explicit_past_filter,
+                ),
+                ("neither test of the filter", self.explicit_past_filters),
+            ] {
+                line(format!(
+                    "explicit calls that {what} decide: {stored} stored, weight {weight:.1}, \
+                     {:.6} % of the weight of explicit calls",
+                    100.0 * weight / explicit_weight
+                ));
+            }
             self.mismatches.report(&mut line);
             self.big_integers.report(
                 &mut line,

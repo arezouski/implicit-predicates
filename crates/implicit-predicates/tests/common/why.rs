@@ -20,8 +20,8 @@ pub enum Why {
     /// `SPANS_TRANSLATED_RANGE`.
     ComponentOutOfRange,
     /// The predicate has no stage on expansions, as `insphere`, of degree
-    /// five: every call that the filter does not decide goes to the stage
-    /// on big integers.
+    /// five: every call that neither test of its filter decides goes to the
+    /// stage on big integers.
     BigIntegersOnly,
     /// None of the above: every input is inside the documented ranges, so
     /// some stage on expansions should have decided. The call is decided,
