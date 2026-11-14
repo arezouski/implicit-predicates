@@ -6,7 +6,13 @@
 //! explicit, `exact_stages_explicit_in`, the exact stages of the chain for
 //! explicit points and then the stage on big integers; otherwise
 //! `exact_stages_in`, the stage over spans on the exact coordinates of the
-//! points, and then the stage on big integers. A predicate without stages on
+//! points, and then the stage on big integers. A predicate whose form is not
+//! multihomogeneous also has `filter_axes_points`, the second test of its
+//! filter on points of any type, and the functions of the exact stages start
+//! with its second test: `exact_stages`, or `exact_stages_explicit_in` when
+//! there is no `exact_stages`, with `filter_axes` and no uncertainty, and
+//! `exact_stages_in` with `filter_axes_points`, so that the uncertainty per
+//! axis is computed only when `filter` declines. A predicate without stages on
 //! expansions has neither `exact_stages` nor the stage over spans: both go
 //! straight to the stage on big integers, and nothing asks a point for its
 //! exact coordinates as expansions.
@@ -79,6 +85,9 @@ pub(crate) struct GenericChain<'a> {
     /// Whether the filter has one uncertainty per axis, rather than one for
     /// every axis.
     pub(crate) per_axis: bool,
+    /// Whether the predicate has the second test of its filter,
+    /// `filter_axes`.
+    pub(crate) axes: bool,
     /// The exact stages on expansions of the chain for explicit points, in
     /// order; none for a predicate without stages on expansions.
     pub(crate) explicit: &'a [ChainStage],
@@ -86,10 +95,11 @@ pub(crate) struct GenericChain<'a> {
     pub(crate) spans: Option<&'static str>,
 }
 
-/// Writes `filter_points`, `exact_stages` (when there are stages on
-/// expansions), `exact_stages_explicit_in`, `exact_stages_in`, `staged_in`
-/// and their helpers `exact` (when there is a stage over spans), `exact_big`
-/// and `no_exact_coordinates`.
+/// Writes `filter_points`, `filter_axes_points` (when the predicate has
+/// `filter_axes`), `exact_stages` (when there are stages on expansions),
+/// `exact_stages_explicit_in`, `exact_stages_in`, `staged_in` and their
+/// helpers `exact` (when there is a stage over spans), `exact_big` and
+/// `no_exact_coordinates`.
 pub(crate) fn write_generic_chain(out: &mut String, chain: &GenericChain) {
     let s = Signature::new(chain.points);
     let (zero, uncertainty) = if chain.per_axis {
@@ -97,10 +107,13 @@ pub(crate) fn write_generic_chain(out: &mut String, chain: &GenericChain) {
     } else {
         ("0.0", "uncertainty_max")
     };
-    write_filter_points(out, &s, zero, uncertainty);
+    write_filter_points(out, &s, "filter", zero, uncertainty);
+    if chain.axes {
+        write_filter_points(out, &s, "filter_axes", "[0.0; 3]", "uncertainty");
+    }
     write_exact_stages(out, chain);
     write_exact_stages_explicit_in(out, chain);
-    write_exact_stages_in(out, &s, chain.spans);
+    write_exact_stages_in(out, &s, chain.spans, chain.axes);
     comment(
         out,
         "///",
@@ -207,29 +220,36 @@ fn write_helpers(out: &mut String) {
     );
 }
 
-/// Writes `filter_points`.
-fn write_filter_points(out: &mut String, s: &Signature, zero: &str, uncertainty: &str) {
+/// Writes `{stage}_points`, the stage `stage` (`filter` or `filter_axes`)
+/// on points of any type.
+fn write_filter_points(
+    out: &mut String,
+    s: &Signature,
+    stage: &str,
+    zero: &str,
+    uncertainty: &str,
+) {
     comment(
         out,
         "///",
         0,
         &format!(
-            "[`filter`] on the approximations of points of any type, with the \
+            "[`{stage}`] on the approximations of points of any type, with the \
              uncertainty of their errors: `{zero}` when every point is explicit, and \
              otherwise `{uncertainty}` of their errors, from \
              `implicit_predicates_core::filter`.\n\n\
              The errors are not read when every point is explicit. When that is known \
              from the types, as with `[f64; 3]`, whose `is_explicit` is the constant \
-             `true`, this is `filter` with `e = {zero}`."
+             `true`, this is `{stage}` with `e = {zero}`."
         ),
     );
     writeln!(
         out,
-        "#[inline]\npub fn filter_points{}({}) -> Option<Sign> {{\n\
+        "#[inline]\npub fn {stage}_points{}({}) -> Option<Sign> {{\n\
          let p = {};\n\
          let e = if {} {{\n{zero}\n}} else {{\n\
          implicit_predicates_core::filter::{uncertainty}({})\n}};\n\
-         filter(p, e)\n}}\n",
+         {stage}(p, e)\n}}\n",
         s.generics, s.params, s.approx, s.explicit, s.errs
     )
     .unwrap();
@@ -253,16 +273,26 @@ fn write_exact_stages(out: &mut String, chain: &GenericChain) {
         .explicit
         .iter()
         .position(|stage| matches!(stage, ChainStage::Spans(_)));
+    // The stages of `staged` after `filter`, in the words of its
+    // documentation.
+    let what = if chain.axes {
+        format!(
+            "The stages of [`staged`] after [`filter`]: [`filter_axes`] with \
+             `e = [0.0; 3]`, then the exact stages {}",
+            names.join(", then ")
+        )
+    } else {
+        format!(
+            "The exact stages of [`staged`], after its filter: {}",
+            names.join(", then ")
+        )
+    };
     let Some(first_spans) = first_spans else {
         comment(
             out,
             "///",
             0,
-            &format!(
-                "The exact stages of [`staged`], after its filter: {}. `None` means that \
-                 no stage can decide.",
-                names.join(", then ")
-            ),
+            &format!("{what}. `None` means that no stage can decide."),
         );
         write!(
             out,
@@ -270,10 +300,16 @@ fn write_exact_stages(out: &mut String, chain: &GenericChain) {
              pub fn exact_stages(p: [&[f64; 3]; {points}]) -> Option<Sign> {{\n"
         )
         .unwrap();
-        for (i, stage) in chain.explicit.iter().enumerate() {
+        let mut first = true;
+        if chain.axes {
+            out.push_str("filter_axes(p, [0.0; 3])");
+            first = false;
+        }
+        for stage in chain.explicit {
             if let ChainStage::Stack(name) = stage {
-                if i == 0 {
+                if first {
                     write!(out, "{name}(p)").unwrap();
+                    first = false;
                 } else {
                     write!(out, "\n.or_else(|| {name}(p))").unwrap();
                 }
@@ -287,12 +323,11 @@ fn write_exact_stages(out: &mut String, chain: &GenericChain) {
         "///",
         0,
         &format!(
-            "The exact stages of [`staged`], after its filter: {}. The stages that take \
-             an arena run on the exact coordinates of the points written to `scratch`, \
-             which is left as it was. `Ok(None)` means that no stage can decide.\n\n\
+            "{what}. The stages that take an arena run on the exact coordinates of the \
+             points written to `scratch`, which is left as it was. `Ok(None)` means that \
+             no stage can decide.\n\n\
              # Errors\n\n\
-             [`ScratchExhausted`] if `scratch` runs out of room.",
-            names.join(", then ")
+             [`ScratchExhausted`] if `scratch` runs out of room."
         ),
     );
     writeln!(
@@ -302,6 +337,9 @@ fn write_exact_stages(out: &mut String, chain: &GenericChain) {
          -> Result<Option<Sign>, ScratchExhausted> {{"
     )
     .unwrap();
+    if chain.axes {
+        out.push_str("if let Some(sign) = filter_axes(p, [0.0; 3]) {\nreturn Ok(Some(sign));\n}\n");
+    }
     for stage in &chain.explicit[..first_spans] {
         if let ChainStage::Stack(name) = stage {
             writeln!(
@@ -336,7 +374,15 @@ fn write_exact_stages_explicit_in(out: &mut String, chain: &GenericChain) {
              decide, ",
         ))
     };
-    let stages_doc = stages.map_or("", |(_, doc)| doc);
+    // Without `exact_stages`, this function starts with `filter_axes`, which
+    // `exact_stages` runs otherwise.
+    let axes_first = chain.axes && chain.explicit.is_empty();
+    let axes_text = if axes_first {
+        "[`filter_axes`], with no uncertainty, then, when it does not decide, "
+    } else {
+        ""
+    };
+    let stages_doc = format!("{axes_text}{}", stages.map_or("", |(_, doc)| doc));
     comment(
         out,
         "///",
@@ -365,6 +411,9 @@ fn write_exact_stages_explicit_in(out: &mut String, chain: &GenericChain) {
     }
     let refs: Vec<String> = (0..points).map(|i| format!("&q{i}")).collect();
     writeln!(out, "{BIG_STAGE}(scratch, [{}])\n}}", refs.join(", ")).unwrap();
+    if axes_first {
+        out.push_str("if let Some(sign) = filter_axes(p, [0.0; 3]) {\nreturn Ok(sign);\n}\n");
+    }
     if let Some((call, _)) = stages {
         writeln!(out, "if let Some(sign) = {call} {{\nreturn Ok(sign);\n}}").unwrap();
     }
@@ -376,16 +425,23 @@ fn write_exact_stages_explicit_in(out: &mut String, chain: &GenericChain) {
     );
 }
 
-/// Writes `exact_stages_in`: the stage over spans `spans`, if there is one,
-/// on the exact coordinates of points of any type, then the stage on big
+/// Writes `exact_stages_in`: `filter_axes_points` when `axes` says the
+/// predicate has it, then the stage over spans `spans`, if there is one, on
+/// the exact coordinates of points of any type, then the stage on big
 /// integers on their coordinates as big integers.
-fn write_exact_stages_in(out: &mut String, s: &Signature, spans: Option<&str>) {
+fn write_exact_stages_in(out: &mut String, s: &Signature, spans: Option<&str>, axes: bool) {
+    let first = if axes {
+        "[`filter_axes_points`], the second test of the filter, then, when it does not \
+         decide, "
+    } else {
+        ""
+    };
     let panics = "a point cannot give its exact coordinates as big integers, which by the \
                   contract of [`Point::exact_big`] happens only when an input is not finite \
                   or the coordinates have a weight other than one";
     let doc = match spans {
         Some(name) => format!(
-            "The exact sign of the predicate for points of any type: [`{name}`], on the exact \
+            "The exact sign of the predicate for points of any type: {first}[`{name}`], on the exact \
              coordinates of the points written to `scratch`, then, when it does not \
              decide, [`{BIG_STAGE}`] on the coordinates of the points as big integers \
              written to `scratch`, which always decides. The stage over spans is \
@@ -400,7 +456,7 @@ fn write_exact_stages_in(out: &mut String, s: &Signature, spans: Option<&str>) {
              [`Weight::One`], which the predicates do not support, or {panics}."
         ),
         None => format!(
-            "The exact sign of the predicate for points of any type: [`{BIG_STAGE}`] on the \
+            "The exact sign of the predicate for points of any type: {first}[`{BIG_STAGE}`] on the \
              coordinates of the points as big integers written to `scratch`, which always \
              decides: [`Point::exact_big`] of each point is called, never [`Point::exact`]. \
              `scratch` is reset to its mark on entry whatever the stage returns.\n\n\
@@ -446,6 +502,14 @@ fn write_exact_stages_in(out: &mut String, s: &Signature, spans: Option<&str>) {
         writeln!(out, "let q{i} = exact_big(scratch, {p})?;").unwrap();
     }
     writeln!(out, "{BIG_STAGE}(scratch, [{}])\n}}", refs.join(", ")).unwrap();
+    if axes {
+        writeln!(
+            out,
+            "if let Some(sign) = filter_axes_points({}) {{\nreturn Ok(sign);\n}}",
+            s.args
+        )
+        .unwrap();
+    }
     out.push_str("let mark = scratch.mark();\n");
     if spans.is_some() {
         writeln!(

@@ -6,6 +6,7 @@
 mod axis;
 mod axis_edges;
 mod big;
+mod parts;
 mod readback;
 mod spans;
 

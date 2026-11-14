@@ -16,8 +16,15 @@
 //! bound is kept. The search doubles the step and then bisects, so it takes
 //! a few dozen exact evaluations.
 //!
-//! [`bound_edge_cases`] takes `e = 0`, as for explicit points;
-//! [`uncertainty_edge_cases`], for a per-axis filter, takes an `e` that is
+//! For the second test of the filter, `filter_axes`, [`axes_edge_cases`]
+//! does the same with the bound by parts, the sum over the terms of the
+//! emitted constants ([`PartsConstants`]) of `value * d^degrees` for a term
+//! of epsilon and `value * e[axis] * d^rest` for a term of kappa, with
+//! `d_k = delta_k + e[k]` computed in `f64` on each axis of its range.
+//!
+//! [`bound_edge_cases`] and [`axes_edge_cases`] take `e = 0`, as for
+//! explicit points; [`uncertainty_edge_cases`], for a per-axis filter, takes
+//! an `e` that is
 //! not zero on one axis only, for each axis, or on the three: a power of
 //! two between `2^-40` and `2^-8` times the scale of the grid on each axis
 //! where it is not zero.
@@ -28,7 +35,7 @@
 
 use super::filter::FilterKind;
 use super::grid::{FINITE_KEYS, GRID, SplitMix64, exponent, from_key, grid_points, key, pow2};
-use crate::bound::AxisConstants;
+use crate::bound::{AxisConstants, PartsConstants};
 use crate::differences::{DiffGraph, DiffNode};
 use crate::dyadic::Dyadic;
 
@@ -37,8 +44,9 @@ pub(crate) type Case = Vec<[f64; 3]>;
 
 /// The most nodes of a difference form for which edge cases are searched.
 ///
-/// The search makes at most `8 * 64` attempts with `e = 0`, and for a
-/// per-axis filter `8 * 4 * 16` more with uncertainty, each with at most
+/// The search makes at most `8 * 64` attempts with `e = 0`, for a per-axis
+/// filter `8 * 4 * 16` more with uncertainty, and for a predicate with
+/// `filter_axes` `8 * 64` more for its bound by parts, each with at most
 /// about 330 exact evaluations of the whole form, so its work is
 /// proportional to the number of nodes; at 256 nodes the slowest form
 /// found, a long sum of one difference, takes a few seconds in a debug
@@ -64,7 +72,10 @@ pub(crate) fn bound_edge_cases(
     points: usize,
     filter: &FilterKind,
 ) -> Vec<(Case, Case)> {
-    let form = Form { graph, filter };
+    let form = Form {
+        graph,
+        bound: Bound::Filter(filter),
+    };
     let mut random = SplitMix64(0x2545_f491_4f6c_dd1d);
     let mut cases = Vec::new();
     for scale in form.scales() {
@@ -93,7 +104,7 @@ pub(crate) fn uncertainty_edge_cases(
     let filter = FilterKind::PerAxis(*constants, false);
     let form = Form {
         graph,
-        filter: &filter,
+        bound: Bound::Filter(&filter),
     };
     let axes: Vec<usize> = (0..3).filter(|&k| constants.degrees[k] >= 1).collect();
     let mut choices: Vec<Vec<usize>> = axes.iter().map(|&k| vec![k]).collect();
@@ -122,18 +133,55 @@ pub(crate) fn uncertainty_edge_cases(
     cases
 }
 
-/// A difference form with the constants of its filter.
+/// Pairs of inputs on either side of the bound by parts of `filter_axes`,
+/// for the difference form `graph` with `points` points and the emitted
+/// `constants`, with `e = 0`. The pairs are as in [`bound_edge_cases`].
+pub(crate) fn axes_edge_cases(
+    graph: &DiffGraph,
+    points: usize,
+    constants: &PartsConstants,
+) -> Vec<(Case, Case)> {
+    let form = Form {
+        graph,
+        bound: Bound::Parts(constants),
+    };
+    let mut random = SplitMix64(0x6a09_e667_f3bc_c909);
+    let mut cases = Vec::new();
+    for scale in form.scales() {
+        let found = form.search(
+            &mut random,
+            points,
+            scale,
+            [0.0; 3],
+            PER_SCALE,
+            ATTEMPTS_PER_SCALE,
+        );
+        cases.extend(found);
+    }
+    cases
+}
+
+/// The bound whose edge is searched: that of the filter, or that of
+/// `filter_axes`.
+enum Bound<'a> {
+    Filter(&'a FilterKind),
+    Parts(&'a PartsConstants),
+}
+
+/// A difference form with the constants of the bound whose edge is
+/// searched.
 struct Form<'a> {
     graph: &'a DiffGraph,
-    filter: &'a FilterKind,
+    bound: Bound<'a>,
 }
 
 impl Form<'_> {
     /// `D_MIN` and `D_MAX`, as exponents.
     fn range(&self) -> (i32, i32) {
-        let (d_min, d_max) = match self.filter {
-            FilterKind::Global(c) => (c.d_min, c.d_max),
-            FilterKind::PerAxis(c, _) => (c.d_min, c.d_max),
+        let (d_min, d_max) = match self.bound {
+            Bound::Filter(FilterKind::Global(c)) => (c.d_min, c.d_max),
+            Bound::Filter(FilterKind::PerAxis(c, _)) => (c.d_min, c.d_max),
+            Bound::Parts(c) => (c.d_min, c.d_max),
         };
         (exponent(d_min), exponent(d_max))
     }
@@ -229,8 +277,8 @@ impl Form<'_> {
                 delta[k] = delta[k].max((p[minuend][k] - p[subtrahend][k]).abs());
             }
         }
-        let bound = match self.filter {
-            FilterKind::Global(c) => {
+        let bound = match self.bound {
+            Bound::Filter(FilterKind::Global(c)) => {
                 let delta = delta[0].max(delta[1]).max(delta[2]);
                 if !(c.d_min..=c.d_max).contains(&delta) {
                     return None;
@@ -242,7 +290,8 @@ impl Form<'_> {
                 }
                 bound
             }
-            FilterKind::PerAxis(c, _) => axis_bound(c, delta, e)?,
+            Bound::Filter(FilterKind::PerAxis(c, _)) => axis_bound(c, delta, e)?,
+            Bound::Parts(c) => parts_bound_at(c, delta, e)?,
         };
         let value = self.value(p);
         Some(value > bound || value < &Dyadic::integer(0) - &bound)
@@ -366,6 +415,41 @@ fn axis_bound(c: &AxisConstants, delta: [f64; 3], e: [f64; 3]) -> Option<Dyadic>
     for k in (0..3).filter(|&k| c.degrees[k] >= 1) {
         let term = &(&Dyadic::from_f64(c.kappa[k]) * &Dyadic::from_f64(e[k])) * &power(Some(k));
         bound = &bound + &term;
+    }
+    Some(bound)
+}
+
+/// The exact bound by parts with the emitted constants `c`, for the largest
+/// magnitudes `delta` of the leaves of each axis and the uncertainty `e`,
+/// with `d_k = delta_k + e[k]` computed in `f64`: the sum of every term,
+/// `value * d^degrees` for a term of epsilon and `value * e[axis] * d^rest`
+/// for a term of kappa; `None` when some `d_k` of an axis of the range is
+/// outside `d_min..=d_max`.
+fn parts_bound_at(c: &PartsConstants, delta: [f64; 3], e: [f64; 3]) -> Option<Dyadic> {
+    let mut d = [Dyadic::integer(0), Dyadic::integer(0), Dyadic::integer(0)];
+    for k in (0..3).filter(|&k| c.range_axes[k]) {
+        let dk = delta[k] + e[k];
+        if !(c.d_min..=c.d_max).contains(&dk) {
+            return None;
+        }
+        d[k] = Dyadic::from_f64(dk);
+    }
+    let power = |start: Dyadic, g: [u32; 3]| {
+        let mut x = start;
+        for (k, dk) in d.iter().enumerate() {
+            for _ in 0..g[k] {
+                x = &x * dk;
+            }
+        }
+        x
+    };
+    let mut bound = Dyadic::integer(0);
+    for t in &c.epsilon {
+        bound = &bound + &power(Dyadic::from_f64(t.value), t.degrees);
+    }
+    for t in &c.kappa {
+        let start = &Dyadic::from_f64(t.value) * &Dyadic::from_f64(e[t.axis]);
+        bound = &bound + &power(start, t.rest);
     }
     Some(bound)
 }

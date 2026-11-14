@@ -1,6 +1,7 @@
 //! The functions of the checks module that check a stage on the edge
-//! cases of the filter: `check_bound_edge_cases` and, for a per-axis
-//! filter, `check_uncertainty_edge_cases`.
+//! cases of the filter: `check_bound_edge_cases`; for a per-axis filter,
+//! `check_uncertainty_edge_cases`; and for the second test of the filter,
+//! `filter_axes`, `check_axes_edge_cases`.
 //!
 //! They take the stage as a closure of the coordinates of the points (and
 //! of their errors), so the tests run them on any stage of the chain and on
@@ -20,33 +21,49 @@ pub(crate) const MAX_EXHAUSTIVE_POINTS: usize = 4;
 
 /// Writes the check functions for a predicate of `points` points; the one
 /// with an uncertainty only for a per-axis filter, whose degrees in the axes
-/// are `degrees`. `affine` says whether the predicate is affine in each
-/// coordinate, which is when its sign at the corners of a box is its sign in
-/// the whole box.
+/// are `degrees`, and the one of the cases of `filter_axes` only when `axes`
+/// says the predicate has it. `affine` says whether the predicate is affine
+/// in each coordinate, which is when its sign at the corners of a box is its
+/// sign in the whole box.
 pub(crate) fn write_check_fns(
     out: &mut String,
     points: usize,
     degrees: Option<[u32; 3]>,
     affine: bool,
+    axes: bool,
 ) {
+    write_check_cases(out, points, "check_bound_edge_cases", "bound_edge_cases");
+    if axes {
+        write_check_cases(out, points, "check_axes_edge_cases", "axes_edge_cases");
+    }
+    if let Some(degrees) = degrees {
+        write_check_uncertainty(out, points, degrees, affine);
+    }
+}
+
+/// Writes `name`, which checks a stage on the cases of the function `cases`,
+/// for `points` points.
+fn write_check_cases(out: &mut String, points: usize, name: &str, cases: &str) {
     let ty = format!("[[f64; 3]; {points}]");
     out.push('\n');
     comment(
         out,
         "///",
         0,
-        "Runs `decide` on every case of [`bound_edge_cases`] and checks that, whenever \
-         it decides, its sign is the exact sign. Returns how many cases it decided and \
-         how many it declined.\n\n\
-         # Panics\n\n\
-         Panics if `decide` gives a sign other than the exact sign.",
+        &format!(
+            "Runs `decide` on every case of [`{cases}`] and checks that, whenever it \
+             decides, its sign is the exact sign. Returns how many cases it decided and \
+             how many it declined.\n\n\
+             # Panics\n\n\
+             Panics if `decide` gives a sign other than the exact sign."
+        ),
     );
     writeln!(
         out,
-        "pub fn check_bound_edge_cases(mut decide: impl FnMut(&{ty}) -> Option<Sign>) \
+        "pub fn {name}(mut decide: impl FnMut(&{ty}) -> Option<Sign>) \
          -> [usize; 2] {{\n\
          let mut counts = [0; 2];\n\
-         for p in bound_edge_cases() {{\n\
+         for p in {cases}() {{\n\
          match decide(&p) {{\n\
          Some(sign) => {{\n\
          assert_eq!(sign, exact(&p), \"{{p:?}}\");\n\
@@ -59,9 +76,6 @@ pub(crate) fn write_check_fns(
          }}"
     )
     .unwrap();
-    if let Some(degrees) = degrees {
-        write_check_uncertainty(out, points, degrees, affine);
-    }
 }
 
 /// Writes `check_uncertainty_edge_cases` for a per-axis filter of `points`

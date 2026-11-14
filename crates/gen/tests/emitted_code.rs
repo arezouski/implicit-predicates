@@ -513,6 +513,270 @@ fn a_predicate_of_degree_4_runs_the_stage_over_spans_in_place_of_a_stage_on_the_
     compile_and_run("emitted-incircle", &modules, INCIRCLE_TEST);
 }
 
+/// A form of degree 2 that is not multihomogeneous, with the degree vectors
+/// (2, 0, 0) and (0, 1, 1), so that its filter is the global one and its
+/// second test, `filter_axes`, has no certain zero: no degree vector has a
+/// positive degree in every axis.
+const ZERO_IN_AN_AXIS: &str = "fn p(a: Point3, b: Point3, c: Point3) -> Sign {\n    \
+                               (a.x - b.x) * (a.x - c.x) + (a.y - b.y) * (a.z - c.z)\n}\n";
+
+/// The test of [`ZERO_IN_AN_AXIS`]: its chain and its two tests of the
+/// filter against the form written by hand on exact dyadic numbers, on
+/// points of every scale and on points whose box is much shorter on one axis
+/// than on the others, which `filter_axes` decides when `filter` does not;
+/// its emitted checks; the ends of the range of `filter_axes` on each axis;
+/// and inputs that overflow, are not finite or have an uncertainty that is
+/// not finite and non-negative, which it never decides.
+const ZERO_IN_AN_AXIS_TEST: &str = r#"use implicit_predicates::{Lnc, Scratch, Sign};
+use implicit_predicates_oracle::Dyadic;
+
+/// The sign of `(a.x - b.x) (a.x - c.x) + (a.y - b.y) (a.z - c.z)` at the
+/// exact points `p`.
+fn oracle(p: [[Dyadic; 3]; 3]) -> Sign {
+    let [a, b, c] = p;
+    let value = &(&(&a[0] - &b[0]) * &(&a[0] - &c[0])) + &(&(&a[1] - &b[1]) * &(&a[2] - &c[2]));
+    Sign::from(value.sign().cmp(&0))
+}
+
+fn exact(p: &[[f64; 3]; 3]) -> [[Dyadic; 3]; 3] {
+    p.map(|q| q.map(Dyadic::from_f64))
+}
+
+const VALUES: [f64; 9] = [0.0, 1.0, -3.0, 0.1, 1e-300, 1e300, -5e-324, 3.0000000000000004, 1e-200];
+
+/// Points whose differences are `x` and `x + 2^-30 x` on x, `y` on y and
+/// `z` on z.
+fn shaped(x: f64, y: f64, z: f64) -> [[f64; 3]; 3] {
+    [[x, y, z], [0.0, 0.0, 0.5], [-x * f64::powi(2.0, -30), 0.5, 0.0]]
+}
+
+/// Every way of running the chain or a stage of it on `p` agrees with the
+/// oracle; returns whether `filter_axes` decides it and `filter` does not.
+fn check(scratch: &mut Scratch<'_>, p: &[[f64; 3]; 3]) -> (Sign, bool) {
+    let expected = oracle(exact(p));
+    let r = p.each_ref();
+    let axes = stages::filter_axes(r, [0.0; 3]);
+    assert!(axes.is_none_or(|s| s == expected && s != Sign::Zero), "{p:?}");
+    let filter = stages::filter(r, 0.0);
+    assert!(filter.is_none_or(|s| s == expected), "{p:?}");
+    assert!(stages::staged(r).is_none_or(|s| s == expected), "{p:?}");
+    let [a, b, c] = p;
+    assert_eq!(stages::filter_axes_points(a, b, c), axes, "{p:?}");
+    assert_eq!(stages::staged_in(scratch, a, b, c), Ok(expected), "{p:?}");
+    assert_eq!(stages::exact_stages_explicit_in(scratch, r), Ok(expected), "{p:?}");
+    assert_eq!(stages::exact_stages_in(scratch, a, b, c), Ok(expected), "{p:?}");
+    // Points on a line whose parents are both the point: exact, but not
+    // explicit, so their uncertainty is computed from their errors.
+    let [a, b, c] = p.map(|q| Lnc::new_unchecked(q, q, 0.625));
+    assert_eq!(stages::staged_in(scratch, &a, &b, &c), Ok(expected), "{p:?}");
+    assert_eq!(stages::exact_stages_in(scratch, &a, &b, &c), Ok(expected), "{p:?}");
+    if let Some(sign) = stages::filter_axes_points(&a, &b, &c) {
+        assert_eq!(sign, expected, "{p:?}");
+    }
+    assert_eq!(scratch.used(), 0);
+    (expected, filter.is_none() && axes.is_some())
+}
+
+#[test]
+fn the_chain_has_the_sign_of_the_oracle() {
+    let mut buffer = vec![0.0; 1 << 16];
+    let mut scratch = Scratch::borrowed(&mut buffer);
+    let mut signs = [0; 3];
+    for &x in &VALUES {
+        for &y in &VALUES {
+            for &z in &VALUES {
+                for p in [[[x, y, 0.5], [0.25, -0.5, z], [1.0, z, y]], shaped(x, y, z)] {
+                    let (sign, _) = check(&mut scratch, &p);
+                    signs[(i8::from(sign) + 1) as usize] += 1;
+                }
+            }
+        }
+    }
+    assert!(signs.iter().all(|&n| n > 0), "{signs:?}");
+    // A box much shorter on x than on z: the value, about `x^2 + y z`, is far
+    // below the global bound, of order `u z^2`, and above the bound by parts.
+    let mut only_axes = 0;
+    for scale in [1.0, 1e-100, 1e100] {
+        for (x, y) in [(1e-10, 1e-20), (-1e-10, 1e-20), (1e-12, -1e-30), (3e-9, 1e-18)] {
+            let (_, decided) = check(&mut scratch, &shaped(x * scale, y * scale, scale));
+            only_axes += usize::from(decided);
+        }
+    }
+    assert!(only_axes >= 6, "{only_axes}");
+    let [decided, _] = checks::check_bound_edge_cases(|p| stages::staged(p.each_ref()));
+    assert!(decided > 0);
+    let [decided, declined] = checks::check_axes_edge_cases(|p| stages::filter_axes(p.each_ref(), [0.0; 3]));
+    assert!(decided > 0 && declined > 0, "{decided} {declined}");
+}
+
+/// Points whose leaves are all `v` on axis `k` and 1 on the other two
+/// axes, for `v > 0`: the value, `v^2 + 1` or `1 + v`, is positive.
+fn at_size(k: usize, v: f64) -> [[f64; 3]; 3] {
+    let mut p = [[1.0, 1.0, 1.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0]];
+    p[0][k] = v;
+    p
+}
+
+#[test]
+fn the_range_of_filter_axes_is_checked_on_every_axis() {
+    let (low, high) = (stages::AXES_D_MIN, stages::AXES_D_MAX);
+    assert!(low < 1.0 && 1.0 < high);
+    for k in 0..3 {
+        for (v, decides) in [
+            (low, true),
+            (low.next_up(), true),
+            (low.next_down(), false),
+            (high, true),
+            (high.next_down(), true),
+            (high.next_up(), false),
+        ] {
+            let p = at_size(k, v);
+            let expected = oracle(exact(&p));
+            assert_eq!(expected, Sign::Positive, "{k} {v:e}");
+            let decision = stages::filter_axes(p.each_ref(), [0.0; 3]);
+            assert_eq!(decision, decides.then_some(expected), "axis {k}, size {v:e}: {p:?}");
+            // An uncertainty that takes the size of that axis out of the
+            // range.
+            let mut e = [0.0; 3];
+            e[k] = f64::MAX;
+            assert_eq!(stages::filter_axes(p.each_ref(), e), None, "{k} {v:e}");
+        }
+    }
+}
+
+#[test]
+fn filter_axes_never_returns_zero() {
+    // Flat axes and exact zeros: the form has a degree vector of degree zero
+    // in each axis, so a flat axis does not make it zero, and nothing does
+    // with certainty.
+    let flat = [
+        [[0.0; 3]; 3],
+        [[1.0, 2.0, 3.0], [1.0, 2.0, 5.0], [1.0, 7.0, 3.0]],
+        [[1.0, 2.0, 3.0], [1.0, 5.0, 3.0], [4.0, 2.0, 3.0]],
+        [[2.0, 1.0, 1.0], [2.0, 1.0, 0.0], [5.0, 0.0, 1.0]],
+    ];
+    for p in flat {
+        for e in [[0.0; 3], [0.0, 0.25, 0.0]] {
+            let decision = stages::filter_axes(p.each_ref(), e);
+            assert_ne!(decision, Some(Sign::Zero), "{p:?} {e:?}");
+            if e == [0.0; 3] {
+                assert!(decision.is_none_or(|s| s == oracle(exact(&p))), "{p:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn an_overflow_or_an_input_that_is_not_finite_never_decides() {
+    let big = 1e200;
+    let normal = [[3.0, 1.0, 2.0], [0.5, -1.0, 0.25], [1.0, 0.0, -2.0]];
+    assert!(stages::filter_axes(normal.each_ref(), [0.0; 3]).is_some());
+    let cases = [
+        // With `e[k] = 0.0`: `x^2` overflows, so do the partial products of
+        // the term of epsilon of x, and the value is infinite.
+        ([[big, 1.0, 1.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0]], [0.0; 3]),
+        // Products of opposite signs that overflow: the value is NaN.
+        ([[big, big, big], [0.0, 0.0, 0.0], [2.0 * big, 0.0, 0.0]], [0.0; 3]),
+        // Infinite sizes: the terms of kappa multiply `e[k] = 0.0` by them.
+        ([[f64::INFINITY, 1.0, 1.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0]], [0.0; 3]),
+        ([[1.0, f64::INFINITY, 1.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0]], [0.0; 3]),
+        // A NaN coordinate, which the maxima can skip.
+        ([[3.0, 1.0, 2.0], [f64::NAN, -1.0, 0.25], [1.0, 0.0, -2.0]], [0.0; 3]),
+        // Uncertainties that are not finite and non-negative.
+        (normal, [f64::NAN, 0.0, 0.0]),
+        (normal, [0.0, -1e-300, 0.0]),
+        (normal, [0.0, 0.0, f64::INFINITY]),
+        (normal, [0.0, 0.0, f64::MAX]),
+    ];
+    for (p, e) in cases {
+        assert_eq!(stages::filter_axes(p.each_ref(), e), None, "{p:?} {e:?}");
+    }
+}
+"#;
+
+#[test]
+fn a_form_that_is_not_multihomogeneous_has_a_second_test_with_one_size_per_axis() {
+    let modules = predicate_modules(ZERO_IN_AN_AXIS);
+    let stages = &modules[0].1;
+    // `filter_axes` right after `filter` in each function of the chain.
+    for (function, text) in [
+        (
+            "staged",
+            "-> Option<Sign> {\nfilter(p, 0.0)\n.or_else(|| filter_axes(p, [0.0; 3]))\n.or_else(|| exact_differences(p))",
+        ),
+        (
+            "exact_stages",
+            "-> Option<Sign> {\nfilter_axes(p, [0.0; 3])\n.or_else(|| exact_differences(p))",
+        ),
+        (
+            "exact_stages_in",
+            "}\nif let Some(sign) = filter_axes_points(p0, p1, p2) {\nreturn Ok(sign);\n}\nlet mark",
+        ),
+    ] {
+        assert!(stages.contains(text), "{function}: {stages}");
+    }
+    let start = stages.find("pub fn filter_axes(").unwrap();
+    let filter_axes = &stages[start..][..stages[start..].find("\n}\n").unwrap()];
+    assert!(!filter_axes.contains("Sign::Zero"), "{filter_axes}");
+    compile_and_run("emitted-zero-in-an-axis", &modules, ZERO_IN_AN_AXIS_TEST);
+}
+
+/// A form of degree 4 that is not multihomogeneous and has positive degree
+/// in every axis in each of its degree vectors, (2, 1, 1) and (1, 2, 1), so
+/// that `filter_axes` has the certain zero. Every product starts with a
+/// difference on x, so with x flat the computed value is exactly zero even
+/// when a factor on y is huge.
+const CERTAIN_ZERO: &str = "fn q(a: Point3, b: Point3, c: Point3) -> Sign {\n    \
+                            (a.x - b.x) * (a.x - b.x) * (a.y - b.y) * (a.z - b.z) + \
+                            (a.x - b.x) * (a.y - c.y) * (a.y - c.y) * (a.z - c.z)\n}\n";
+
+/// The test of [`CERTAIN_ZERO`]: `filter_axes` decides zero on a flat axis
+/// with every guard met, and declines when one fails: a size that is not
+/// finite, a NaN coordinate, an uncertainty on the flat axis, one that is not
+/// finite and non-negative.
+const CERTAIN_ZERO_TEST: &str = r#"use implicit_predicates::Sign;
+
+#[test]
+fn filter_axes_decides_zero_only_under_its_guards() {
+    // x is flat: a.x == b.x, and every term has a factor a.x - b.x.
+    let flat = [[2.0, 1.0, 3.0], [2.0, -1.0, 0.5], [7.0, 0.25, 1.0]];
+    assert_eq!(stages::filter_axes(flat.each_ref(), [0.0; 3]), Some(Sign::Zero));
+    assert_eq!(stages::filter_axes(flat.each_ref(), [0.0, 0.5, 0.25]), Some(Sign::Zero));
+    assert_eq!(stages::staged(flat.each_ref()), Some(Sign::Zero));
+    // A size on y that overflows, with a finite uncertainty, while the
+    // computed value is still exactly zero: `d_y` is not finite.
+    let huge = [[2.0, 1e300, 3.0], [2.0, 0.0, 0.5], [7.0, 0.0, 1.0]];
+    assert_eq!(1e300 + f64::MAX, f64::INFINITY);
+    assert_eq!(stages::filter_axes(huge.each_ref(), [0.0, f64::MAX, 0.0]), None);
+    assert_eq!(stages::filter_axes(huge.each_ref(), [0.0; 3]), Some(Sign::Zero));
+    // A NaN coordinate, which the maxima can skip, makes the value NaN.
+    let nan = [[2.0, 1.0, 3.0], [2.0, f64::NAN, 0.5], [7.0, 0.25, 1.0]];
+    assert_eq!(stages::filter_axes(nan.each_ref(), [0.0; 3]), None);
+    // An uncertainty on the flat axis: the axis is not flat any more, and
+    // the value, zero, is not above the bound.
+    assert_eq!(stages::filter_axes(flat.each_ref(), [0.125, 0.0, 0.0]), None);
+    // Uncertainties that are not finite and non-negative, on another axis.
+    for bad in [-1e-300, f64::NAN, f64::INFINITY] {
+        assert_eq!(stages::filter_axes(flat.each_ref(), [0.0, bad, 0.0]), None, "{bad}");
+        assert_eq!(stages::filter_axes(flat.each_ref(), [0.0, 0.0, bad]), None, "{bad}");
+    }
+    // `filter_axes_points` with no uncertainty, on explicit points.
+    let [a, b, c] = &flat;
+    assert_eq!(stages::filter_axes_points(a, b, c), Some(Sign::Zero));
+}
+"#;
+
+#[test]
+fn the_certain_zero_of_filter_axes_has_every_guard() {
+    let modules = predicate_modules(CERTAIN_ZERO);
+    assert!(
+        modules[0]
+            .1
+            .contains("let zero = valid & finite & flat & (det == 0.0);")
+    );
+    compile_and_run("emitted-certain-zero", &modules, CERTAIN_ZERO_TEST);
+}
+
 #[test]
 fn point_types_with_parameters_named_like_local_names_compile() {
     // Names that the emitted functions use for their own variables, and

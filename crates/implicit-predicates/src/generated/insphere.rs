@@ -10,7 +10,8 @@
 //! big integers and always decides. [`staged`] runs the stages before it in
 //! order on explicit points, and [`staged_in`] runs every stage on points of
 //! any type, so it decides every input. Its main form has degree 5: from degree
-//! 5 on, [`big_integers_in`] is the only exact stage, after the filter.
+//! 5 on, [`big_integers_in`] is the only exact stage, after the two tests of
+//! the filter, [`filter`] and [`filter_axes`].
 
 use implicit_predicates_core::{
     Big, BigCoords, ExactError, Point, Scratch, ScratchExhausted, Sign,
@@ -35,6 +36,41 @@ pub const D_MIN: f64 = 1.9913648889155653e-59;
 /// The largest `D` for which [`filter`] decides, `2^203`: above it, a computed
 /// value could overflow.
 pub const D_MAX: f64 = 1.2855504354071922e61;
+
+/// The terms of epsilon of the error bound of [`filter_axes`]: for each degree
+/// vector `g` of the predicate, the coefficient of `d^g`, the product of
+/// `d_k^g_k` over the axes, rounded up. On each axis `k`, `d_k` is the largest
+/// magnitude of a difference of coordinates on that axis plus `e[k]`, the
+/// uncertainty given to [`filter_axes`], and the bound is the sum of every term
+/// of this table and of [`AXES_KAPPA`], computed without divisions.
+pub const AXES_EPSILON: [([u32; 3], f64); 3] = [
+    ([1, 1, 3], 3.974598431859696e-14),
+    ([1, 3, 1], 4.241051958017888e-14),
+    ([3, 1, 1], 4.241051958017888e-14),
+];
+
+/// The terms of kappa of the error bound of [`filter_axes`]: for each, the axis
+/// `k` of its uncertainty `e[k]`, the degree vector `h` of the rest of the
+/// term, and the coefficient of `e[k]*d^h`, rounded up.
+pub const AXES_KAPPA: [(usize, [u32; 3], f64); 9] = [
+    (0, [0, 1, 3], 24.000000022351752),
+    (0, [0, 3, 1], 24.000000022351756),
+    (0, [2, 1, 1], 72.00000006705527),
+    (1, [1, 0, 3], 24.000000022351752),
+    (1, [1, 2, 1], 72.00000006705527),
+    (1, [3, 0, 1], 24.000000022351756),
+    (2, [1, 1, 2], 72.00000006705525),
+    (2, [1, 3, 0], 24.000000022351756),
+    (2, [3, 1, 0], 24.000000022351756),
+];
+
+/// The smallest `d_k`, on every axis, for which [`filter_axes`] decides,
+/// `2^-195`: below it, underflow could exceed the error bound.
+pub const AXES_D_MIN: f64 = 1.9913648889155653e-59;
+
+/// The largest `d_k`, on every axis, for which [`filter_axes`] decides,
+/// `2^203`: above it, a computed value could overflow.
+pub const AXES_D_MAX: f64 = 1.2855504354071922e61;
 
 /// The `f64` slots of the arena, one 64-bit word each, that suffice for
 /// [`big_integers_in`] on explicit points, their coordinates included: writing
@@ -171,6 +207,174 @@ pub fn filter(p: [&[f64; 3]; 5], e: f64) -> Option<Sign> {
     decided.then_some(sign)
 }
 
+/// The sign of the predicate from an evaluation of its main form in `f64`, when
+/// the rounding error cannot change it, with an error bound that keeps one size
+/// per axis: the second test of the filter, for the calls that [`filter`] does
+/// not decide.
+///
+/// The points given are approximations of exact points. `e[k]` is the sum of
+/// the two largest errors of the points on axis `k` (0, 1 and 2 for x, y and
+/// z), where the error of a point on an axis is an upper bound on the absolute
+/// error of its coordinate on that axis; each `e[k]` must be finite,
+/// non-negative and rounded upward, and they are `0.0` for explicit points. An
+/// `e[k]` that is negative, infinite or NaN never decides.
+///
+/// `Some(Sign::Zero)` means that some axis is flat: every difference of
+/// coordinates on it is zero and so is its `e[k]`, so the predicate is exactly
+/// zero. `None` means that this stage cannot decide: the value is too close to
+/// zero for its error bound, the scale `d_k` of the differences of some axis is
+/// outside `AXES_D_MIN..=AXES_D_MAX`, some `e[k]` is not finite and
+/// non-negative, or an input is not finite.
+#[allow(clippy::manual_range_contains)]
+#[cold]
+#[inline(never)]
+pub fn filter_axes(p: [&[f64; 3]; 5], e: [f64; 3]) -> Option<Sign> {
+    let t0 = p[0][0] - p[4][0];
+    let t1 = p[0][1] - p[4][1];
+    let t2 = p[0][2] - p[4][2];
+    let t3 = t0 * t0;
+    let t4 = t1 * t1;
+    let t5 = t3 + t4;
+    let t6 = t2 * t2;
+    let t7 = t5 + t6;
+    let t8 = p[1][0] - p[4][0];
+    let t9 = p[1][1] - p[4][1];
+    let t10 = p[1][2] - p[4][2];
+    let t11 = t8 * t8;
+    let t12 = t9 * t9;
+    let t13 = t11 + t12;
+    let t14 = t10 * t10;
+    let t15 = t13 + t14;
+    let t16 = p[2][0] - p[4][0];
+    let t17 = p[2][1] - p[4][1];
+    let t18 = p[2][2] - p[4][2];
+    let t19 = t16 * t16;
+    let t20 = t17 * t17;
+    let t21 = t19 + t20;
+    let t22 = t18 * t18;
+    let t23 = t21 + t22;
+    let t24 = p[3][0] - p[4][0];
+    let t25 = p[3][1] - p[4][1];
+    let t26 = p[3][2] - p[4][2];
+    let t27 = t24 * t24;
+    let t28 = t25 * t25;
+    let t29 = t27 + t28;
+    let t30 = t26 * t26;
+    let t31 = t29 + t30;
+    let t32 = t17 * t26;
+    let t33 = t18 * t25;
+    let t34 = t32 - t33;
+    let t35 = t8 * t34;
+    let t36 = t16 * t26;
+    let t37 = t18 * t24;
+    let t38 = t36 - t37;
+    let t39 = t9 * t38;
+    let t40 = t35 - t39;
+    let t41 = t16 * t25;
+    let t42 = t17 * t24;
+    let t43 = t41 - t42;
+    let t44 = t10 * t43;
+    let t45 = t40 + t44;
+    let t46 = t0 * t34;
+    let t47 = t1 * t38;
+    let t48 = t46 - t47;
+    let t49 = t2 * t43;
+    let t50 = t48 + t49;
+    let t51 = t9 * t26;
+    let t52 = t10 * t25;
+    let t53 = t51 - t52;
+    let t54 = t0 * t53;
+    let t55 = t8 * t26;
+    let t56 = t10 * t24;
+    let t57 = t55 - t56;
+    let t58 = t1 * t57;
+    let t59 = t54 - t58;
+    let t60 = t8 * t25;
+    let t61 = t9 * t24;
+    let t62 = t60 - t61;
+    let t63 = t2 * t62;
+    let t64 = t59 + t63;
+    let t65 = t9 * t18;
+    let t66 = t10 * t17;
+    let t67 = t65 - t66;
+    let t68 = t0 * t67;
+    let t69 = t8 * t18;
+    let t70 = t10 * t16;
+    let t71 = t69 - t70;
+    let t72 = t1 * t71;
+    let t73 = t68 - t72;
+    let t74 = t8 * t17;
+    let t75 = t9 * t16;
+    let t76 = t74 - t75;
+    let t77 = t2 * t76;
+    let t78 = t73 + t77;
+    let t79 = -t7;
+    let t80 = t79 * t45;
+    let t81 = t15 * t50;
+    let t82 = t80 + t81;
+    let t83 = t23 * t64;
+    let t84 = t82 - t83;
+    let t85 = t31 * t78;
+    let det = t84 + t85;
+    // The largest magnitude of the leaves of each axis. A NaN leaf can be
+    // skipped by the comparisons, but it makes `det` NaN.
+    let delta_x = t0.abs();
+    let delta_x = max(delta_x, t8.abs());
+    let delta_x = max(delta_x, t16.abs());
+    let delta_x = max(delta_x, t24.abs());
+    let delta_y = t1.abs();
+    let delta_y = max(delta_y, t9.abs());
+    let delta_y = max(delta_y, t17.abs());
+    let delta_y = max(delta_y, t25.abs());
+    let delta_z = t2.abs();
+    let delta_z = max(delta_z, t10.abs());
+    let delta_z = max(delta_z, t18.abs());
+    let delta_z = max(delta_z, t26.abs());
+    let dx = delta_x + e[0];
+    let dy = delta_y + e[1];
+    let dz = delta_z + e[2];
+    let d = [dx, dy, dz];
+    // Every term, none left out whatever `e` is, each a chain of products that
+    // starts with its constant; the first sum, with `0.0`, is exact.
+    let mut bound = 0.0;
+    for (g, c) in AXES_EPSILON {
+        bound += product_chain(c, g, d);
+    }
+    for (k, h, c) in AXES_KAPPA {
+        bound += product_chain(c * e[k], h, d);
+    }
+    // Each `e[k]` finite and non-negative, a comparison that is false for NaN.
+    let valid = (e[0] >= 0.0)
+        & (e[0] <= f64::MAX)
+        & (e[1] >= 0.0)
+        & (e[1] <= f64::MAX)
+        & (e[2] >= 0.0)
+        & (e[2] <= f64::MAX);
+    let decided = valid
+        & (AXES_D_MIN <= dx)
+        & (dx <= AXES_D_MAX)
+        & (AXES_D_MIN <= dy)
+        & (dy <= AXES_D_MAX)
+        & (AXES_D_MIN <= dz)
+        & (dz <= AXES_D_MAX)
+        & (det.abs() > bound);
+    let sign = if det > 0.0 {
+        Sign::Positive
+    } else {
+        Sign::Negative
+    };
+    // A flat axis, with every leaf and its `e[k]` zero, makes the predicate
+    // exactly zero. The computed value is then zero, or NaN when a factor of
+    // another axis is not finite: it decides only when it is exactly zero, with
+    // every `d_k` finite. A flat axis is below `AXES_D_MIN`, so `decided` is
+    // false then.
+    let flat = (dx == 0.0) | (dy == 0.0) | (dz == 0.0);
+    let finite = (dx <= f64::MAX) & (dy <= f64::MAX) & (dz <= f64::MAX);
+    let zero = valid & finite & flat & (det == 0.0);
+    let sign = if zero { Sign::Zero } else { sign };
+    (decided | zero).then_some(sign)
+}
+
 /// The exact sign of the predicate for points given by their coordinates as big
 /// integers: its main form evaluated with the big-integer operations of
 /// `scratch`, which are exact whatever the size of the values, so this stage
@@ -288,14 +492,15 @@ pub fn big_integers_in(
     sign
 }
 
-/// The sign of the predicate for explicit points, from its filter, the only
-/// stage before [`big_integers_in`].
+/// The sign of the predicate for explicit points, from the two tests of its
+/// filter, the only stages before [`big_integers_in`].
 ///
-/// Runs [`filter`] with `e = 0.0`. `None` means that it cannot decide;
-/// [`exact_stages_explicit_in`] then decides.
+/// Runs [`filter`] with `e = 0.0`, then [`filter_axes`] with `e = [0.0; 3]`.
+/// `None` means that neither can decide; [`exact_stages_explicit_in`] then
+/// decides.
 #[inline]
 pub fn staged(p: [&[f64; 3]; 5]) -> Option<Sign> {
-    filter(p, 0.0)
+    filter(p, 0.0).or_else(|| filter_axes(p, [0.0; 3]))
 }
 
 /// [`filter`] on the approximations of points of any type, with the uncertainty
@@ -339,9 +544,52 @@ pub fn filter_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
     filter(p, e)
 }
 
-/// The exact sign of the predicate for explicit points: [`big_integers_in`] on
-/// the coordinates of the points written to `scratch` as big integers, which
-/// always decides. `scratch` is left as it was.
+/// [`filter_axes`] on the approximations of points of any type, with the
+/// uncertainty of their errors: `[0.0; 3]` when every point is explicit, and
+/// otherwise `uncertainty` of their errors, from
+/// `implicit_predicates_core::filter`.
+///
+/// The errors are not read when every point is explicit. When that is known
+/// from the types, as with `[f64; 3]`, whose `is_explicit` is the constant
+/// `true`, this is `filter_axes` with `e = [0.0; 3]`.
+#[inline]
+pub fn filter_axes_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
+    p0: &P0,
+    p1: &P1,
+    p2: &P2,
+    p3: &P3,
+    p4: &P4,
+) -> Option<Sign> {
+    let p = [
+        p0.approx(),
+        p1.approx(),
+        p2.approx(),
+        p3.approx(),
+        p4.approx(),
+    ];
+    let e = if p0.is_explicit()
+        & p1.is_explicit()
+        & p2.is_explicit()
+        & p3.is_explicit()
+        & p4.is_explicit()
+    {
+        [0.0; 3]
+    } else {
+        implicit_predicates_core::filter::uncertainty([
+            p0.err(),
+            p1.err(),
+            p2.err(),
+            p3.err(),
+            p4.err(),
+        ])
+    };
+    filter_axes(p, e)
+}
+
+/// The exact sign of the predicate for explicit points: [`filter_axes`], with
+/// no uncertainty, then, when it does not decide, [`big_integers_in`] on the
+/// coordinates of the points written to `scratch` as big integers, which always
+/// decides. `scratch` is left as it was.
 ///
 /// # Errors
 ///
@@ -364,17 +612,21 @@ pub fn exact_stages_explicit_in(
         let q4 = exact_big(scratch, p[4])?;
         big_integers_in(scratch, [&q0, &q1, &q2, &q3, &q4])
     }
+    if let Some(sign) = filter_axes(p, [0.0; 3]) {
+        return Ok(sign);
+    }
     let mark = scratch.mark();
     let result = big(scratch, p);
     scratch.reset(mark);
     result
 }
 
-/// The exact sign of the predicate for points of any type: [`big_integers_in`]
-/// on the coordinates of the points as big integers written to `scratch`, which
-/// always decides: [`Point::exact_big`] of each point is called, never
-/// [`Point::exact`]. `scratch` is reset to its mark on entry whatever the stage
-/// returns.
+/// The exact sign of the predicate for points of any type:
+/// [`filter_axes_points`], the second test of the filter, then, when it does
+/// not decide, [`big_integers_in`] on the coordinates of the points as big
+/// integers written to `scratch`, which always decides: [`Point::exact_big`] of
+/// each point is called, never [`Point::exact`]. `scratch` is reset to its mark
+/// on entry whatever the stage returns.
 ///
 /// # Errors
 ///
@@ -410,6 +662,9 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
         let q3 = exact_big(scratch, p3)?;
         let q4 = exact_big(scratch, p4)?;
         big_integers_in(scratch, [&q0, &q1, &q2, &q3, &q4])
+    }
+    if let Some(sign) = filter_axes_points(p0, p1, p2, p3, p4) {
+        return Ok(sign);
     }
     let mark = scratch.mark();
     let result = big(scratch, p0, p1, p2, p3, p4);
@@ -496,4 +751,18 @@ fn no_exact_coordinates(reason: &str) -> ! {
 #[inline]
 fn max(a: f64, b: f64) -> f64 {
     if a > b { a } else { b }
+}
+
+/// `start` times `d[k]` repeated `g[k]` times, on each axis `k` in turn: a
+/// chain of products from left to right, each rounded, that starts with
+/// `start`.
+#[inline(always)]
+fn product_chain(start: f64, g: [u32; 3], d: [f64; 3]) -> f64 {
+    let mut x = start;
+    for (&n, &dk) in g.iter().zip(&d) {
+        for _ in 0..n {
+            x *= dk;
+        }
+    }
+    x
 }

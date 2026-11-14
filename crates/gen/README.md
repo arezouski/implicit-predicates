@@ -165,7 +165,12 @@ that the main form is homogeneous in the differences, and derives, in exact
 arithmetic:
 
 - the error bound of the floating-point filter and the range of scales in
-  which overflow and underflow cannot invalidate it;
+  which overflow and underflow cannot invalidate it, and, for a main form
+  that is not multihomogeneous, the error bound by parts of its second
+  test, with one size per axis, and its range. That bound has a budget of
+  its own, on the number of its terms and on the exact work: beyond it, the
+  second test is not emitted and the generation carries a warning, not an
+  error;
 - for each exact stage on expansions, the range of input magnitudes for
   which every exact product of the arithmetic core stays in its domain and
   no value overflows, and the worst-case length of every temporary. A main
@@ -191,31 +196,51 @@ For each predicate the generator writes one module with:
   positive degree in it. Otherwise the bound is global: the constants are
   `DEGREE`, `EPSILON`, `KAPPA`, `D_MIN` and `D_MAX`, and the filter takes
   `e: f64`;
+- for a filter with a global bound, `filter_axes`, its second test, which
+  runs only when `filter` declines: the main form evaluated in `f64` again,
+  with the error bound by parts, one size and one uncertainty per axis, a
+  sum of one term of epsilon per degree vector of the main form and of
+  terms of kappa, each a chain of products that starts with its constant.
+  It decides calls whose points spread much less on one axis than on
+  another, which the global bound, sized by the largest axis, declines. Its
+  constants are `AXES_EPSILON` (degree vector and coefficient of each term),
+  `AXES_KAPPA` (axis, degree vector of the rest and coefficient),
+  `AXES_D_MIN` and `AXES_D_MAX`; it takes `e: [f64; 3]`, and returns
+  `Some(Sign::Zero)` when some axis is flat and every degree vector has
+  positive degree in every axis;
 - `exact_differences` and `expansions_translated`: exact evaluations of
   the main form with floating-point expansions on stack buffers, on the
   differences of coordinates computed in `f64`, which must be exact, and
   on each difference as the exact expansion of two components. A stage
   whose buffers would take more than 4,096 `f64`, or too many to plan, is
   not emitted, and the stage over arena spans takes its place;
-- `staged`, which runs the filter and then the exact stages in the order:
-  differences that are exact, then the translated expansion form. The order
-  is the same for every predicate that has them;
+- `staged`, which runs the filter, then `filter_axes` if there is one, and
+  then the exact stages in the order: differences that are exact, then the
+  translated expansion form. The order is the same for every predicate that
+  has them;
 - for a main form of total degree 5 or more, none of the stages on
   expansions above, nor their ranges, `MAX_COORD_COMPONENTS`,
   `exact_stages` or `expansions_translated_in`: its `staged` is the filter
-  alone, without an arena, and its `exact_stages_explicit_in` and
-  `exact_stages_in` below run `big_integers_in` alone, so its chain never
-  asks a point for its exact coordinates as expansions;
+  alone (with `filter_axes`, if it has one), without an arena, and its
+  `exact_stages_explicit_in` and `exact_stages_in` below run
+  `big_integers_in` alone after `filter_axes`, so its chain never asks a
+  point for its exact coordinates as expansions;
 - for points of any type: `filter_points`, the filter on the approximations
   of the points with the uncertainty of their errors (zero when every point
-  is explicit); `exact_stages`, the exact stages of `staged`;
+  is explicit); `filter_axes_points`, the same for `filter_axes`, with the
+  uncertainty per axis; `exact_stages`, the stages of `staged` after
+  `filter`;
   `exact_stages_in`, `expansions_translated_in`, the expansion form over
   spans of an arena, on the exact coordinates of the points, followed by
   `big_integers_in`;
   `exact_stages_explicit_in`, `exact_stages` followed by `big_integers_in`
   for points that are all explicit; and `staged_in`, which runs
   `filter_points`, then `exact_stages_explicit_in` when every point is
-  explicit and `exact_stages_in` otherwise. `staged_in` and
+  explicit and `exact_stages_in` otherwise. When there is `filter_axes`,
+  `exact_stages` (or `exact_stages_explicit_in`, when there is no
+  `exact_stages`) starts with it and `exact_stages_in` with
+  `filter_axes_points`, so that the uncertainty per axis is computed only
+  when `filter` declines. `staged_in` and
   `exact_stages_in` return `Result<Sign, ScratchExhausted>`: they decide
   every input, and fail only when the arena runs out of room. They panic on
   a point whose exact coordinates have a weight other than one, and on a
@@ -245,7 +270,11 @@ For the tests of each predicate it writes a second module, of checks, with:
   pairs built in the same way on either side of its bound with an
   uncertainty that is not zero on one axis, for each axis of positive
   degree, or on all of the axes of positive degree, given with each pair;
-- `check_bound_edge_cases` and `check_uncertainty_edge_cases`, which run a
+- for a predicate with `filter_axes`, `axes_edge_cases`, pairs built in the
+  same way on either side of its bound by parts, with no uncertainty, at
+  scales from just above `AXES_D_MIN` to just below `AXES_D_MAX`;
+- `check_bound_edge_cases`, `check_axes_edge_cases` and
+  `check_uncertainty_edge_cases`, which run a
   stage, given as a closure of the coordinates of the points (and of their
   errors), on those cases and check its signs, so that the tests can run
   them on every stage and on points of any type. With an uncertainty, the

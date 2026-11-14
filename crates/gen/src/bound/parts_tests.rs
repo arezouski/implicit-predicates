@@ -453,6 +453,36 @@ fn a_leaf_on_an_unknown_axis_gives_no_bound() {
     assert!(reason.contains("axis 3"), "{reason}");
 }
 
+#[test]
+fn a_degree_vector_without_the_degree_of_its_node_gives_no_bound() {
+    let mut g = graph(INSPHERE).0;
+    let global = global_of(&g);
+    let root = g.root;
+    g.degrees[root] += 1;
+    match derive(&g, &global, &Budget::DEFAULT) {
+        PartsOutcome::Unavailable(reason) => {
+            assert!(
+                reason.contains("a node of degree 6 has the degree vector"),
+                "{reason}"
+            );
+        }
+        PartsOutcome::Bound(_) => panic!("a node with the wrong degree is accepted"),
+    }
+    // A leaf of degree 0.
+    let mut g = graph(NO_Z).0;
+    let global = global_of(&g);
+    let leaf = g
+        .nodes
+        .iter()
+        .position(|n| matches!(n, DiffNode::Leaf { .. }))
+        .unwrap();
+    g.degrees[leaf] = 0;
+    assert!(matches!(
+        derive(&g, &global, &Budget::DEFAULT),
+        PartsOutcome::Unavailable(_)
+    ));
+}
+
 /// `x^980 + 2^10 * y^980`, with the sum of `y^980` written as a balanced
 /// tree: the coefficient of `epsilon` of `x^980` is far smaller than that
 /// of the global form.

@@ -179,10 +179,13 @@
 //!   definition of `j_max` is at most `(1 + 2^-44) * 2^1022 * (1 - u)^-1022`,
 //!   below `2^1023`. No operation overflows, so the model of the previous
 //!   part holds at `x`: the two parts are one induction on the nodes, in the
-//!   order of the graph. An overflow in the evaluation of the bound gives an
-//!   infinite bound, or a NaN one when an infinite partial product is then
-//!   multiplied by an `E_k` of zero; either only makes the filter abstain,
-//!   since it decides on `|value| > bound`, false for both.
+//!   order of the graph. A leaf that overflows, the difference of two
+//!   coordinates of opposite signs near `f64::MAX`, gives an infinite
+//!   `delta_k`, so `d_k > d_max`, and the filter rejects the call by its
+//!   range. An overflow in the evaluation of the bound gives an infinite
+//!   bound, or a NaN one when an infinite partial product is then multiplied
+//!   by an `E_k` of zero; either only makes the filter abstain, since it
+//!   decides on `|value| > bound`, false for both.
 //! - Rounding of the bound. Every partial product of a chain obeys
 //!   `fl(z) >= z (1 - u) - 2^-1075` (the second term only when `z` is below
 //!   `2^-1022`), so a chain `c_0 = CONSTANT`, `c_i = fl(c_(i-1) f_i)` of `K`
@@ -228,14 +231,25 @@
 //! # Certain zero
 //!
 //! If every vector of `V` has degree at least 1 in every axis
-//! ([`PartsBound::certain_zero`]) and some axis `k` has `d_k = 0`, then
-//! `delta_k = 0` and `E_k = 0`, so every leaf of axis `k`, computed or true,
-//! is exactly zero, and the form is exactly zero, computed and true. By
-//! induction, a node all of whose vectors have `s_k >= 1` is zero: a leaf
-//! of that kind is on axis `k`; a sum has operands of that kind; and if
-//! every `s + t` of a product has a positive component `k`, one of the two
-//! operands has only vectors with a positive component `k`, otherwise a
-//! vector of each with `s_k = t_k = 0` would give `(s + t)_k = 0`.
+//! ([`PartsBound::certain_zero`]) and some axis `k` has `d_k = 0`, with
+//! `E_k` finite and non-negative, then `delta_k = 0` and `E_k = 0` (a sum of
+//! two non-negative `f64` is zero only when both are), so every leaf of axis
+//! `k`, computed or true, is exactly zero, and the true value of the form is
+//! exactly zero. By induction, a node all of whose vectors have `s_k >= 1`
+//! has a true value of zero: a leaf of that kind is on axis `k`; a sum has
+//! operands of that kind; and if every `s + t` of a product has a positive
+//! component `k`, one of the two operands has only vectors with a positive
+//! component `k`, otherwise a vector of each with `s_k = t_k = 0` would give
+//! `(s + t)_k = 0`.
+//!
+//! The computed value follows the same induction with one exception: a
+//! product of a zero and a factor that is not finite, as when a leaf of
+//! another axis is infinite or a product of other axes overflows, is NaN,
+//! not zero. So the computed value is zero or NaN, and a NaN leaf, which the
+//! largest magnitude can skip, makes it NaN as well. The filter decides zero
+//! only under these guards: some `d_k == 0` on an axis of the range, every
+//! `E_k` finite and non-negative, every `d_k` finite, and the computed value
+//! exactly `0.0`; a NaN value decides nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -406,7 +420,9 @@ pub struct PartsConstants {
 /// degree vectors at the root, more than `2^22` operations on exact
 /// coefficients, or more than `2^26` bits of exact coefficients in all,
 /// each checked before the work it limits; when a leaf is on an axis above
-/// 2; and when no range of sizes keeps the bound clear of underflow.
+/// 2, or a degree vector of a node does not have the degree of the node,
+/// which no graph of [`difference_graph`](crate::difference_graph) has; and
+/// when no range of sizes keeps the bound clear of underflow.
 ///
 /// # Errors
 ///
@@ -476,6 +492,19 @@ fn check_budget(graph: &DiffGraph, budget: &Budget) -> Result<(), String> {
         };
         if operations > budget.operations {
             return Err(too_many_operations());
+        }
+        // (S2), on which the proof relies: every vector of the support has
+        // the degree of the node. `difference_graph` builds only such graphs;
+        // a graph built otherwise has no bound, like a leaf on an axis
+        // above 2.
+        let degree = u64::from(graph.degrees[id]);
+        if let Some(g) = support
+            .iter()
+            .find(|g| g.iter().map(|&x| u64::from(x)).sum::<u64>() != degree)
+        {
+            return Err(format!(
+                "{NOT_DERIVED}: a node of degree {degree} has the degree vector {g:?}"
+            ));
         }
         if support.len() > budget.monomials {
             return Err(format!(
@@ -674,9 +703,13 @@ impl PartsBound {
     }
 
     /// Whether every degree vector of the form has degree at least 1 in
-    /// every axis, so that the form is exactly zero, computed and true, when
-    /// on some axis every leaf is exactly zero and the uncertainty is zero
-    /// (see the documentation of this module, in the source).
+    /// every axis, so that the true value of the form is exactly zero when
+    /// on some axis every leaf is exactly zero and the uncertainty is zero.
+    /// The computed value is then zero or NaN (a zero times a factor that is
+    /// not finite), so a filter decides zero only when some `d_k` is zero,
+    /// every `E_k` is finite and non-negative, every `d_k` is finite and the
+    /// computed value is exactly `0.0` (see the documentation of this
+    /// module, in the source).
     pub fn certain_zero(&self) -> bool {
         self.epsilon
             .iter()

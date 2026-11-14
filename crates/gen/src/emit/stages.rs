@@ -8,9 +8,11 @@ use std::fmt::Write;
 use super::exact::{Check, Stage, write_stage};
 use super::filter::{self, FilterKind};
 use super::filter_axis;
+use super::filter_parts;
 use super::program::Program;
 use super::spans::{SpanStage, write_span_stage};
 use super::{comment, literal, power_of_two};
+use crate::bound::PartsConstants;
 use crate::differences::DiffGraph;
 use crate::range::{ExactRange, MAX_COORD_COMPONENTS};
 
@@ -35,6 +37,10 @@ pub(crate) fn fits_on_stack(total: usize) -> bool {
 /// The forms of a predicate, with the plans of their exact stages.
 pub(crate) struct Forms<'a> {
     pub(crate) filter: FilterKind,
+    /// The constants of the second test of the filter, `filter_axes`, and
+    /// whether its certain zero applies; `None` for a multihomogeneous form,
+    /// or when the bound by parts is not derived.
+    pub(crate) parts: Option<(PartsConstants, bool)>,
     /// The exact stages on expansions, `None` for a main form of degree
     /// [`BIG_INTEGERS_ONLY_DEGREE`] or more, whose only exact stage is the
     /// one on big integers.
@@ -73,6 +79,9 @@ pub(crate) fn write_constants(out: &mut String, forms: &Forms) {
     match &forms.filter {
         FilterKind::Global(c) => filter::write_constants(out, c),
         FilterKind::PerAxis(c, _) => filter_axis::write_constants(out, c),
+    }
+    if let Some((c, _)) = &forms.parts {
+        filter_parts::write_constants(out, c);
     }
     let range = |out: &mut String, name: &str, what: &str, range: ExactRange| {
         constant(

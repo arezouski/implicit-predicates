@@ -16,6 +16,7 @@ mod edges;
 mod exact;
 mod filter;
 mod filter_axis;
+mod filter_parts;
 mod generic;
 mod grid;
 mod point_big;
@@ -38,7 +39,7 @@ use std::fmt::Write;
 
 use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 
-use crate::bound::{FilterForm, MAX_DEGREE, filter_form};
+use crate::bound::{FilterForm, MAX_DEGREE, PartsOutcome, filter_form, parts_bound};
 use crate::differences::{DiffGraph, difference_graph};
 use crate::error::Error;
 use crate::parse::{Position, Predicate, parse};
@@ -66,8 +67,10 @@ pub struct Generated {
     pub stages: String,
     /// The module of its checks, for its tests, unformatted: `exact`, the
     /// exact sign of the predicate, `bound_edge_cases`, inputs on either
-    /// side of the error bound of the filter, and for a per-axis filter
-    /// `uncertainty_edge_cases`, the same with an uncertainty. Empty when
+    /// side of the error bound of the filter, for a per-axis filter
+    /// `uncertainty_edge_cases`, the same with an uncertainty, and for a
+    /// predicate with `filter_axes`, the second test of its filter,
+    /// `axes_edge_cases`, the same for the bound of that test. Empty when
     /// there are none, in which case no file is written.
     pub checks: String,
     /// What the user of the generated code should know and the code itself
@@ -106,10 +109,26 @@ pub struct Generated {
 /// when every point is explicit, and otherwise `exact_stages_in`, the stage
 /// over spans on the exact coordinates of the points.
 ///
+/// When the main form is not multihomogeneous, its filter has a second
+/// test, `filter_axes(p, e: [f64; 3])`, with the error bound by parts of
+/// [`crate::parts_bound`]: one size and one uncertainty per axis, which
+/// decides calls whose points spread much less on one axis than on another,
+/// or whose errors are on one axis. It is a cold stage that computes the
+/// value again, with its constants `AXES_EPSILON`, `AXES_KAPPA`,
+/// `AXES_D_MIN` and `AXES_D_MAX`, and `filter_axes_points` runs it on points
+/// of any type with the uncertainty per axis of their errors. It runs right
+/// after `filter` and before every exact stage: in `staged`, and at the
+/// start of `exact_stages`, or of `exact_stages_explicit_in` when there is
+/// no `exact_stages`, and of `exact_stages_in`, with `filter_axes_points`,
+/// so that the uncertainty per axis is computed only when `filter` declines.
+/// It is not emitted when the bound by parts is not derived, and
+/// [`Generated::warnings`] then says why.
+///
 /// A predicate whose main form has a total degree of
 /// [`BIG_INTEGERS_ONLY_DEGREE`] or more has no stage on expansions: none is
 /// planned or emitted, nor their ranges, `MAX_COORD_COMPONENTS` or
-/// `exact_stages`. Its `staged` is the filter alone, without an arena, and
+/// `exact_stages`. Its `staged` is the filter alone, with `filter_axes` if
+/// it has one, without an arena, and
 /// its `exact_stages_explicit_in` and `exact_stages_in` run only the stage
 /// on big integers below, so its chain asks the points for their exact
 /// coordinates as big integers and never as expansions.
@@ -124,8 +143,10 @@ pub struct Generated {
 /// other than one. The module of its checks holds `exact`, the main form
 /// evaluated with the exact numbers of `implicit-predicates-oracle`,
 /// `bound_edge_cases`, pairs of inputs at the edge of the error bound of the
-/// filter for explicit points, and, for a per-axis filter,
-/// `uncertainty_edge_cases`, the same with an uncertainty.
+/// filter for explicit points, for a per-axis filter,
+/// `uncertainty_edge_cases`, the same with an uncertainty, and for a
+/// predicate with `filter_axes`, `axes_edge_cases`, pairs at the edge of its
+/// bound by parts.
 ///
 /// # Errors
 ///
@@ -149,7 +170,9 @@ pub struct Generated {
 /// - [`parse`] nests brackets at most 32 deep, and the difference form and
 ///   the degree of the `#[exact]` form take one pass each;
 /// - [`crate::filter_bound`] keeps its exact coefficients within `2^26`
-///   bits in all;
+///   bits in all, and [`crate::parts_bound`], for a form that is not
+///   multihomogeneous, has a budget of its own, beyond which it gives a
+///   warning and no `filter_axes`, never an error;
 /// - [`crate::canonical`] keeps every expansion within `2^16` terms, `2^16`
 ///   bits per coefficient and `2^20` units of work;
 /// - the exact plans on expansions, derived only for main forms of degree
@@ -201,6 +224,22 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         FilterForm::PerAxis(bound) => FilterKind::PerAxis(bound.constants(), bound.certain_zero()),
         FilterForm::Global(bound) => FilterKind::Global(bound.constants()),
     };
+    // A form that is not multihomogeneous has a second test of its filter,
+    // with the bound by parts, when that bound is derived.
+    let mut warnings = Vec::new();
+    let parts = match filter {
+        FilterKind::PerAxis(..) => None,
+        FilterKind::Global(_) => match parts_bound(&graph, file, position)? {
+            PartsOutcome::Bound(bound) => Some((bound.constants(), bound.certain_zero())),
+            PartsOutcome::Unavailable(reason) => {
+                warnings.push(format!(
+                    "{reason}, so `{}` has no `filter_axes`, the second test of its filter",
+                    predicate.name
+                ));
+                None
+            }
+        },
+    };
     let affine = checked_polynomial(predicate, file)?.is_affine_in_each_coordinate();
     if graph.nodes.len() > edges::MAX_NODES {
         return Err(Error::at(
@@ -225,7 +264,11 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
     };
     let points = predicate.params.len();
     let big_arena = big_explicit_arena(&graph, points, file, position)?;
-    let forms = Forms { filter, expansions };
+    let forms = Forms {
+        filter,
+        parts,
+        expansions,
+    };
     let mut out = String::new();
     write_header(
         &mut out,
@@ -246,10 +289,17 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
             "[0.0; 3]",
         ),
     };
+    let uses_max = match &forms.parts {
+        Some((c, zero)) => {
+            filter_parts::write_filter_axes(&mut out, &graph, points, c, *zero) | uses_max
+        }
+        None => uses_max,
+    };
+    let axes = forms.parts.is_some();
     write_exact_stages(&mut out, points, &forms);
     big::write_big_stage(&mut out, &graph, points);
     let explicit_stages = chain_stages(&forms);
-    chain::write_chain(&mut out, points, &explicit_stages, explicit);
+    chain::write_chain(&mut out, points, &explicit_stages, explicit, axes);
     let spans = forms
         .expansions
         .as_ref()
@@ -259,12 +309,16 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         &generic::GenericChain {
             points,
             per_axis: matches!(forms.filter, FilterKind::PerAxis(..)),
+            axes,
             explicit: &explicit_stages,
             spans,
         },
     );
     if uses_max {
         filter::write_max(&mut out);
+    }
+    if axes {
+        filter_parts::write_product_chain(&mut out);
     }
     // Only the stages on the stack check single coordinates.
     if forms.stack_stages().next().is_some() {
@@ -281,14 +335,15 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
         write_product(&mut out);
     }
     let mut checks = String::new();
-    let warnings = checks::write_checks(
+    warnings.extend(checks::write_checks(
         &mut checks,
         predicate,
         &graph,
         &forms.filter,
+        forms.parts.as_ref().map(|(c, _)| c),
         affine,
         notice,
-    );
+    ));
     Ok(Generated {
         name: predicate.name.clone(),
         stages: out,
@@ -345,10 +400,15 @@ pub(crate) fn notice(file: &str, regenerate: &str) -> String {
 
 fn write_header(out: &mut String, predicate: &Predicate, notice: &str, forms: &Forms, degree: u32) {
     out.push_str(notice);
+    let filters = if forms.parts.is_some() {
+        "the two tests of the filter, [`filter`] and [`filter_axes`]"
+    } else {
+        "the filter"
+    };
     let only = if forms.expansions.is_none() {
         format!(
             " Its main form has degree {degree}: from degree {BIG_INTEGERS_ONLY_DEGREE} on, \
-             [`big_integers_in`] is the only exact stage, after the filter."
+             [`big_integers_in`] is the only exact stage, after {filters}."
         )
     } else {
         String::new()

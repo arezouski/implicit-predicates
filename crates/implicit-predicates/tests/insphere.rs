@@ -1,12 +1,14 @@
 //! The stages of `insphere` against an oracle that does not come from the
 //! definition, `implicit_predicates_corpus::exact::insphere`, on the exact
 //! coordinates of the points: their constants against the derivation of
-//! the filter, the stages that are emitted, the filter and the stage on big
-//! integers, their sign convention, a few fixed calls, random, grid,
-//! cospherical and nearly cospherical points of every type, the whole range
-//! of `f64`, the hand-over from the range of the filter, the filter with an
-//! uncertainty, the edge cases of the generated checks, the panics of the
-//! chain and the arena of the stage on big integers.
+//! the filter and of its second test, `filter_axes`, the stages that are
+//! emitted, the filter and the stage on big integers, their sign convention,
+//! a few fixed calls, random, grid, cospherical and nearly cospherical points
+//! of every type, the whole range of `f64`, the hand-over from the range of
+//! the filter, the filter with an uncertainty, the edge cases of the
+//! generated checks, the range of `filter_axes` on each axis and what its
+//! uncertainty can change, the panics of the chain and the arena of the
+//! stage on big integers.
 
 mod common;
 
@@ -31,7 +33,9 @@ use implicit_predicates_test_support::{
     config, cospherical5, extreme_value, grid5, lnc_parameter, lnc_params, near_cospherical5,
     random5, sample,
 };
-use insphere_checks::{bound_edge_cases, check_bound_edge_cases, exact_at};
+use insphere_checks::{
+    axes_edge_cases, bound_edge_cases, check_axes_edge_cases, check_bound_edge_cases, exact_at,
+};
 use proptest::prelude::*;
 
 /// The five arguments of a call.
@@ -66,8 +70,62 @@ fn the_emitted_constants_are_those_of_the_derivation() {
     assert_eq!(stages::BIG_INTEGERS_EXPLICIT_ARENA, 6835);
 }
 
+/// The degree vectors of the terms of `insphere`, in increasing order.
+const VECTORS: [[u32; 3]; 3] = [[1, 1, 3], [1, 3, 1], [3, 1, 1]];
+
 #[test]
-fn only_the_filter_and_the_stage_on_big_integers_are_emitted() {
+fn the_emitted_constants_by_parts_are_those_of_the_derivation() {
+    // The rules of the bound by parts give, for insphere, the terms of
+    // epsilon 358 u D^(1, 1, 3), 382 u D^(1, 3, 1) and 382 u D^(3, 1, 1), and
+    // on each axis k, for each vector g, a term of kappa E_k D^(g - e_k) of
+    // 72 when g_k = 3 and 24 otherwise, plus terms of order u, each inflated
+    // by `1 + 2^-30` and rounded up.
+    let u = Dyadic::from_f64(pow2(-53));
+    let epsilon = [358.0, 382.0, 382.0];
+    assert_eq!(stages::AXES_EPSILON.map(|(g, _)| g), VECTORS);
+    for ((g, value), n) in stages::AXES_EPSILON.into_iter().zip(epsilon) {
+        assert!(is_derived(value, &(&Dyadic::from_f64(n) * &u)), "{g:?}");
+    }
+    let mut kappa = Vec::new();
+    for axis in 0..3 {
+        let mut terms: Vec<([u32; 3], f64)> = VECTORS
+            .iter()
+            .map(|&g| {
+                let mut rest = g;
+                rest[axis] -= 1;
+                (rest, if g[axis] == 3 { 72.0 } else { 24.0 })
+            })
+            .collect();
+        terms.sort_by_key(|&(rest, _)| rest);
+        kappa.extend(terms.into_iter().map(|(rest, n)| (axis, rest, n)));
+    }
+    assert_eq!(stages::AXES_KAPPA.len(), 9);
+    for ((axis, rest, value), (k, h, n)) in stages::AXES_KAPPA.into_iter().zip(kappa) {
+        assert_eq!((axis, rest), (k, h));
+        assert!(is_derived(value, &Dyadic::from_f64(n)), "{axis} {rest:?}");
+    }
+    // The range of the global form, here: its `d_min` binds with the
+    // smallest term of epsilon, 358 u, as it does with 1122 u.
+    assert_eq!(stages::AXES_D_MIN, pow2(-195));
+    assert_eq!(stages::AXES_D_MAX, pow2(203));
+    // With every size the same, the terms add up to the global bound, up to
+    // the rounding of each constant: a few units in the last place.
+    let sum = |values: &mut dyn Iterator<Item = f64>| {
+        values.fold(Dyadic::from_f64(0.0), |s, x| &s + &Dyadic::from_f64(x))
+    };
+    let ulps = |x: f64| Dyadic::from_f64(4.0 * (x.next_up() - x));
+    let around = |total: &Dyadic, x: f64| {
+        let x_exact = Dyadic::from_f64(x);
+        &x_exact - &ulps(x) <= *total && *total <= &x_exact + &ulps(x)
+    };
+    let epsilon = sum(&mut stages::AXES_EPSILON.iter().map(|t| t.1));
+    assert!(around(&epsilon, stages::EPSILON));
+    let kappa = sum(&mut stages::AXES_KAPPA.iter().map(|t| t.2));
+    assert!(around(&kappa, stages::KAPPA));
+}
+
+#[test]
+fn only_the_filters_and_the_stage_on_big_integers_are_emitted() {
     // Of degree 5, `insphere` has no stage on expansions, on the stack or
     // over spans, nor their ranges and helpers.
     for absent in [
@@ -86,6 +144,8 @@ fn only_the_filter_and_the_stage_on_big_integers_are_emitted() {
     for stage in [
         "filter",
         "filter_points",
+        "filter_axes",
+        "filter_axes_points",
         "big_integers_in",
         "staged",
         "staged_in",
@@ -94,8 +154,11 @@ fn only_the_filter_and_the_stage_on_big_integers_are_emitted() {
     ] {
         assert!(SOURCE.contains(&format!("pub fn {stage}")), "{stage}");
     }
-    // `staged` is the filter alone, and takes no arena.
-    assert!(SOURCE.contains("pub fn staged(p: [&[f64; 3]; 5]) -> Option<Sign> {"));
+    // `staged` is the two tests of the filter, and takes no arena.
+    assert!(SOURCE.contains(
+        "pub fn staged(p: [&[f64; 3]; 5]) -> Option<Sign> {\n    \
+         filter(p, 0.0).or_else(|| filter_axes(p, [0.0; 3]))\n}"
+    ));
 }
 
 /// The six points of the unit sphere on the axes.
@@ -894,6 +957,121 @@ fn the_emitted_edge_cases_pass() {
             Some(staged.call(&a, &b, &c, &d, &e))
         });
         assert_eq!((decided, declined), (cases.len(), 0), "{name}");
+    }
+}
+
+/// The cases at the edge of the error bound by parts, by the generated
+/// checks: their exact sign by the definition against the oracle;
+/// `filter_axes` with no uncertainty, which decides some and not others, and
+/// `filter_axes_points` on explicit points, which is the same stage; and the
+/// chain, `staged_in`, which decides every case.
+#[test]
+fn the_emitted_edge_cases_of_filter_axes_pass() {
+    let cases = axes_edge_cases();
+    assert!(cases.len() >= 64, "{} cases", cases.len());
+    for p in &cases {
+        assert_eq!(insphere_checks::exact(p), oracle(p), "{p:?}");
+    }
+    let [decided, declined] = check_axes_edge_cases(|p| stages::filter_axes(refs(p), [0.0; 3]));
+    assert!(decided > 0 && declined > 0, "{decided} {declined}");
+    let points = check_axes_edge_cases(|p| {
+        let [a, b, c, d, e] = p;
+        stages::filter_axes_points(a, b, c, d, e)
+    });
+    assert_eq!(points, [decided, declined]);
+    let mut staged = StagedIn::new();
+    let [decided, declined] = check_axes_edge_cases(|p| {
+        let [a, b, c, d, e] = p;
+        Some(staged.call(a, b, c, d, e))
+    });
+    assert_eq!((decided, declined), (cases.len(), 0));
+}
+
+/// `filter_axes` with an uncertainty on one axis: a point just inside the
+/// unit sphere, near the point of the sphere on that axis, has a sign that
+/// an error of `e[k] / 2` on that axis changes, so `filter_axes` must
+/// decline it, which only the terms of kappa make it do; with no
+/// uncertainty it decides. An uncertainty that is negative, infinite or NaN
+/// never decides, on any axis.
+#[test]
+fn filter_axes_declines_what_the_uncertainty_can_change() {
+    let h = pow2(-10);
+    let [a, b, c, d] = POSITIVE;
+    for k in 0..3 {
+        let mut inside = [0.0; 3];
+        inside[k] = -1.0 + h;
+        let p = [a, b, c, d, inside];
+        assert_eq!(oracle(&p), Sign::Positive);
+        assert_eq!(
+            stages::filter_axes(refs(&p), [0.0; 3]),
+            Some(Sign::Positive)
+        );
+        // Outside the sphere, `2 h` away on axis `k`.
+        let mut outside = inside;
+        outside[k] -= 2.0 * h;
+        assert_eq!(oracle(&[a, b, c, d, outside]), Sign::Negative);
+        let mut e = [0.0; 3];
+        e[k] = 4.0 * h;
+        assert_eq!(stages::filter_axes(refs(&p), e), None, "axis {k}");
+        assert_eq!(stages::filter(refs(&p), 4.0 * h), None, "axis {k}");
+        for bad in [-pow2(-1074), -h, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut e = [0.0; 3];
+            e[k] = bad;
+            assert_eq!(
+                stages::filter_axes(refs(&p), e),
+                None,
+                "axis {k}, e = {e:?}"
+            );
+        }
+    }
+}
+
+/// The points of the axes at the distances `s` from the origin, with two on
+/// axis `j`, on either side, and the origin: the leaves of each axis `k`
+/// have the largest magnitude `s[k]`, and the value is `2 s_j^3 s_l s_m` or
+/// its opposite, for the other two axes `l` and `m`.
+fn on_axes(j: usize, s: [f64; 3]) -> Points5 {
+    let mut p = [[0.0; 3]; 5];
+    for (i, k) in [j, (j + 1) % 3, (j + 2) % 3].into_iter().enumerate() {
+        p[i][k] = s[k];
+    }
+    p[3][j] = -s[j];
+    p
+}
+
+/// The range of `filter_axes` on each axis, with the other two of size 1:
+/// at `AXES_D_MAX`, with the two points of that axis, so that the value
+/// grows as its cube, and at `AXES_D_MIN`, as a single point, so that it
+/// shrinks as the size itself; one step outside, it declines. At the
+/// bottom, the global filter, sized by the largest axis, declines.
+#[test]
+fn the_range_of_filter_axes_is_checked_on_every_axis() {
+    let (low, high) = (stages::AXES_D_MIN, stages::AXES_D_MAX);
+    for k in 0..3 {
+        let other = (k + 1) % 3;
+        for (j, v, decides) in [
+            (k, high, true),
+            (k, high.next_down(), true),
+            (k, high.next_up(), false),
+            (other, low, true),
+            (other, low.next_up(), true),
+            (other, low.next_down(), false),
+        ] {
+            let mut s = [1.0; 3];
+            s[k] = v;
+            let p = on_axes(j, s);
+            let expected = oracle(&p);
+            assert_ne!(expected, Sign::Zero);
+            let decision = stages::filter_axes(refs(&p), [0.0; 3]);
+            assert_eq!(
+                decision,
+                decides.then_some(expected),
+                "axis {k}, size {v:e}"
+            );
+            if j == other {
+                assert_eq!(stages::filter(refs(&p), 0.0), None, "axis {k}, size {v:e}");
+            }
+        }
     }
 }
 

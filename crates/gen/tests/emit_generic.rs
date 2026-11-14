@@ -163,7 +163,11 @@ fn the_chain_for_points_of_any_type_takes_the_exact_stages_of_staged_for_explici
     let exact = function(&i.stages, "exact_stages");
     let order = positions(
         exact,
-        &["exact_differences(p)", "staged_in_arena(scratch, p)"],
+        &[
+            "filter_axes(p, [0.0; 3])",
+            "exact_differences(p)",
+            "staged_in_arena(scratch, p)",
+        ],
     );
     assert!(order.is_sorted(), "{exact}");
     let explicit = function(&i.stages, "exact_stages_explicit_in");
@@ -177,10 +181,12 @@ fn the_chain_for_points_of_any_type_takes_the_exact_stages_of_staged_for_explici
     );
     assert!(order.is_sorted(), "{explicit}");
     // In-sphere has no exact stage but the one on big integers, and no
-    // `exact_stages`.
+    // `exact_stages`: only the second test of its filter comes before it.
     let s = generated(INSPHERE, "predicates/insphere.pred");
     assert!(!s.stages.contains("exact_stages("));
-    assert!(!function(&s.stages, "exact_stages_explicit_in").contains("if let Some"));
+    let explicit = function(&s.stages, "exact_stages_explicit_in");
+    assert_eq!(explicit.matches("if let Some").count(), 1, "{explicit}");
+    assert!(explicit.contains("if let Some(sign) = filter_axes(p, [0.0; 3]) {"));
 }
 
 #[test]

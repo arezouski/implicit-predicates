@@ -7,7 +7,9 @@
 //! inputs on either side of the error bound of the filter for explicit
 //! points; for a per-axis filter, also `uncertainty_edge_cases`, inputs on
 //! either side of its bound with an uncertainty on one axis or on all of
-//! them. The cases are built by [`super::edges`] and written as bit
+//! them; for a predicate with the second test of its filter, `filter_axes`,
+//! also `axes_edge_cases`, inputs on either side of its bound by parts with
+//! no uncertainty. The cases are built by [`super::edges`] and written as bit
 //! patterns so that they read back as exactly the same `f64`s. The functions
 //! that check a stage on those cases, whatever the types of its points, are
 //! written by [`super::check_fns`].
@@ -16,9 +18,10 @@ use std::fmt::Write;
 
 use super::check_fns;
 use super::comment;
-use super::edges::{Case, bound_edge_cases, uncertainty_edge_cases};
+use super::edges::{Case, axes_edge_cases, bound_edge_cases, uncertainty_edge_cases};
 use super::filter::FilterKind;
 use super::statements::node_statements;
+use crate::bound::PartsConstants;
 use crate::differences::DiffGraph;
 use crate::parse::Predicate;
 
@@ -27,15 +30,17 @@ use crate::parse::Predicate;
 const NO_CASES: &str = "\n\nNo such input was found for this predicate: the table is empty.";
 
 /// Writes the checks module of `predicate`, whose difference form is
-/// `graph`, whose filter has the form and the emitted constants of `filter`
-/// and whose polynomial is affine in each coordinate or not, as `affine`
-/// says, starting with `notice`. Returns a warning for each table of edge
-/// cases that came out empty.
+/// `graph`, whose filter has the form and the emitted constants of `filter`,
+/// whose second test of the filter, if it has one, has the emitted constants
+/// `parts`, and whose polynomial is affine in each coordinate or not, as
+/// `affine` says, starting with `notice`. Returns a warning for each table
+/// of edge cases that came out empty.
 pub(crate) fn write_checks(
     out: &mut String,
     predicate: &Predicate,
     graph: &DiffGraph,
     filter: &FilterKind,
+    parts: Option<&PartsConstants>,
     affine: bool,
     notice: &str,
 ) -> Vec<String> {
@@ -57,8 +62,14 @@ pub(crate) fn write_checks(
         &format!(
             "Checks of the predicate `{}`, for its tests: [`exact`] and [`exact_at`], its \
              exact sign, [`bound_edge_cases`], inputs at the edge of the error bound of \
-             its filter, and [`check_bound_edge_cases`], which checks a stage on them.",
-            predicate.name
+             its filter, and [`check_bound_edge_cases`], which checks a stage on them.{}",
+            predicate.name,
+            if parts.is_some() {
+                " [`axes_edge_cases`] and [`check_axes_edge_cases`] do the same for the \
+                 error bound of the second test of its filter, `filter_axes`."
+            } else {
+                ""
+            }
         ),
     );
     out.push_str("\nuse implicit_predicates::Sign;\nuse implicit_predicates_oracle::Dyadic;\n\n");
@@ -160,12 +171,67 @@ pub(crate) fn write_checks(
             no_cases("uncertainty_edge_cases", "check_uncertainty_edge_cases");
         }
     }
+    if let Some(constants) = parts {
+        let cases = axes_edge_cases(graph, points, constants);
+        write_axes_cases(out, &cases, points);
+        if cases.is_empty() {
+            no_cases("axes_edge_cases", "check_axes_edge_cases");
+        }
+    }
     let degrees = match filter {
         FilterKind::PerAxis(constants, _) => Some(constants.degrees),
         FilterKind::Global(_) => None,
     };
-    check_fns::write_check_fns(out, points, degrees, affine);
+    check_fns::write_check_fns(out, points, degrees, affine, parts.is_some());
     warnings
+}
+
+/// Writes `axes_edge_cases` and its table, for `points` points.
+fn write_axes_cases(out: &mut String, cases: &[(Case, Case)], points: usize) {
+    let ty = format!("[[f64; 3]; {points}]");
+    out.push('\n');
+    comment(
+        out,
+        "///",
+        0,
+        &format!(
+            "Inputs on either side of the error bound by parts of `filter_axes`, the \
+             second test of the filter, for explicit points, in pairs: the first of each \
+             pair has an exact magnitude at most the bound, the sum of `AXES_EPSILON` \
+             terms `c*d^g`, the second above it, where `d_k` is the largest difference \
+             of coordinates on axis `k` as `filter_axes` computes it; the two differ by \
+             one representable value in one coordinate.\n\n\
+             The points are built as in [`bound_edge_cases`]; the scales go from just \
+             above `AXES_D_MIN` to just below `AXES_D_MAX`.{}",
+            if cases.is_empty() { NO_CASES } else { "" }
+        ),
+    );
+    writeln!(
+        out,
+        "pub fn axes_edge_cases() -> Vec<{ty}> {{\n\
+         AXES_EDGE_CASES\n\
+         .into_iter()\n\
+         .map(|case| case.map(|point| point.map(f64::from_bits)))\n\
+         .collect()\n}}\n"
+    )
+    .unwrap();
+    comment(
+        out,
+        "///",
+        0,
+        "The bit patterns of the coordinates of [`axes_edge_cases`].",
+    );
+    writeln!(
+        out,
+        "const AXES_EDGE_CASES: [[[u64; 3]; {points}]; {}] = [",
+        2 * cases.len()
+    )
+    .unwrap();
+    for (below, above) in cases {
+        writeln!(out, "{},", case(below)).unwrap();
+        writeln!(out, "{},", case(above)).unwrap();
+    }
+    out.push_str("];\n");
 }
 
 /// Writes `uncertainty_edge_cases` and its table, for `points` points.

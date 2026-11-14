@@ -236,10 +236,12 @@ fn big_integers_alone_start_at_degree_5() {
 
 #[test]
 fn a_predicate_of_degree_5_or_more_has_only_the_stage_on_big_integers() {
-    for (source, file, points, zero) in [
-        (INSPHERE, "predicates/insphere.pred", 5, "0.0"),
-        (DEGREE_5, "t.pred", 2, "[0.0; 3]"),
-        (DEGREE_18, "t.pred", 2, "[0.0; 3]"),
+    // In-sphere is not multihomogeneous, so it has the second test of its
+    // filter, `filter_axes`; the others have the per-axis filter alone.
+    for (source, file, points, zero, axes) in [
+        (INSPHERE, "predicates/insphere.pred", 5, "0.0", true),
+        (DEGREE_5, "t.pred", 2, "[0.0; 3]", false),
+        (DEGREE_18, "t.pred", 2, "[0.0; 3]", false),
     ] {
         let g = generated(source, file);
         let code = &g.stages;
@@ -283,22 +285,34 @@ fn a_predicate_of_degree_5_or_more_has_only_the_stage_on_big_integers() {
              ScratchExhausted, Sign}",
             "{file}"
         );
-        // The filter alone, without an arena.
+        // The filter alone, or its two tests, without an arena.
         let staged = function(code, "staged");
+        let second = if axes {
+            "\n.or_else(|| filter_axes(p, [0.0; 3]))"
+        } else {
+            ""
+        };
         assert_eq!(
             staged,
             format!(
-                "pub fn staged(p: [&[f64; 3]; {points}]) -> Option<Sign> {{\nfilter(p, {zero})"
+                "pub fn staged(p: [&[f64; 3]; {points}]) -> Option<Sign> {{\nfilter(p, {zero}){second}"
             ),
             "{file}"
         );
+        assert_eq!(code.contains("filter_axes"), axes, "{file}");
         // The chains after the filter go to the stage on big integers, on the
         // coordinates of the points written to the arena from its mark.
         let explicit = function(code, "exact_stages_explicit_in");
+        let first = if axes {
+            "if let Some(sign) = filter_axes(p, [0.0; 3]) {\nreturn Ok(sign);\n}\nlet mark"
+        } else {
+            "let mark"
+        };
         let order = [
             "fn big(",
             "let q0 = exact_big(scratch, p[0])?;",
             "big_integers_in(scratch, [&q0, ",
+            first,
             "let mark = scratch.mark();\nlet result = big(scratch, p);\nscratch.reset(mark);\nresult",
         ]
         .map(|text| {
@@ -310,10 +324,16 @@ fn a_predicate_of_degree_5_or_more_has_only_the_stage_on_big_integers() {
         let generic = function(code, "exact_stages_in");
         assert!(!generic.contains("fn spans"), "{file}: {generic}");
         assert!(!generic.contains("decided"), "{file}: {generic}");
+        let first = if axes {
+            "if let Some(sign) = filter_axes_points(p0, "
+        } else {
+            "let mark"
+        };
         let order = [
             "fn big<",
             "let q0 = exact_big(scratch, p0)?;",
             "big_integers_in(scratch, [&q0, ",
+            first,
             "let mark = scratch.mark();\nlet result = big(scratch, ",
             "scratch.reset(mark);\nresult",
         ]

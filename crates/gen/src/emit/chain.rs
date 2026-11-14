@@ -5,8 +5,11 @@
 //! that has stages on expansions. A stage whose temporaries do not fit on
 //! the stack is replaced by the stage over spans of the same form, run on
 //! the exact coordinates of the explicit points written to an arena;
-//! `staged` then takes the arena. A predicate without stages on expansions
-//! has the filter alone in `staged`.
+//! `staged` then takes the arena. A predicate whose form is not
+//! multihomogeneous has a second test of its filter, `filter_axes`, run right
+//! after `filter` and before every exact stage. A predicate without stages on
+//! expansions has its filter alone in `staged`, with its second test if it
+//! has one.
 
 use std::fmt::Write;
 
@@ -22,10 +25,27 @@ pub(crate) enum ChainStage {
     Spans(&'static str),
 }
 
+/// The text that the documentation of a chain gives to `filter_axes`, run
+/// with no uncertainty, after the filter, when `axes` says it is emitted.
+pub(crate) fn axes_doc(axes: bool) -> &'static str {
+    if axes {
+        ", then [`filter_axes`] with `e = [0.0; 3]`"
+    } else {
+        ""
+    }
+}
+
 /// Writes `staged`: the filter for explicit points, called with the
 /// uncertainty `explicit` (`0.0`, or `[0.0; 3]` for a per-axis filter), then
-/// the exact `stages` in order, if there are any.
-pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage], explicit: &str) {
+/// `filter_axes` with no uncertainty when `axes` says it is emitted, then the
+/// exact `stages` in order, if there are any.
+pub(crate) fn write_chain(
+    out: &mut String,
+    points: usize,
+    stages: &[ChainStage],
+    explicit: &str,
+    axes: bool,
+) {
     let names: Vec<String> = stages
         .iter()
         .map(|stage| match stage {
@@ -35,9 +55,10 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
     // The stage over spans, if any, takes the place of the last stage on the
     // stack.
     let Some((ChainStage::Spans(spans), before)) = stages.split_last() else {
-        write_stack_chain(out, points, &names, stages, explicit);
+        write_stack_chain(out, points, &names, stages, explicit, axes);
         return;
     };
+    let axes_text = axes_doc(axes);
     comment(
         out,
         "///",
@@ -45,7 +66,7 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
         &format!(
             "The sign of the predicate for explicit points, from the first stage that \
              decides.\n\n\
-             Runs [`filter`] with `e = {explicit}`, then {}. The stage that takes an arena \
+             Runs [`filter`] with `e = {explicit}`{axes_text}, then {}. The stage that takes an arena \
              runs on the exact coordinates of the points written to `scratch`, which is \
              left as it was. `Ok(None)` means that no stage can decide.\n\n\
              # Errors\n\n\
@@ -63,6 +84,9 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
          if let Some(sign) = filter(p, {explicit}) {{\nreturn Ok(Some(sign));\n}}"
     )
     .unwrap();
+    if axes {
+        out.push_str("if let Some(sign) = filter_axes(p, [0.0; 3]) {\nreturn Ok(Some(sign));\n}\n");
+    }
     for stage in before {
         if let ChainStage::Stack(name) = stage {
             writeln!(
@@ -116,8 +140,17 @@ fn write_stack_chain(
     names: &[String],
     stages: &[ChainStage],
     explicit: &str,
+    axes: bool,
 ) {
-    let doc = if names.is_empty() {
+    let axes_text = axes_doc(axes);
+    let doc = if names.is_empty() && axes {
+        format!(
+            "The sign of the predicate for explicit points, from the two tests of its \
+             filter, the only stages before [`big_integers_in`].\n\n\
+             Runs [`filter`] with `e = {explicit}`{axes_text}. `None` means that neither \
+             can decide; [`exact_stages_explicit_in`] then decides."
+        )
+    } else if names.is_empty() {
         format!(
             "The sign of the predicate for explicit points, from its filter, the only \
              stage before [`big_integers_in`].\n\n\
@@ -128,8 +161,8 @@ fn write_stack_chain(
         format!(
             "The sign of the predicate for explicit points, from the first stage that \
              decides.\n\n\
-             Runs [`filter`] with `e = {explicit}`, then {}. `None` means that no stage \
-             can decide.",
+             Runs [`filter`] with `e = {explicit}`{axes_text}, then {}. `None` means that \
+             no stage can decide.",
             names.join(", then ")
         )
     };
@@ -141,6 +174,9 @@ fn write_stack_chain(
          filter(p, {explicit})"
     )
     .unwrap();
+    if axes {
+        out.push_str("\n.or_else(|| filter_axes(p, [0.0; 3]))");
+    }
     for stage in stages {
         if let ChainStage::Stack(name) = stage {
             write!(out, "\n.or_else(|| {name}(p))").unwrap();
