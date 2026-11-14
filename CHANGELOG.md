@@ -87,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A predicate whose exact stages on the stack would be too large to plan is
   generated with the stages over arena spans alone, instead of being
   rejected.
+- The generated `axes_edge_cases` give each pair its uncertainty, and
+  include pairs on grids with one axis far shorter or longer than the
+  others, with no uncertainty and with one on each axis or on all of them;
+  `check_axes_edge_cases` takes the uncertainty as a second argument of the
+  stage, checks the sign at a sample of corners of the boxes of the errors,
+  requires the stage to decline each pair with an uncertainty below the
+  bound when the uncertainty is doubled and to decide it above the bound
+  when it is halved, and returns its counts with no uncertainty and with
+  one.
 - The generated `check_uncertainty_edge_cases` says that the sign at the
   corners of the boxes of the errors is the sign in the whole boxes only
   for a predicate that is affine in each coordinate; for any other it says

@@ -11,6 +11,7 @@
 use std::fmt::Write;
 
 use super::comment;
+use super::edges::KAPPA_OVER_EPSILON;
 
 /// The most points for which `check_uncertainty_edge_cases` checks every
 /// corner of the boxes of the errors: `2^12` corners per case, each an exact
@@ -34,7 +35,7 @@ pub(crate) fn write_check_fns(
 ) {
     write_check_cases(out, points, "check_bound_edge_cases", "bound_edge_cases");
     if axes {
-        write_check_cases(out, points, "check_axes_edge_cases", "axes_edge_cases");
+        write_check_axes(out, points);
     }
     if let Some(degrees) = degrees {
         write_check_uncertainty(out, points, degrees, affine);
@@ -71,6 +72,101 @@ fn write_check_cases(out: &mut String, points: usize, name: &str, cases: &str) {
          }}\n\
          None => counts[1] += 1,\n\
          }}\n\
+         }}\n\
+         counts\n\
+         }}"
+    )
+    .unwrap();
+}
+
+/// Writes `check_axes_edge_cases`, which checks `filter_axes` on the cases
+/// of `axes_edge_cases`, for `points` points.
+fn write_check_axes(out: &mut String, points: usize) {
+    let ty = format!("[[f64; 3]; {points}]");
+    let coords = 3 * points;
+    out.push('\n');
+    comment(
+        out,
+        "///",
+        0,
+        &format!(
+            "Runs `decide`, a stage that takes the approximations `p` and the \
+             uncertainty `e` as `filter_axes` does, on every case of \
+             [`axes_edge_cases`], and checks that, whenever it decides, its sign is the \
+             exact sign: with `e = 0`, at `p`; otherwise, not zero and the exact sign at \
+             {} of the `2^{coords}` corners of the boxes of an error of `e[k] / 2` for \
+             every point on each axis `k` around the approximations: the corner with \
+             every coordinate at its lowest, the one with every coordinate at its \
+             highest, and each corner one coordinate away from either. The predicate need \
+             not be affine in each coordinate, so this does not show that the sign holds \
+             in the whole boxes.\n\n\
+             Then, for each pair with an uncertainty, whose terms of kappa exceed \
+             `2^{KAPPA_OVER_EPSILON}` times its terms of epsilon, checks that `decide` declines the first input of \
+             the pair with `2 e`, where the bound is near twice the exact value, and \
+             decides the second with `e / 2`, where it is near half of it, with its exact \
+             sign: a bound with a term of kappa much too small, or much too large, fails \
+             here although no sign is wrong.\n\n\
+             Returns how many cases it decided and how many it declined, with `e = 0` and \
+             with an uncertainty.\n\n\
+             # Panics\n\n\
+             Panics if `decide` gives a sign that does not hold at a corner it checks, \
+             decides a first input with `2 e`, or does not decide a second input with \
+             `e / 2`.",
+            2 * (1 + coords)
+        ),
+    );
+    writeln!(
+        out,
+        "pub fn check_axes_edge_cases(\n\
+         mut decide: impl FnMut(&{ty}, [f64; 3]) -> Option<Sign>,\n\
+         ) -> [[usize; 2]; 2] {{\n\
+         let mut counts = [[0; 2]; 2];\n\
+         let cases = axes_edge_cases();\n\
+         for (p, e) in &cases {{\n\
+         let kind = usize::from(e.iter().any(|&x| x != 0.0));\n\
+         let Some(sign) = decide(p, *e) else {{\n\
+         counts[kind][1] += 1;\n\
+         continue;\n\
+         }};\n\
+         counts[kind][0] += 1;\n\
+         if kind == 0 {{\n\
+         assert_eq!(sign, exact(p), \"{{p:?}}\");\n\
+         continue;\n\
+         }}\n\
+         assert_ne!(sign, Sign::Zero, \"{{p:?}} e = {{e:?}}\");\n\
+         // Powers of two, far from the subnormals: halving them is exact.\n\
+         let half = e.map(|x| x / 2.0);\n\
+         assert_eq!(half.map(|x| x * 2.0), *e);\n\
+         // Every coordinate at its lowest or at its highest, but the one of\n\
+         // `flip`, at the other end.\n\
+         let corner = |high: bool, flip: Option<(usize, usize)>| -> [[Dyadic; 3]; {points}] {{\n\
+         std::array::from_fn(|i| {{\n\
+         std::array::from_fn(|k| {{\n\
+         let (x, d) = (Dyadic::from_f64(p[i][k]), Dyadic::from_f64(half[k]));\n\
+         if high != (flip == Some((i, k))) {{ &x + &d }} else {{ &x - &d }}\n\
+         }})\n\
+         }})\n\
+         }};\n\
+         for high in [false, true] {{\n\
+         let flips = (0..{points}).flat_map(|i| (0..3).map(move |k| Some((i, k))));\n\
+         for flip in std::iter::once(None).chain(flips) {{\n\
+         assert_eq!(exact_at(&corner(high, flip)), sign, \"{{p:?}} e = {{e:?}}, corner {{high}} {{flip:?}}\");\n\
+         }}\n\
+         }}\n\
+         }}\n\
+         // The cases come in pairs with the same `e`, the first at most the\n\
+         // bound and the second above it.\n\
+         for pair in cases.chunks(2) {{\n\
+         let [(below, e), (above, _)] = pair else {{\n\
+         panic!(\"the cases come in pairs\");\n\
+         }};\n\
+         if e.iter().all(|&x| x == 0.0) {{\n\
+         continue;\n\
+         }}\n\
+         let twice = e.map(|x| 2.0 * x);\n\
+         assert_eq!(decide(below, twice), None, \"{{below:?}} e = {{twice:?}}\");\n\
+         let half = e.map(|x| x / 2.0);\n\
+         assert_eq!(decide(above, half), Some(exact(above)), \"{{above:?}} e = {{half:?}}\");\n\
          }}\n\
          counts\n\
          }}"

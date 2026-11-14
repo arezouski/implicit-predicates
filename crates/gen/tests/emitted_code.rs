@@ -605,8 +605,10 @@ fn the_chain_has_the_sign_of_the_oracle() {
     assert!(only_axes >= 6, "{only_axes}");
     let [decided, _] = checks::check_bound_edge_cases(|p| stages::staged(p.each_ref()));
     assert!(decided > 0);
-    let [decided, declined] = checks::check_axes_edge_cases(|p| stages::filter_axes(p.each_ref(), [0.0; 3]));
-    assert!(decided > 0 && declined > 0, "{decided} {declined}");
+    let counts = checks::check_axes_edge_cases(|p, e| stages::filter_axes(p.each_ref(), e));
+    for [decided, declined] in counts {
+        assert!(decided > 0 && declined > 0, "{counts:?}");
+    }
 }
 
 /// Points whose leaves are all `v` on axis `k` and 1 on the other two

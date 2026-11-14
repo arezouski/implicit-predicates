@@ -8,10 +8,11 @@ use super::edges::Case;
 /// difference of two of them, before scaling.
 pub(super) const GRID: i64 = 16;
 
-/// `count` points on the grid of integers in `-GRID..=GRID` times
-/// `2^scale`, the last an integer affine combination of the first three
-/// when there are at least four.
-pub(super) fn grid_points(random: &mut SplitMix64, count: usize, scale: i32) -> Case {
+/// `count` points on the grid of integers in `-GRID..=GRID`, times
+/// `2^scales[k]` on each axis `k`, the last an integer affine combination of
+/// the first three when there are at least four. Scaling an axis by a power
+/// of two keeps that combination.
+pub(super) fn grid_points_axes(random: &mut SplitMix64, count: usize, scales: [i32; 3]) -> Case {
     let mut integer = || random.below(2 * GRID as u64 + 1) as i64 - GRID;
     let mut p: Vec<[i64; 3]> = (0..count)
         .map(|_| [integer(), integer(), integer()])
@@ -22,9 +23,9 @@ pub(super) fn grid_points(random: &mut SplitMix64, count: usize, scale: i32) -> 
         p[count - 1] = std::array::from_fn(|i| a[i] + s * (b[i] - a[i]) + t * (c[i] - a[i]));
     }
     // The integers are below 2^8, so the products are exact.
-    let unit = pow2(scale);
+    let unit = scales.map(pow2);
     p.iter()
-        .map(|point| point.map(|n| n as f64 * unit))
+        .map(|point| std::array::from_fn(|k| point[k] as f64 * unit[k]))
         .collect()
 }
 

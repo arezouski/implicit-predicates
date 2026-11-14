@@ -271,13 +271,23 @@ For the tests of each predicate it writes a second module, of checks, with:
   uncertainty that is not zero on one axis, for each axis of positive
   degree, or on all of the axes of positive degree, given with each pair;
 - for a predicate with `filter_axes`, `axes_edge_cases`, pairs built in the
-  same way on either side of its bound by parts, with no uncertainty, at
-  scales from just above `AXES_D_MIN` to just below `AXES_D_MAX`;
+  same way on either side of its bound by parts, each with its uncertainty,
+  at scales from just above `AXES_D_MIN` to just below `AXES_D_MAX`: with no
+  uncertainty on grids of one scale, then on grids with a scale of their
+  own on each axis, one axis `2^-20` or `2^-40` times as short or as long as
+  the other two, with no uncertainty and with one on each axis of the range
+  or on all of them. In a pair with an uncertainty the terms of kappa are
+  more than `2^10` times the terms of epsilon;
 - `check_bound_edge_cases`, `check_axes_edge_cases` and
   `check_uncertainty_edge_cases`, which run a
   stage, given as a closure of the coordinates of the points (and of their
-  errors), on those cases and check its signs, so that the tests can run
-  them on every stage and on points of any type. With an uncertainty, the
+  errors, or of the uncertainty for `check_axes_edge_cases`), on those
+  cases and check its signs, so that the tests can run them on every stage
+  and on points of any type. `check_axes_edge_cases` also requires the
+  stage to decline the first input of each pair with an uncertainty when
+  the uncertainty is doubled, and to decide the second when it is halved,
+  so that a term of kappa that is much too small or much too large fails
+  even when no sign is wrong. With an uncertainty, the
   sign is checked at every corner of the boxes of the errors for a
   predicate of at most four points; above that the corners are too many,
   and only a fixed sample of `2 * (1 + 3 * points)` of them is checked, as

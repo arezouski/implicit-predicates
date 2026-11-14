@@ -20,11 +20,15 @@
 //! does the same with the bound by parts, the sum over the terms of the
 //! emitted constants ([`PartsConstants`]) of `value * d^degrees` for a term
 //! of epsilon and `value * e[axis] * d^rest` for a term of kappa, with
-//! `d_k = delta_k + e[k]` computed in `f64` on each axis of its range.
+//! `d_k = delta_k + e[k]` computed in `f64` on each axis of its range. Its
+//! grids also have a scale of their own on each axis, one axis `2^-20` or
+//! `2^-40` times as short or as long as the other two, and an `e` that is
+//! not zero on one axis of the range, for each, or on all of them: so the
+//! pairs reach the terms of kappa, and the terms of epsilon of a degree
+//! vector that a grid of one scale leaves small.
 //!
-//! [`bound_edge_cases`] and [`axes_edge_cases`] take `e = 0`, as for
-//! explicit points; [`uncertainty_edge_cases`], for a per-axis filter, takes
-//! an `e` that is
+//! [`bound_edge_cases`] takes `e = 0`, as for explicit points;
+//! [`uncertainty_edge_cases`], for a per-axis filter, takes an `e` that is
 //! not zero on one axis only, for each axis, or on the three: a power of
 //! two between `2^-40` and `2^-8` times the scale of the grid on each axis
 //! where it is not zero.
@@ -34,7 +38,7 @@
 //! cases are the same on every run.
 
 use super::filter::FilterKind;
-use super::grid::{FINITE_KEYS, GRID, SplitMix64, exponent, from_key, grid_points, key, pow2};
+use super::grid::{FINITE_KEYS, GRID, SplitMix64, exponent, from_key, grid_points_axes, key, pow2};
 use crate::bound::{AxisConstants, PartsConstants};
 use crate::differences::{DiffGraph, DiffNode};
 use crate::dyadic::Dyadic;
@@ -46,7 +50,8 @@ pub(crate) type Case = Vec<[f64; 3]>;
 ///
 /// The search makes at most `8 * 64` attempts with `e = 0`, for a per-axis
 /// filter `8 * 4 * 16` more with uncertainty, and for a predicate with
-/// `filter_axes` `8 * 64` more for its bound by parts, each with at most
+/// `filter_axes` `8 * 64` more for its bound by parts and at most
+/// `34 * 3 * 6` with other scales and uncertainties, each with at most
 /// about 330 exact evaluations of the whole form, so its work is
 /// proportional to the number of nodes; at 256 nodes the slowest form
 /// found, a long sum of one difference, takes a few seconds in a debug
@@ -62,6 +67,21 @@ const ATTEMPTS_PER_SCALE: usize = 64;
 /// the attempts allowed for them.
 const UNCERTAIN_PER_SCALE: usize = 2;
 const UNCERTAIN_ATTEMPTS_PER_SCALE: usize = 16;
+
+/// The attempts allowed for each case of [`axes_edge_cases`] with scales
+/// of their own on the axes or an uncertainty, each tried at about a third
+/// of the scales, at most three.
+const SHAPED_ATTEMPTS: usize = 6;
+
+/// How many times the terms of kappa of the bound by parts must exceed its
+/// terms of epsilon in a case of [`axes_edge_cases`] with an uncertainty:
+/// enough that halving or doubling `e` moves the bound far more than the
+/// rounding of the computed value and of the bound can.
+pub(crate) const KAPPA_OVER_EPSILON: i64 = 10;
+
+/// The binary exponents by which one axis of a grid of [`axes_edge_cases`]
+/// is shorter or longer than the other two.
+pub(crate) const SHAPE_SHIFTS: [i32; 2] = [20, 40];
 
 /// Pairs of inputs on either side of the bound of the `filter` of `graph`
 /// with `e = 0`, with `points` points: the first of each pair at or below
@@ -82,7 +102,7 @@ pub(crate) fn bound_edge_cases(
         let found = form.search(
             &mut random,
             points,
-            scale,
+            [scale; 3],
             [0.0; 3],
             PER_SCALE,
             ATTEMPTS_PER_SCALE,
@@ -122,7 +142,7 @@ pub(crate) fn uncertainty_edge_cases(
             let found = form.search(
                 &mut random,
                 points,
-                scale,
+                [scale; 3],
                 e,
                 UNCERTAIN_PER_SCALE,
                 UNCERTAIN_ATTEMPTS_PER_SCALE,
@@ -135,28 +155,113 @@ pub(crate) fn uncertainty_edge_cases(
 
 /// Pairs of inputs on either side of the bound by parts of `filter_axes`,
 /// for the difference form `graph` with `points` points and the emitted
-/// `constants`, with `e = 0`. The pairs are as in [`bound_edge_cases`].
+/// `constants`, each with its `e`. The pairs are as in [`bound_edge_cases`].
+///
+/// First, pairs with `e = 0` on grids of one scale. Then pairs on grids of
+/// a scale of their own on each axis, one axis `2^-20` or `2^-40` times as
+/// short or as long as the other two, with `e = 0` and with an `e` that is
+/// not zero on one axis of the range, for each, or on all of them: a power
+/// of two between `2^-30` and `2^-8` times the scale of the grid on that
+/// axis. A pair with an uncertainty is kept only when the terms of kappa
+/// exceed `2^KAPPA_OVER_EPSILON` times the terms of epsilon at both inputs,
+/// evaluated exactly as for the edge, and when the sizes with `e / 2` are
+/// in the range too: then `filter_axes` must decline the first input with
+/// `2 e`, whose bound is near twice the exact value, and decide the second
+/// with `e / 2`, whose bound is near half of it.
 pub(crate) fn axes_edge_cases(
     graph: &DiffGraph,
     points: usize,
     constants: &PartsConstants,
-) -> Vec<(Case, Case)> {
+) -> Vec<([f64; 3], Case, Case)> {
     let form = Form {
         graph,
         bound: Bound::Parts(constants),
     };
     let mut random = SplitMix64(0x6a09_e667_f3bc_c909);
     let mut cases = Vec::new();
-    for scale in form.scales() {
+    let scales = form.scales();
+    for &scale in &scales {
         let found = form.search(
             &mut random,
             points,
-            scale,
+            [scale; 3],
             [0.0; 3],
             PER_SCALE,
             ATTEMPTS_PER_SCALE,
         );
-        cases.extend(found);
+        cases.extend(
+            found
+                .into_iter()
+                .map(|(below, above)| ([0.0; 3], below, above)),
+        );
+    }
+    let axes: Vec<usize> = (0..3).filter(|&k| constants.range_axes[k]).collect();
+    let mut choices: Vec<Vec<usize>> = vec![Vec::new()];
+    choices.extend(axes.iter().map(|&k| vec![k]));
+    if axes.len() > 1 {
+        choices.push(axes.clone());
+    }
+    // One scale per axis: all the same, or one axis shorter, or longer,
+    // than the other two, as a shift of the exponent of each axis.
+    let mut shapes: Vec<Option<(usize, bool)>> = vec![None];
+    for &k in &axes {
+        shapes.push(Some((k, false)));
+        shapes.push(Some((k, true)));
+    }
+    let (low, high) = form.range();
+    let in_range = |s: i32| low < s && s + 8 <= high;
+    let mut random = SplitMix64(0xbb67_ae85_84ca_a73b);
+    let mut combination = 0usize;
+    for shape in &shapes {
+        for choice in &choices {
+            if shape.is_none() && choice.is_empty() {
+                continue;
+            }
+            combination += 1;
+            for (index, &scale) in scales.iter().enumerate() {
+                if (index + combination) % 3 != 0 {
+                    continue;
+                }
+                let shift = SHAPE_SHIFTS[random.below(2) as usize];
+                let axis_scales: [i32; 3] = std::array::from_fn(|k| match shape {
+                    None => scale,
+                    // Axis `j` shorter than the others, or the others
+                    // shorter than it.
+                    Some((j, long)) => {
+                        if (k == *j) != *long {
+                            scale - shift
+                        } else {
+                            scale
+                        }
+                    }
+                });
+                if !axes.iter().all(|&k| in_range(axis_scales[k])) {
+                    continue;
+                }
+                let mut e = [0.0; 3];
+                let mut normal = true;
+                for &k in choice {
+                    let exponent = axis_scales[k] - 8 - random.below(23) as i32;
+                    // `e / 2` must be a normal power of two too.
+                    normal &= exponent > -1022;
+                    if normal {
+                        e[k] = pow2(exponent);
+                    }
+                }
+                if !normal {
+                    continue;
+                }
+                let found = form.search(&mut random, points, axis_scales, e, 1, SHAPED_ATTEMPTS);
+                cases.extend(
+                    found
+                        .into_iter()
+                        .filter(|(below, above)| {
+                            choice.is_empty() || form.margins_hold(constants, [below, above], e)
+                        })
+                        .map(|(below, above)| (e, below, above)),
+                );
+            }
+        }
     }
     cases
 }
@@ -197,13 +302,13 @@ impl Form<'_> {
     }
 
     /// Up to `wanted` pairs of inputs on either side of the bound with
-    /// uncertainty `e`, from grids at `scale`, in at most `attempts`
-    /// attempts.
+    /// uncertainty `e`, from grids at `scales`, one per axis, in at most
+    /// `attempts` attempts.
     fn search(
         &self,
         random: &mut SplitMix64,
         points: usize,
-        scale: i32,
+        scales: [i32; 3],
         e: [f64; 3],
         wanted: usize,
         attempts: usize,
@@ -213,7 +318,7 @@ impl Form<'_> {
             if cases.len() == wanted {
                 break;
             }
-            let start = grid_points(random, points, scale);
+            let start = grid_points_axes(random, points, scales);
             let moved: Vec<(usize, usize)> = (0..points)
                 .flat_map(|i| (0..3).map(move |axis| (i, axis)))
                 .filter(|&(i, axis)| start[i][axis] != 0.0)
@@ -230,7 +335,7 @@ impl Form<'_> {
                 axis,
                 e,
             };
-            if let Some(pair) = line.edge_pair(scale, up) {
+            if let Some(pair) = line.edge_pair(scales[axis], up) {
                 cases.push(pair);
             }
         }
@@ -265,18 +370,7 @@ impl Form<'_> {
     /// the filter with uncertainty `e`, or `None` when a size computed in
     /// `f64` as the filter computes it is outside `D_MIN..=D_MAX`.
     fn above_bound(&self, p: &[[f64; 3]], e: [f64; 3]) -> Option<bool> {
-        let mut delta = [0.0f64; 3];
-        for node in &self.graph.nodes {
-            if let DiffNode::Leaf {
-                axis,
-                minuend,
-                subtrahend,
-            } = *node
-            {
-                let k = usize::from(axis);
-                delta[k] = delta[k].max((p[minuend][k] - p[subtrahend][k]).abs());
-            }
-        }
+        let delta = self.delta(p);
         let bound = match self.bound {
             Bound::Filter(FilterKind::Global(c)) => {
                 let delta = delta[0].max(delta[1]).max(delta[2]);
@@ -291,10 +385,47 @@ impl Form<'_> {
                 bound
             }
             Bound::Filter(FilterKind::PerAxis(c, _)) => axis_bound(c, delta, e)?,
-            Bound::Parts(c) => parts_bound_at(c, delta, e)?,
+            Bound::Parts(c) => {
+                let (epsilon, kappa) = parts_bound_at(c, delta, e)?;
+                &epsilon + &kappa
+            }
         };
         let value = self.value(p);
         Some(value > bound || value < &Dyadic::integer(0) - &bound)
+    }
+
+    /// The largest magnitude of the leaves of each axis at `p`, computed in
+    /// `f64` as the filter computes it.
+    fn delta(&self, p: &[[f64; 3]]) -> [f64; 3] {
+        let mut delta = [0.0f64; 3];
+        for node in &self.graph.nodes {
+            if let DiffNode::Leaf {
+                axis,
+                minuend,
+                subtrahend,
+            } = *node
+            {
+                let k = usize::from(axis);
+                delta[k] = delta[k].max((p[minuend][k] - p[subtrahend][k]).abs());
+            }
+        }
+        delta
+    }
+
+    /// Whether, at each of the inputs `p`, the terms of kappa of the bound
+    /// by parts with the constants `c` and the uncertainty `e` exceed
+    /// `2^KAPPA_OVER_EPSILON` times its terms of epsilon, and the sizes
+    /// with `e` and with `e / 2` are in the range.
+    fn margins_hold(&self, c: &PartsConstants, p: [&Case; 2], e: [f64; 3]) -> bool {
+        let half = e.map(|x| x / 2.0);
+        p.iter().all(|q| {
+            let delta = self.delta(q);
+            let Some((epsilon, kappa)) = parts_bound_at(c, delta, e) else {
+                return false;
+            };
+            parts_bound_at(c, delta, half).is_some()
+                && kappa > &epsilon * &Dyadic::pow2(KAPPA_OVER_EPSILON)
+        })
     }
 
     /// The sign of the form at `p`: -1, 0 or 1.
@@ -421,11 +552,12 @@ fn axis_bound(c: &AxisConstants, delta: [f64; 3], e: [f64; 3]) -> Option<Dyadic>
 
 /// The exact bound by parts with the emitted constants `c`, for the largest
 /// magnitudes `delta` of the leaves of each axis and the uncertainty `e`,
-/// with `d_k = delta_k + e[k]` computed in `f64`: the sum of every term,
-/// `value * d^degrees` for a term of epsilon and `value * e[axis] * d^rest`
-/// for a term of kappa; `None` when some `d_k` of an axis of the range is
-/// outside `d_min..=d_max`.
-fn parts_bound_at(c: &PartsConstants, delta: [f64; 3], e: [f64; 3]) -> Option<Dyadic> {
+/// with `d_k = delta_k + e[k]` computed in `f64`, in its two parts: the sum
+/// of its terms of epsilon, `value * d^degrees`, and the sum of its terms
+/// of kappa, `value * e[axis] * d^rest`; the bound is the sum of the two.
+/// `None` when some `d_k` of an axis of the range is outside
+/// `d_min..=d_max`.
+fn parts_bound_at(c: &PartsConstants, delta: [f64; 3], e: [f64; 3]) -> Option<(Dyadic, Dyadic)> {
     let mut d = [Dyadic::integer(0), Dyadic::integer(0), Dyadic::integer(0)];
     for k in (0..3).filter(|&k| c.range_axes[k]) {
         let dk = delta[k] + e[k];
@@ -443,13 +575,14 @@ fn parts_bound_at(c: &PartsConstants, delta: [f64; 3], e: [f64; 3]) -> Option<Dy
         }
         x
     };
-    let mut bound = Dyadic::integer(0);
+    let mut epsilon = Dyadic::integer(0);
     for t in &c.epsilon {
-        bound = &bound + &power(Dyadic::from_f64(t.value), t.degrees);
+        epsilon = &epsilon + &power(Dyadic::from_f64(t.value), t.degrees);
     }
+    let mut kappa = Dyadic::integer(0);
     for t in &c.kappa {
         let start = &Dyadic::from_f64(t.value) * &Dyadic::from_f64(e[t.axis]);
-        bound = &bound + &power(start, t.rest);
+        kappa = &kappa + &power(start, t.rest);
     }
-    Some(bound)
+    Some((epsilon, kappa))
 }

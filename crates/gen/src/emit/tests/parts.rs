@@ -13,7 +13,7 @@ use super::{INCIRCLE, INSPHERE, NEGATIONS, ORIENT3D, expand, value_at};
 use crate::bound::{PartsConstants, PartsOutcome, parts_bound};
 use crate::differences::{DiffGraph, DiffNode, difference_graph};
 use crate::dyadic::Dyadic;
-use crate::emit::edges::axes_edge_cases;
+use crate::emit::edges::{KAPPA_OVER_EPSILON, SHAPE_SHIFTS, axes_edge_cases};
 use crate::emit::{Generated, generate, literal};
 use crate::parse::{Predicate, parse};
 
@@ -504,19 +504,32 @@ fn the_checks_have_the_edge_cases_of_filter_axes() {
         let checks = &w.generated.checks;
         let points = w.predicate.params.len();
         assert!(checks.contains(&format!(
-            "pub fn axes_edge_cases() -> Vec<[[f64; 3]; {points}]> {{"
+            "pub fn axes_edge_cases() -> Vec<([[f64; 3]; {points}], [f64; 3])> {{"
         )));
         assert!(checks.contains(&format!(
-            "pub fn check_axes_edge_cases(mut decide: impl FnMut(&[[f64; 3]; {points}]) -> Option<Sign>) -> [usize; 2] {{"
-        )));
-        assert!(checks.contains("for p in axes_edge_cases() {"), "{checks}");
+            "pub fn check_axes_edge_cases(\nmut decide: impl FnMut(&[[f64; 3]; {points}], [f64; 3]) -> Option<Sign>,\n) -> [[usize; 2]; 2] {{"
+        )), "{checks}");
+        for line in [
+            "for (p, e) in &cases {",
+            "assert_eq!(decide(below, twice), None,",
+            "assert_eq!(decide(above, half), Some(exact(above)),",
+        ] {
+            assert!(checks.contains(line), "{line}: {checks}");
+        }
     }
 }
 
 /// The exact bound by parts with the emitted constants `c` at the points `p`
-/// with no uncertainty, for the sizes `d_k` computed in `f64` as
-/// `filter_axes` computes them, or `None` when one is outside the range.
-fn parts_bound_at(graph: &DiffGraph, c: &PartsConstants, p: &[[f64; 3]]) -> Option<Dyadic> {
+/// with the uncertainty `e`, for the sizes `d_k = delta_k + e[k]` computed
+/// in `f64` as `filter_axes` computes them, in its two parts, the terms of
+/// epsilon and the terms of kappa; or `None` when a size is outside the
+/// range.
+fn parts_bound_at(
+    graph: &DiffGraph,
+    c: &PartsConstants,
+    p: &[[f64; 3]],
+    e: [f64; 3],
+) -> Option<(Dyadic, Dyadic)> {
     let mut d = [0.0f64; 3];
     for node in &graph.nodes {
         if let DiffNode::Leaf {
@@ -529,25 +542,39 @@ fn parts_bound_at(graph: &DiffGraph, c: &PartsConstants, p: &[[f64; 3]]) -> Opti
             d[k] = d[k].max((p[minuend][k] - p[subtrahend][k]).abs());
         }
     }
-    for k in (0..3).filter(|&k| c.range_axes[k]) {
-        if !(c.d_min <= d[k] && d[k] <= c.d_max) {
+    for k in 0..3 {
+        d[k] += e[k];
+        if c.range_axes[k] && !(c.d_min <= d[k] && d[k] <= c.d_max) {
             return None;
         }
     }
-    // With `e = 0`, every term of kappa is zero.
-    let mut bound = Dyadic::integer(0);
-    for t in &c.epsilon {
-        let mut term = Dyadic::from_f64(t.value);
-        for (&n, &dk) in t.degrees.iter().zip(&d) {
+    let product = |start: Dyadic, g: [u32; 3]| {
+        let mut term = start;
+        for (&n, &dk) in g.iter().zip(&d) {
             for _ in 0..n {
                 term = &term * &Dyadic::from_f64(dk);
             }
         }
-        bound = &bound + &term;
+        term
+    };
+    let mut epsilon = Dyadic::integer(0);
+    for t in &c.epsilon {
+        epsilon = &epsilon + &product(Dyadic::from_f64(t.value), t.degrees);
     }
-    Some(bound)
+    let mut kappa = Dyadic::integer(0);
+    for t in &c.kappa {
+        let start = &Dyadic::from_f64(t.value) * &Dyadic::from_f64(e[t.axis]);
+        kappa = &kappa + &product(start, t.rest);
+    }
+    Some((epsilon, kappa))
 }
 
+/// The edge cases of `filter_axes` straddle its bound, computed here apart
+/// from the search, with their uncertainty; those with an uncertainty have
+/// terms of kappa above `2^KAPPA_OVER_EPSILON` times the terms of epsilon, and sizes in the
+/// range with half the uncertainty, which `check_axes_edge_cases` relies
+/// on; and there are cases with no uncertainty and with one on each axis of
+/// the range, on grids of one scale and of a scale per axis.
 #[test]
 fn the_edge_cases_of_filter_axes_straddle_its_bound() {
     for w in not_multihomogeneous()
@@ -556,21 +583,22 @@ fn the_edge_cases_of_filter_axes_straddle_its_bound() {
     {
         let (c, _) = w.parts.as_ref().unwrap();
         let points = w.predicate.params.len();
+        let name = &w.predicate.name;
         let cases = axes_edge_cases(&w.graph, points, c);
-        assert!(
-            cases.len() >= 32,
-            "{}: {} pairs",
-            w.predicate.name,
-            cases.len()
-        );
-        let above = |q: &[[f64; 3]]| {
-            let bound = parts_bound_at(&w.graph, c, q).unwrap_or_else(|| panic!("{q:?}"));
+        assert!(cases.len() >= 64, "{name}: {} pairs", cases.len());
+        let above = |q: &[[f64; 3]], e: [f64; 3]| {
+            let (epsilon, kappa) =
+                parts_bound_at(&w.graph, c, q, e).unwrap_or_else(|| panic!("{q:?}"));
+            let bound = &epsilon + &kappa;
             let value = value_at(&w.predicate.main, q);
             value > bound || value < &Dyadic::integer(0) - &bound
         };
-        for (below, over) in &cases {
-            assert!(!above(below), "{below:?}");
-            assert!(above(over), "{over:?}");
+        // With no uncertainty and with one on each axis of the range.
+        let mut kinds = [0usize; 4];
+        let mut shaped = 0;
+        for (e, below, over) in &cases {
+            assert!(!above(below, *e), "{below:?} e = {e:?}");
+            assert!(above(over, *e), "{over:?} e = {e:?}");
             let moved = below
                 .iter()
                 .flatten()
@@ -578,6 +606,55 @@ fn the_edge_cases_of_filter_axes_straddle_its_bound() {
                 .filter(|(a, b)| a.to_bits() != b.to_bits())
                 .count();
             assert_eq!(moved, 1, "{below:?} {over:?}");
+            let sizes = |q: &[[f64; 3]]| {
+                parts_bound_at(&w.graph, c, q, [0.0; 3]).map(|(epsilon, _)| epsilon)
+            };
+            shaped += usize::from(
+                sizes(below).is_some() && {
+                    let x = below.iter().flatten().fold(0.0f64, |m, v| m.max(v.abs()));
+                    // Some axis far shorter than the largest coordinate.
+                    (0..3).any(|k| c.range_axes[k] && below.iter().all(|q| q[k].abs() < x * 1e-5))
+                },
+            );
+            if *e == [0.0; 3] {
+                kinds[3] += 1;
+                continue;
+            }
+            for k in 0..3 {
+                kinds[k] += usize::from(e[k] > 0.0);
+                assert!(e[k] == 0.0 || c.range_axes[k], "{e:?}");
+            }
+            let half = e.map(|x| x / 2.0);
+            for q in [below, over] {
+                let (epsilon, kappa) = parts_bound_at(&w.graph, c, q, *e).unwrap();
+                assert!(
+                    kappa > &epsilon * &Dyadic::pow2(KAPPA_OVER_EPSILON),
+                    "{q:?} e = {e:?}"
+                );
+                assert!(parts_bound_at(&w.graph, c, q, half).is_some(), "{q:?}");
+            }
         }
+        for k in 0..3 {
+            assert!(!c.range_axes[k] || kinds[k] >= 4, "{name}: {kinds:?}");
+        }
+        assert!(kinds[3] >= 32, "{name}: {kinds:?}");
+        assert!(shaped >= 8, "{name}: {shaped}");
+    }
+}
+
+/// The README of the generator quotes the margin of the terms of kappa and
+/// the shapes of the grids of `axes_edge_cases`.
+#[test]
+fn the_readme_quotes_the_shapes_and_the_margin_of_the_edge_cases_of_filter_axes() {
+    let readme: String = include_str!("../../../README.md")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let [a, b] = SHAPE_SHIFTS;
+    for quoted in [
+        format!("one axis `2^-{a}` or `2^-{b}` times as short or as long"),
+        format!("more than `2^{KAPPA_OVER_EPSILON}` times the terms of epsilon"),
+    ] {
+        assert!(readme.contains(&quoted), "{quoted}");
     }
 }

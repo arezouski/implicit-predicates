@@ -8,8 +8,8 @@
 //! points; for a per-axis filter, also `uncertainty_edge_cases`, inputs on
 //! either side of its bound with an uncertainty on one axis or on all of
 //! them; for a predicate with the second test of its filter, `filter_axes`,
-//! also `axes_edge_cases`, inputs on either side of its bound by parts with
-//! no uncertainty. The cases are built by [`super::edges`] and written as bit
+//! also `axes_edge_cases`, inputs on either side of its bound by parts, with
+//! no uncertainty and with one. The cases are built by [`super::edges`] and written as bit
 //! patterns so that they read back as exactly the same `f64`s. The functions
 //! that check a stage on those cases, whatever the types of its points, are
 //! written by [`super::check_fns`].
@@ -18,7 +18,10 @@ use std::fmt::Write;
 
 use super::check_fns;
 use super::comment;
-use super::edges::{Case, axes_edge_cases, bound_edge_cases, uncertainty_edge_cases};
+use super::edges::{
+    Case, KAPPA_OVER_EPSILON, SHAPE_SHIFTS, axes_edge_cases, bound_edge_cases,
+    uncertainty_edge_cases,
+};
 use super::filter::FilterKind;
 use super::statements::node_statements;
 use crate::bound::PartsConstants;
@@ -187,7 +190,7 @@ pub(crate) fn write_checks(
 }
 
 /// Writes `axes_edge_cases` and its table, for `points` points.
-fn write_axes_cases(out: &mut String, cases: &[(Case, Case)], points: usize) {
+fn write_axes_cases(out: &mut String, cases: &[([f64; 3], Case, Case)], points: usize) {
     let ty = format!("[[f64; 3]; {points}]");
     out.push('\n');
     comment(
@@ -196,22 +199,34 @@ fn write_axes_cases(out: &mut String, cases: &[(Case, Case)], points: usize) {
         0,
         &format!(
             "Inputs on either side of the error bound by parts of `filter_axes`, the \
-             second test of the filter, for explicit points, in pairs: the first of each \
-             pair has an exact magnitude at most the bound, the sum of `AXES_EPSILON` \
-             terms `c*d^g`, the second above it, where `d_k` is the largest difference \
-             of coordinates on axis `k` as `filter_axes` computes it; the two differ by \
-             one representable value in one coordinate.\n\n\
+             second test of the filter, with the uncertainty `e` given with each, in pairs \
+             with the same `e`: the first of each pair has an exact magnitude at most the \
+             bound, the sum of the `AXES_EPSILON` terms `c*d^g` and of the `AXES_KAPPA` \
+             terms `c*e[k]*d^h`, the second above it, where `d_k` is the largest \
+             difference of coordinates on axis `k` plus `e[k]`, as `filter_axes` \
+             computes it; the two differ by one representable value in one \
+             coordinate.\n\n\
              The points are built as in [`bound_edge_cases`]; the scales go from just \
-             above `AXES_D_MIN` to just below `AXES_D_MAX`.{}",
-            if cases.is_empty() { NO_CASES } else { "" }
+             above `AXES_D_MIN` to just below `AXES_D_MAX`. The first pairs have `e = 0` \
+             and one scale for every axis; the others have a scale of their own on each \
+             axis, one axis `2^-{short}` or `2^-{shorter}` times as short or as long as the other \
+             two, and `e = 0`, or an `e` not zero on one axis or on every axis of the \
+             range, a power of two between `2^-30` and `2^-8` times the scale of that \
+             axis. In every pair with an uncertainty, the terms of kappa exceed \
+             `2^{KAPPA_OVER_EPSILON}` times the terms of epsilon at both inputs, so [`check_axes_edge_cases`] can \
+             require `filter_axes` to decline the first with `2 e` and to decide the \
+             second with `e / 2`.{}",
+            if cases.is_empty() { NO_CASES } else { "" },
+            short = SHAPE_SHIFTS[0],
+            shorter = SHAPE_SHIFTS[1],
         ),
     );
     writeln!(
         out,
-        "pub fn axes_edge_cases() -> Vec<{ty}> {{\n\
+        "pub fn axes_edge_cases() -> Vec<({ty}, [f64; 3])> {{\n\
          AXES_EDGE_CASES\n\
          .into_iter()\n\
-         .map(|case| case.map(|point| point.map(f64::from_bits)))\n\
+         .map(|(case, e)| (case.map(|point| point.map(f64::from_bits)), e.map(f64::from_bits)))\n\
          .collect()\n}}\n"
     )
     .unwrap();
@@ -219,17 +234,19 @@ fn write_axes_cases(out: &mut String, cases: &[(Case, Case)], points: usize) {
         out,
         "///",
         0,
-        "The bit patterns of the coordinates of [`axes_edge_cases`].",
+        "The bit patterns of the coordinates and of the uncertainty of \
+         [`axes_edge_cases`].",
     );
     writeln!(
         out,
-        "const AXES_EDGE_CASES: [[[u64; 3]; {points}]; {}] = [",
+        "static AXES_EDGE_CASES: [([[u64; 3]; {points}], [u64; 3]); {}] = [",
         2 * cases.len()
     )
     .unwrap();
-    for (below, above) in cases {
-        writeln!(out, "{},", case(below)).unwrap();
-        writeln!(out, "{},", case(above)).unwrap();
+    for (e, below, above) in cases {
+        let e = bits(e);
+        writeln!(out, "({}, {e}),", case(below)).unwrap();
+        writeln!(out, "({}, {e}),", case(above)).unwrap();
     }
     out.push_str("];\n");
 }

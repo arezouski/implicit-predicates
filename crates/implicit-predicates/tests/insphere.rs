@@ -962,29 +962,35 @@ fn the_emitted_edge_cases_pass() {
 
 /// The cases at the edge of the error bound by parts, by the generated
 /// checks: their exact sign by the definition against the oracle;
-/// `filter_axes` with no uncertainty, which decides some and not others, and
-/// `filter_axes_points` on explicit points, which is the same stage; and the
-/// chain, `staged_in`, which decides every case.
+/// `filter_axes`, which decides some and not others, with no uncertainty
+/// and with one, and declines or decides the pairs with an uncertainty when
+/// it is doubled or halved, as `check_axes_edge_cases` requires;
+/// `filter_axes_points` on explicit points, which is the same stage with no
+/// uncertainty; and the chain, `staged_in`, which decides every case.
 #[test]
 fn the_emitted_edge_cases_of_filter_axes_pass() {
     let cases = axes_edge_cases();
-    assert!(cases.len() >= 64, "{} cases", cases.len());
-    for p in &cases {
+    assert!(cases.len() >= 128, "{} cases", cases.len());
+    for (p, _) in &cases {
         assert_eq!(insphere_checks::exact(p), oracle(p), "{p:?}");
     }
-    let [decided, declined] = check_axes_edge_cases(|p| stages::filter_axes(refs(p), [0.0; 3]));
-    assert!(decided > 0 && declined > 0, "{decided} {declined}");
-    let points = check_axes_edge_cases(|p| {
-        let [a, b, c, d, e] = p;
-        stages::filter_axes_points(a, b, c, d, e)
-    });
-    assert_eq!(points, [decided, declined]);
+    let counts = check_axes_edge_cases(|p, e| stages::filter_axes(refs(p), e));
+    println!("decided and declined, with no uncertainty and with one: {counts:?}");
+    for [decided, declined] in counts {
+        assert!(decided > 0 && declined > 0, "{counts:?}");
+    }
     let mut staged = StagedIn::new();
-    let [decided, declined] = check_axes_edge_cases(|p| {
-        let [a, b, c, d, e] = p;
-        Some(staged.call(a, b, c, d, e))
-    });
-    assert_eq!((decided, declined), (cases.len(), 0));
+    let mut explicit = [0usize; 2];
+    for (p, e) in &cases {
+        let [a, b, c, d, f] = p;
+        if *e == [0.0; 3] {
+            let sign = stages::filter_axes_points(a, b, c, d, f);
+            assert_eq!(sign, stages::filter_axes(refs(p), [0.0; 3]), "{p:?}");
+            explicit[usize::from(sign.is_none())] += 1;
+        }
+        assert_eq!(staged.call(a, b, c, d, f), oracle(p), "{p:?}");
+    }
+    assert_eq!(explicit, counts[0]);
 }
 
 /// `filter_axes` with an uncertainty on one axis: a point just inside the
