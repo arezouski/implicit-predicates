@@ -333,6 +333,93 @@ fn a_predicate_of_degree_5_takes_every_sign_on_big_integers() {
     compile_and_run("emitted-degree-5", &modules, DEGREE_5_TEST);
 }
 
+/// `(ax + ay + az)^8` in differences, by repeated squaring: a form that is
+/// not multihomogeneous, with more degree vectors than the bound by parts
+/// takes, so that its filter is the global one alone, with no
+/// `filter_axes`, and, of degree 8, its only exact stage is the one on big
+/// integers.
+const OVER_BUDGET: &str = "fn over_budget(a: Point3, b: Point3) -> Sign {
+    let s0 = (a.x - b.x) + (a.y - b.y) + (a.z - b.z);
+    let s1 = s0 * s0;
+    let s2 = s1 * s1;
+    s2 * s2
+}
+";
+
+/// The test of [`OVER_BUDGET`]: its chain against the power written by hand
+/// on exact dyadic numbers, on points whose sum of differences is zero,
+/// tiny or not, where the global filter decides some calls and declines
+/// others.
+const OVER_BUDGET_TEST: &str = r#"use implicit_predicates::{Lnc, Scratch, Sign};
+use implicit_predicates_oracle::Dyadic;
+
+/// The sign of `((a.x - b.x) + (a.y - b.y) + (a.z - b.z))^8` at the exact
+/// points.
+fn oracle(a: [f64; 3], b: [f64; 3]) -> Sign {
+    let d = |k: usize| &Dyadic::from_f64(a[k]) - &Dyadic::from_f64(b[k]);
+    let s0 = &(&d(0) + &d(1)) + &d(2);
+    let s1 = &s0 * &s0;
+    let s2 = &s1 * &s1;
+    let value = &s2 * &s2;
+    Sign::from(value.sign().cmp(&0))
+}
+
+const VALUES: [f64; 7] = [0.0, 1.0, -1.0, 0.1, -0.2, 1e-30, 3.0];
+
+#[test]
+fn the_chain_has_the_sign_of_the_oracle() {
+    let mut buffer = vec![0.0; 1 << 16];
+    let mut scratch = Scratch::borrowed(&mut buffer);
+    let mut signs = [0; 3];
+    let (mut decided, mut declined) = (0, 0);
+    for &x in &VALUES {
+        for &y in &VALUES {
+            for &z in &VALUES {
+                let (a, b) = ([x, y, z], [0.1, -0.2, 1e-30]);
+                let expected = oracle(a, b);
+                signs[(i8::from(expected) + 1) as usize] += 1;
+                let filtered = stages::filter([&a, &b], 0.0);
+                assert!(filtered.is_none_or(|s| s == expected), "{a:?}");
+                assert_eq!(stages::staged([&a, &b]), filtered, "{a:?}");
+                if filtered.is_some() {
+                    decided += 1;
+                } else {
+                    declined += 1;
+                }
+                assert_eq!(stages::staged_in(&mut scratch, &a, &b), Ok(expected), "{a:?}");
+                assert_eq!(stages::exact_stages_explicit_in(&mut scratch, [&a, &b]), Ok(expected));
+                let (la, lb) = (Lnc::new_unchecked(a, a, 0.5), Lnc::new_unchecked(b, b, 0.25));
+                assert_eq!(stages::staged_in(&mut scratch, &la, &lb), Ok(expected), "{a:?}");
+                assert_eq!(stages::exact_stages_in(&mut scratch, &la, &lb), Ok(expected));
+                assert_eq!(scratch.used(), 0);
+            }
+        }
+    }
+    assert!(signs[1] > 0 && signs[2] > 0 && signs[0] == 0, "{signs:?}");
+    assert!(decided > 0 && declined > 0, "{decided} {declined}");
+}
+"#;
+
+#[test]
+fn a_form_beyond_the_budget_of_the_bound_by_parts_runs_the_global_filter_alone() {
+    let mut all = generate(OVER_BUDGET, "t.pred", REGENERATE).unwrap();
+    let g = all.remove(0);
+    assert!(
+        g.warnings
+            .iter()
+            .any(|w| w.contains("has no `filter_axes`")),
+        "{:?}",
+        g.warnings
+    );
+    for text in [&g.stages, &g.checks] {
+        for absent in ["filter_axes", "AXES_", "expansions"] {
+            assert!(!text.contains(absent), "{absent}");
+        }
+    }
+    let modules = vec![("stages".into(), g.stages), ("checks".into(), g.checks)];
+    compile_and_run("emitted-over-budget", &modules, OVER_BUDGET_TEST);
+}
+
 /// The in-circle predicate of the projections of four points on the plane
 /// `z = 0`, of degree 4: its exact differences fit on the stack, and its
 /// translated expansions do not, so that the stage over spans takes their
@@ -459,6 +546,7 @@ fn outside_the_range_over_spans_the_chain_falls_to_the_big_integers() {
     // expansions decline the magnitudes, and the stage on big integers
     // decides.
     let (min, max) = stages::SPANS_TRANSLATED_RANGE;
+    assert!(min / 4096.0 < stages::DIFFERENCES_RANGE.0 && max * 256.0 > stages::DIFFERENCES_RANGE.1);
     let mut buffer = vec![0.0; 1 << 16];
     let mut scratch = Scratch::borrowed(&mut buffer);
     let (mut explicit, mut implicit) = (0, 0);

@@ -83,6 +83,16 @@ pub(crate) const KAPPA_OVER_EPSILON: i64 = 10;
 /// is shorter or longer than the other two.
 pub(crate) const SHAPE_SHIFTS: [i32; 2] = [20, 40];
 
+/// The binary exponents below the scale of an axis between which the
+/// uncertainty of a case of [`axes_edge_cases`] is on that axis, both
+/// included: `e[k]` is a power of two from `2^-AXES_E_SHIFTS.1` to
+/// `2^-AXES_E_SHIFTS.0` times the scale of axis `k`.
+pub(crate) const AXES_E_SHIFTS: (i32, i32) = (8, 30);
+
+/// The exponent of the smallest normal `f64`, `2^-1022`, the smallest that
+/// [`pow2`] takes.
+const MIN_NORMAL_EXPONENT: i32 = -1022;
+
 /// Pairs of inputs on either side of the bound of the `filter` of `graph`
 /// with `e = 0`, with `points` points: the first of each pair at or below
 /// it, the second above it, one representable value apart in one
@@ -161,9 +171,11 @@ pub(crate) fn uncertainty_edge_cases(
 /// a scale of their own on each axis, one axis `2^-20` or `2^-40` times as
 /// short or as long as the other two, with `e = 0` and with an `e` that is
 /// not zero on one axis of the range, for each, or on all of them: a power
-/// of two between `2^-30` and `2^-8` times the scale of the grid on that
-/// axis. A pair with an uncertainty is kept only when the terms of kappa
-/// exceed `2^KAPPA_OVER_EPSILON` times the terms of epsilon at both inputs,
+/// of two between `2^-AXES_E_SHIFTS.1` and `2^-AXES_E_SHIFTS.0` times the
+/// scale of the grid on that axis. A grid with the scale of some axis, in
+/// the range or not, below that of the smallest normal `f64` is skipped. A
+/// pair with an uncertainty is kept only when the terms of kappa exceed
+/// `2^KAPPA_OVER_EPSILON` times the terms of epsilon at both inputs,
 /// evaluated exactly as for the edge, and when the sizes with `e / 2` are
 /// in the range too: then `filter_axes` must decline the first input with
 /// `2 e`, whose bound is near twice the exact value, and decide the second
@@ -223,27 +235,20 @@ pub(crate) fn axes_edge_cases(
                     continue;
                 }
                 let shift = SHAPE_SHIFTS[random.below(2) as usize];
-                let axis_scales: [i32; 3] = std::array::from_fn(|k| match shape {
-                    None => scale,
-                    // Axis `j` shorter than the others, or the others
-                    // shorter than it.
-                    Some((j, long)) => {
-                        if (k == *j) != *long {
-                            scale - shift
-                        } else {
-                            scale
-                        }
-                    }
-                });
+                let Some(axis_scales) = shaped_scales(scale, *shape, shift) else {
+                    continue;
+                };
                 if !axes.iter().all(|&k| in_range(axis_scales[k])) {
                     continue;
                 }
                 let mut e = [0.0; 3];
                 let mut normal = true;
                 for &k in choice {
-                    let exponent = axis_scales[k] - 8 - random.below(23) as i32;
+                    let (nearest, farthest) = AXES_E_SHIFTS;
+                    let spread = (farthest - nearest + 1) as u64;
+                    let exponent = axis_scales[k] - nearest - random.below(spread) as i32;
                     // `e / 2` must be a normal power of two too.
-                    normal &= exponent > -1022;
+                    normal &= exponent > MIN_NORMAL_EXPONENT;
                     if normal {
                         e[k] = pow2(exponent);
                     }
@@ -264,6 +269,34 @@ pub(crate) fn axes_edge_cases(
         }
     }
     cases
+}
+
+/// The scale of each axis of a grid of [`axes_edge_cases`] of scale `scale`
+/// and shape `shape`: every axis at `scale` for `None`, and for
+/// `Some((j, long))` axis `j` `shift` below the others, or above them when
+/// `long`, the others at `scale`. `None` when the scale of an axis, in the
+/// range of the bound or not, is below that of the smallest normal `f64`,
+/// so that the grid can be built with [`pow2`].
+pub(crate) fn shaped_scales(
+    scale: i32,
+    shape: Option<(usize, bool)>,
+    shift: i32,
+) -> Option<[i32; 3]> {
+    let scales: [i32; 3] = std::array::from_fn(|k| match shape {
+        None => scale,
+        // Axis `j` shorter than the others, or the others shorter than it.
+        Some((j, long)) => {
+            if (k == j) != long {
+                scale - shift
+            } else {
+                scale
+            }
+        }
+    });
+    scales
+        .iter()
+        .all(|&s| s >= MIN_NORMAL_EXPONENT)
+        .then_some(scales)
 }
 
 /// The bound whose edge is searched: that of the filter, or that of

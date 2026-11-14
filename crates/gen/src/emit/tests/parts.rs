@@ -13,7 +13,7 @@ use super::{INCIRCLE, INSPHERE, NEGATIONS, ORIENT3D, expand, value_at};
 use crate::bound::{PartsConstants, PartsOutcome, parts_bound};
 use crate::differences::{DiffGraph, DiffNode, difference_graph};
 use crate::dyadic::Dyadic;
-use crate::emit::edges::{KAPPA_OVER_EPSILON, SHAPE_SHIFTS, axes_edge_cases};
+use crate::emit::edges::{KAPPA_OVER_EPSILON, SHAPE_SHIFTS, axes_edge_cases, shaped_scales};
 use crate::emit::{Generated, generate, literal};
 use crate::parse::{Predicate, parse};
 
@@ -640,6 +640,32 @@ fn the_edge_cases_of_filter_axes_straddle_its_bound() {
         assert!(kinds[3] >= 32, "{name}: {kinds:?}");
         assert!(shaped >= 8, "{name}: {shaped}");
     }
+}
+
+/// The grids of `axes_edge_cases` are given a scale on every axis, in the
+/// range of the bound or not, only when it is that of a normal `f64`, so
+/// that building them cannot panic.
+#[test]
+fn a_shaped_grid_below_the_normal_numbers_is_skipped() {
+    let [a, b] = SHAPE_SHIFTS;
+    assert_eq!(shaped_scales(-100, None, b), Some([-100; 3]));
+    assert_eq!(
+        shaped_scales(-100, Some((1, false)), a),
+        Some([-100, -100 - a, -100])
+    );
+    assert_eq!(
+        shaped_scales(-100, Some((1, true)), a),
+        Some([-100 - a, -100, -100 - a])
+    );
+    // One axis below the normal numbers skips the grid, whether it is the
+    // shorter one or one of the others, which may be outside the range.
+    assert_eq!(shaped_scales(-1022 + b - 1, Some((1, true)), b), None);
+    assert_eq!(shaped_scales(-1022 + b - 1, Some((0, false)), b), None);
+    assert_eq!(
+        shaped_scales(-1022 + b, Some((0, false)), b),
+        Some([-1022, -1022 + b, -1022 + b])
+    );
+    assert_eq!(shaped_scales(-1023, None, a), None);
 }
 
 /// The README of the generator quotes the margin of the terms of kappa and

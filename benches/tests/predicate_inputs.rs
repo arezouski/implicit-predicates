@@ -525,7 +525,11 @@ fn insphere_exact_sets_are_undecided_by_the_filter_and_have_the_exact_sign_at_ev
             match axes {
                 Some(_) => {
                     let decision = decision.expect("decided by filter_axes");
-                    assert_eq!((decision.stage, decision.sign), (FILTER_AXES, sign));
+                    assert_eq!(
+                        (decision.stage, decision.sign),
+                        (FILTER_AXES, sign),
+                        "{name}: {case:?}"
+                    );
                 }
                 None => assert_eq!(decision, Err(Why::BigIntegersOnly), "{name}: {case:?}"),
             }

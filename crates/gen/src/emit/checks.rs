@@ -19,7 +19,7 @@ use std::fmt::Write;
 use super::check_fns;
 use super::comment;
 use super::edges::{
-    Case, KAPPA_OVER_EPSILON, SHAPE_SHIFTS, axes_edge_cases, bound_edge_cases,
+    AXES_E_SHIFTS, Case, KAPPA_OVER_EPSILON, SHAPE_SHIFTS, axes_edge_cases, bound_edge_cases,
     uncertainty_edge_cases,
 };
 use super::filter::FilterKind;
@@ -211,7 +211,7 @@ fn write_axes_cases(out: &mut String, cases: &[([f64; 3], Case, Case)], points: 
              and one scale for every axis; the others have a scale of their own on each \
              axis, one axis `2^-{short}` or `2^-{shorter}` times as short or as long as the other \
              two, and `e = 0`, or an `e` not zero on one axis or on every axis of the \
-             range, a power of two between `2^-30` and `2^-8` times the scale of that \
+             range, a power of two between `2^-{farthest}` and `2^-{nearest}` times the scale of that \
              axis. In every pair with an uncertainty, the terms of kappa exceed \
              `2^{KAPPA_OVER_EPSILON}` times the terms of epsilon at both inputs, so [`check_axes_edge_cases`] can \
              require `filter_axes` to decline the first with `2 e` and to decide the \
@@ -219,6 +219,8 @@ fn write_axes_cases(out: &mut String, cases: &[([f64; 3], Case, Case)], points: 
             if cases.is_empty() { NO_CASES } else { "" },
             short = SHAPE_SHIFTS[0],
             shorter = SHAPE_SHIFTS[1],
+            nearest = AXES_E_SHIFTS.0,
+            farthest = AXES_E_SHIFTS.1,
         ),
     );
     writeln!(

@@ -979,6 +979,30 @@ fn the_emitted_edge_cases_of_filter_axes_pass() {
     for [decided, declined] in counts {
         assert!(decided > 0 && declined > 0, "{counts:?}");
     }
+    // The first input of each pair is at or below the bound. With no
+    // uncertainty, `filter_axes` declines it only when its bound, the exact
+    // one with the rounding of its evaluation, is above the exact value
+    // there; one emitted ten times too small would decline few of them. The
+    // threshold, a quarter, rests on the slack of the bound observed on this
+    // table, which is deterministic (37 of 62 declined), not on a guarantee.
+    let below: Vec<_> = cases
+        .chunks(2)
+        .map(|pair| &pair[0])
+        .filter(|(_, e)| *e == [0.0; 3])
+        .collect();
+    let declined_below = below
+        .iter()
+        .filter(|(p, e)| stages::filter_axes(refs(p), *e).is_none())
+        .count();
+    println!(
+        "declined below the bound with no uncertainty: {declined_below} of {}",
+        below.len()
+    );
+    assert!(
+        4 * declined_below >= below.len(),
+        "{declined_below} of {}",
+        below.len()
+    );
     let mut staged = StagedIn::new();
     let mut explicit = [0usize; 2];
     for (p, e) in &cases {
