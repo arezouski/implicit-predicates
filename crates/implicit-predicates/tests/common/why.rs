@@ -17,10 +17,12 @@ pub enum Why {
     /// An exact coordinate has more than `MAX_COORD_COMPONENTS` components.
     TooManyComponents,
     /// A component of an exact coordinate is outside
-    /// `SPANS_TRANSLATED_RANGE`. For a predicate without stages on the
-    /// stack, such as `insphere`, explicit points go through the stage over
-    /// spans too, and each of their coordinates is one component.
+    /// `SPANS_TRANSLATED_RANGE`.
     ComponentOutOfRange,
+    /// The predicate has no stage on expansions, as `insphere`, of degree
+    /// five: every call that the filter does not decide goes to the stage
+    /// on big integers.
+    BigIntegersOnly,
     /// None of the above: every input is inside the documented ranges, so
     /// some stage on expansions should have decided. The call is decided,
     /// by the stage on big integers, but a sweep counts it as a mismatch.

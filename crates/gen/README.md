@@ -120,8 +120,8 @@ message`.
 
 A type with an exact coordinate that can have more than
 `MAX_COORD_COMPONENTS` (16) components is generated, with a warning: the
-exact stages of a predicate decline a call with a coordinate that has
-more.
+exact stages on expansions of a predicate decline a call with a coordinate
+that has more.
 
 `parse_points` reads the declarations of a file; `parse` reads its
 predicates and checks the declarations without returning them (a file of
@@ -160,14 +160,18 @@ numbers of `implicit-predicates-oracle`.
 ## What the generator checks
 
 Before writing anything, the generator expands both forms, when there is an
-`#[exact]` one, and requires them to be the same nonzero polynomial, checks that the main form is homogeneous
-in the differences, and derives, in exact arithmetic:
+`#[exact]` one, and requires them to be the same nonzero polynomial, checks
+that the main form is homogeneous in the differences, and derives, in exact
+arithmetic:
 
 - the error bound of the floating-point filter and the range of scales in
   which overflow and underflow cannot invalidate it;
-- for each exact stage, the range of input magnitudes for which every exact
-  product of the arithmetic core stays in its domain and no value
-  overflows, and the worst-case length of every temporary.
+- for each exact stage on expansions, the range of input magnitudes for
+  which every exact product of the arithmetic core stays in its domain and
+  no value overflows, and the worst-case length of every temporary. A main
+  form of total degree 5 or more (`BIG_INTEGERS_ONLY_DEGREE`) has no stage
+  on expansions, so nothing of this is derived for it: its only exact
+  stage is the one on big integers, which has no range.
 
 A definition that fails any of these is reported as `file:line:column:
 message`.
@@ -195,7 +199,13 @@ For each predicate the generator writes one module with:
   not emitted, and the stage over arena spans takes its place;
 - `staged`, which runs the filter and then the exact stages in the order:
   differences that are exact, then the translated expansion form. The order
-  is the same for every predicate for now;
+  is the same for every predicate that has them;
+- for a main form of total degree 5 or more, none of the stages on
+  expansions above, nor their ranges, `MAX_COORD_COMPONENTS`,
+  `exact_stages` or `expansions_translated_in`: its `staged` is the filter
+  alone, without an arena, and its `exact_stages_explicit_in` and
+  `exact_stages_in` below run `big_integers_in` alone, so its chain never
+  asks a point for its exact coordinates as expansions;
 - for points of any type: `filter_points`, the filter on the approximations
   of the points with the uncertainty of their errors (zero when every point
   is explicit); `exact_stages`, the exact stages of `staged`;

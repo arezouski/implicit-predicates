@@ -3,7 +3,7 @@
 
 use implicit_predicates_gen::{
     Error, ExactPlan, Leaves, MAX_COORD_COMPONENTS, difference_graph, exact_plan_differences,
-    exact_plan_spans_translated, parse,
+    exact_plan_spans_translated, generate, parse,
 };
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
@@ -151,6 +151,11 @@ fn a_degree_without_a_range_over_spans_is_an_error() {
         "no input range",
     );
     rejected(try_translated(source, MAX_COORD_COMPONENTS), "degree 17");
+    // The form is of degree 18, five or more: it has no stage over spans to
+    // plan, and `generate` takes it.
+    let all = generate(source, "t.pred", "run the tests.").unwrap();
+    assert!(all[0].stages.contains("pub fn big_integers_in("));
+    assert!(!all[0].stages.contains("expansions"));
     // Twenty-one factors have no range for any number of components.
     let product = vec!["(a.x - b.x)"; 21].join(" * ");
     let source = format!("fn p(a: Point3, b: Point3) -> Sign {{ {product} }}");

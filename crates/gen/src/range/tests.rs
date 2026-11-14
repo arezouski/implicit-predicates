@@ -166,10 +166,7 @@ fn node_values_lie_on_the_grid_and_within_the_magnitude_bound() {
         };
         for _ in 0..runs {
             for (id, value) in evaluate(&c, &mut rng).iter().enumerate() {
-                match grids[id] {
-                    Some(grid) => assert!(value.is_multiple_of_pow2(grid), "{} {id}", c.name),
-                    None => assert_eq!(*value, Dyadic::integer(0), "{} {id}", c.name),
-                }
+                assert!(value.is_multiple_of_pow2(grids[id]), "{} {id}", c.name);
                 let negated = &Dyadic::integer(0) - value;
                 let magnitude = if *value < Dyadic::integer(0) {
                     &negated

@@ -148,22 +148,19 @@ impl Shape {
 
     /// For leaves whose nonzero magnitudes are at least `2^m`, the exponent
     /// of a power of two that divides the value and every component of each
-    /// node, or `None` for a node that is identically zero.
+    /// node.
     ///
     /// A leaf gets `m - 52`, a negation that of its operand, a sum or
     /// difference the smaller of those of its operands, and a product their
     /// sum.
-    pub(crate) fn grids(&self, m: i64) -> Vec<Option<i64>> {
-        let mut grids: Vec<Option<i64>> = Vec::with_capacity(self.ops.len());
+    pub(crate) fn grids(&self, m: i64) -> Vec<i64> {
+        let mut grids: Vec<i64> = Vec::with_capacity(self.ops.len());
         for op in &self.ops {
             let grid = match *op {
-                Op::Leaf => Some(m - 52),
+                Op::Leaf => m - 52,
                 Op::Neg(x) => grids[x],
-                Op::Sum(x, y) => match (grids[x], grids[y]) {
-                    (Some(gx), Some(gy)) => Some(gx.min(gy)),
-                    (grid, None) | (None, grid) => grid,
-                },
-                Op::Product(x, y) => grids[x].zip(grids[y]).map(|(gx, gy)| gx + gy),
+                Op::Sum(x, y) => grids[x].min(grids[y]),
+                Op::Product(x, y) => grids[x] + grids[y],
             };
             grids.push(grid);
         }

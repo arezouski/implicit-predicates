@@ -2,15 +2,16 @@
 
 use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 use implicit_predicates_gen::{
-    ExactRange, FilterForm, Generated, Leaves, MAX_COORD_COMPONENTS, difference_graph,
-    exact_plan_differences, exact_plan_spans_translated, filter_bound, filter_form, generate,
-    parse,
+    BIG_INTEGERS_ONLY_DEGREE, ExactRange, FilterForm, Generated, Leaves, MAX_COORD_COMPONENTS,
+    difference_graph, exact_plan_differences, exact_plan_spans_translated, filter_bound,
+    filter_form, generate, parse,
 };
 use proc_macro2::TokenStream;
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
 const POINTS: &str = include_str!("fixtures/points.pred");
+const INCIRCLE: &str = include_str!("fixtures/incircle.pred");
 
 /// How the tests say to regenerate the code.
 const REGENERATE: &str = "run the tests.";
@@ -169,34 +170,197 @@ fn the_header_says_do_not_edit() {
     assert_eq!(lines.next(), Some("// To regenerate, run the tests."));
 }
 
+/// The text of the function `name` in the unformatted module `code`, from
+/// its signature to the closing brace followed by a blank line.
+fn function<'a>(code: &'a str, name: &str) -> &'a str {
+    let start = code
+        .find(&format!("pub fn {name}("))
+        .or_else(|| code.find(&format!("pub fn {name}<")))
+        .unwrap_or_else(|| panic!("no function {name}"));
+    let body = &code[start..];
+    &body[..body.find("\n}\n\n").unwrap()]
+}
+
+/// One factor per axis and one more on x and on y: degree 5, the lowest
+/// that has only the stage on big integers.
+const DEGREE_5: &str = "fn p(a: Point3, b: Point3) -> Sign { \
+                        (a.x - b.x) * (a.y - b.y) * (a.z - b.z) * (a.x - b.x) * (a.y - b.y) }";
+
+/// [`DEGREE_5`] without its last factor: degree 4, which keeps the stages on
+/// expansions.
+const DEGREE_4: &str = "fn p(a: Point3, b: Point3) -> Sign { \
+                        (a.x - b.x) * (a.y - b.y) * (a.z - b.z) * (a.x - b.x) }";
+
+/// A form of degree 18, with a product operand of degree 17, which no plan
+/// over spans can take.
+const DEGREE_18: &str = "fn p(a: Point3, b: Point3) -> Sign { let x = a.x - b.x; \
+                         let t1 = x * x; let t2 = t1 * t1; let t3 = t2 * t2; let t4 = t3 * t3; \
+                         let t5 = t4 * x; t5 * x }";
+
 #[test]
-fn insphere_chains_the_main_form_over_spans() {
-    let g = generated(INSPHERE, "predicates/insphere.pred");
-    assert_eq!(g.name, "insphere");
-    // No stage of in-sphere fits on the stack, so its chain takes an arena
-    // and runs the translated form over spans after the filter.
-    for stage in ["exact_differences", "expansions_translated("] {
-        assert!(!g.stages.contains(stage), "{stage}");
+fn big_integers_alone_start_at_degree_5() {
+    assert_eq!(BIG_INTEGERS_ONLY_DEGREE, 5);
+    // The README quotes it.
+    let readme = include_str!("../README.md")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let quoted =
+        format!("total degree {BIG_INTEGERS_ONLY_DEGREE} or more (`BIG_INTEGERS_ONLY_DEGREE`)");
+    assert!(readme.contains(&quoted), "{quoted}");
+    let degree = |source: &str| {
+        let p = parse(source, "t.pred").unwrap().remove(0);
+        let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();
+        diff.degrees[diff.root]
+    };
+    assert_eq!(degree(DEGREE_4), BIG_INTEGERS_ONLY_DEGREE - 1);
+    assert_eq!(degree(DEGREE_5), BIG_INTEGERS_ONLY_DEGREE);
+    assert_eq!(degree(INSPHERE), BIG_INTEGERS_ONLY_DEGREE);
+    assert_eq!(degree(DEGREE_18), 18);
+    // Degree 4 keeps every stage on expansions.
+    let g = generated(DEGREE_4, "t.pred");
+    for stage in [
+        "exact_differences",
+        "expansions_translated",
+        "expansions_translated_in",
+    ] {
+        assert!(g.stages.contains(&format!("pub fn {stage}(")), "{stage}");
     }
-    assert!(!g.stages.contains("DIFFERENCES_RANGE"));
+}
+
+#[test]
+fn a_predicate_of_degree_5_or_more_has_only_the_stage_on_big_integers() {
+    for (source, file, points, zero) in [
+        (INSPHERE, "predicates/insphere.pred", 5, "0.0"),
+        (DEGREE_5, "t.pred", 2, "[0.0; 3]"),
+        (DEGREE_18, "t.pred", 2, "[0.0; 3]"),
+    ] {
+        let g = generated(source, file);
+        let code = &g.stages;
+        code.parse::<TokenStream>().unwrap();
+        for name in [
+            "filter",
+            "filter_points",
+            "big_integers_in",
+            "staged",
+            "exact_stages_explicit_in",
+            "exact_stages_in",
+            "staged_in",
+        ] {
+            function(code, name);
+        }
+        assert!(code.contains("pub const BIG_INTEGERS_EXPLICIT_ARENA: usize = "));
+        // No stage on expansions, nothing that only they use, and no
+        // function that would always decline.
+        for absent in [
+            "expansions",
+            "exact_differences",
+            "SPANS_",
+            "RANGE",
+            "MAX_COORD_COMPONENTS",
+            "staged_in_arena",
+            "pub fn exact_stages(",
+            "fn exact(",
+            "in_range(",
+            "fn product(",
+            "ExactCoords",
+            "Span",
+            "Weight::",
+            "eft::",
+        ] {
+            assert!(!code.contains(absent), "{file}: {absent}");
+        }
+        let names = &code[code.find("use implicit_predicates_core::{").unwrap()..];
+        assert_eq!(
+            &names[..names.find(";\n").unwrap()],
+            "use implicit_predicates_core::{Big, BigCoords, ExactError, Point, Scratch, \
+             ScratchExhausted, Sign}",
+            "{file}"
+        );
+        // The filter alone, without an arena.
+        let staged = function(code, "staged");
+        assert_eq!(
+            staged,
+            format!(
+                "pub fn staged(p: [&[f64; 3]; {points}]) -> Option<Sign> {{\nfilter(p, {zero})"
+            ),
+            "{file}"
+        );
+        // The chains after the filter go to the stage on big integers, on the
+        // coordinates of the points written to the arena from its mark.
+        let explicit = function(code, "exact_stages_explicit_in");
+        let order = [
+            "fn big(",
+            "let q0 = exact_big(scratch, p[0])?;",
+            "big_integers_in(scratch, [&q0, ",
+            "let mark = scratch.mark();\nlet result = big(scratch, p);\nscratch.reset(mark);\nresult",
+        ]
+        .map(|text| {
+            explicit
+                .find(text)
+                .unwrap_or_else(|| panic!("{file}: {text}: {explicit}"))
+        });
+        assert!(order.is_sorted(), "{file}: {explicit}");
+        let generic = function(code, "exact_stages_in");
+        assert!(!generic.contains("fn spans"), "{file}: {generic}");
+        assert!(!generic.contains("decided"), "{file}: {generic}");
+        let order = [
+            "fn big<",
+            "let q0 = exact_big(scratch, p0)?;",
+            "big_integers_in(scratch, [&q0, ",
+            "let mark = scratch.mark();\nlet result = big(scratch, ",
+            "scratch.reset(mark);\nresult",
+        ]
+        .map(|text| {
+            generic
+                .find(text)
+                .unwrap_or_else(|| panic!("{file}: {text}: {generic}"))
+        });
+        assert!(order.is_sorted(), "{file}: {generic}");
+        let chain = function(code, "staged_in");
+        for text in [
+            "filter_points(",
+            "return exact_stages_explicit_in(scratch, [",
+            "exact_stages_in(scratch, ",
+        ] {
+            assert!(chain.contains(text), "{file}: {text}: {chain}");
+        }
+    }
+}
+
+#[test]
+fn incircle_chains_the_translated_form_over_spans() {
+    let g = generated(INCIRCLE, "t.pred");
+    assert_eq!(g.name, "incircle");
+    // The exact differences of in-circle fit on the stack and its translated
+    // expansions do not, so its chain takes an arena and runs the translated
+    // form over spans after the exact differences.
+    assert!(g.stages.contains("pub fn exact_differences("));
+    assert!(g.stages.contains("DIFFERENCES_RANGE"));
+    assert!(!g.stages.contains("expansions_translated("));
     assert!(!g.stages.contains("pub const TRANSLATED_RANGE"));
     assert!(g.stages.contains("pub fn expansions_translated_in("));
     let staged = &g.stages[g.stages.find("pub fn staged").unwrap()..];
     let signature = &staged[..staged.find('{').unwrap()];
     assert_eq!(
         signature,
-        "pub fn staged(scratch: &mut Scratch<'_>, p: [&[f64; 3]; 5]) \
+        "pub fn staged(scratch: &mut Scratch<'_>, p: [&[f64; 3]; 4]) \
          -> Result<Option<Sign>, ScratchExhausted> "
     );
     let body = &staged[..staged.find("\n}\n\n").unwrap()];
-    assert!(body.contains("filter(p, 0.0)"), "{body}");
-    assert!(body.contains("staged_in_arena(scratch, p)"), "{body}");
+    let order = [
+        "filter(p, 0.0)",
+        "exact_differences(p)",
+        "staged_in_arena(scratch, p)",
+    ]
+    .map(|text| body.find(text).unwrap_or_else(|| panic!("{text}: {body}")));
+    assert!(order.is_sorted(), "{body}");
     let arena = &g.stages[g.stages.find("fn staged_in_arena").unwrap()..];
     let arena = &arena[..arena.find("\n}\n\n").unwrap()];
     let order = [
         "let mark = scratch.mark();",
         "exact(scratch, p[0])?",
-        "expansions_translated_in(scratch, q)?",
+        "expansions_translated_in(scratch, q)",
         "scratch.reset(mark);",
     ]
     .map(|text| {
@@ -348,4 +512,19 @@ fn the_header_names_the_file_and_tells_how_to_regenerate() {
     for code in [&all[0].stages, &all[0].checks] {
         assert!(code.starts_with(expected), "{}", &code[..200]);
     }
+}
+
+#[test]
+fn an_exact_form_with_a_constant_that_is_not_exact_in_f64_is_accepted() {
+    // 2^53 + 1 has no `f64`. The exact form is only checked to be the
+    // polynomial of the main form: no stage is planned on it, so nothing
+    // rejects its constants.
+    let source = "fn p(a: Point3, b: Point3) -> Sign { (a.x - b.x) * (a.y - b.y) }\n\
+                  #[exact]\n\
+                  fn p(a: Point3, b: Point3) -> Sign { \
+                  9007199254740993 * (a.x - b.x) * (a.y - b.y) \
+                  - 9007199254740992 * (a.x - b.x) * (a.y - b.y) }\n";
+    assert_ne!(9007199254740993u64 as f64 as u64, 9007199254740993);
+    let g = generated(source, "t.pred");
+    assert!(!g.stages.contains("9007199254740993"));
 }

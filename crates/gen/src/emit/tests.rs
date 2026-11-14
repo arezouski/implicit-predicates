@@ -27,6 +27,7 @@ use readback::{Symbolic, interpret_statements};
 
 const ORIENT3D: &str = include_str!("../../tests/fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("../../tests/fixtures/insphere.pred");
+const INCIRCLE: &str = include_str!("../../tests/fixtures/incircle.pred");
 
 /// Definitions with negations in every position, constants in the exact
 /// form, a squared node and a node of degree one.
@@ -246,8 +247,7 @@ fn emitted_stages() -> Vec<(String, String, Polynomial)> {
             .zip(super::generate(source, "t.pred", "run the tests.").unwrap())
         {
             for stage in ["exact_differences", "expansions_translated"] {
-                // A stage whose temporaries do not fit on the stack is not
-                // emitted; in-sphere has none that fits.
+                // In-sphere, of degree 5, has no stage on expansions.
                 if p.name == "insphere" {
                     assert!(!g.stages.contains(&format!("pub fn {stage}(")), "{stage}");
                     continue;

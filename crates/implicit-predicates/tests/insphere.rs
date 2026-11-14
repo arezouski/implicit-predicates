@@ -1,12 +1,12 @@
 //! The stages of `insphere` against an oracle that does not come from the
 //! definition, `implicit_predicates_corpus::exact::insphere`, on the exact
 //! coordinates of the points: their constants against the derivation of
-//! the filter, the stages that are emitted, their sign convention, a few
-//! fixed calls, random, grid, cospherical and nearly cospherical points of
-//! every type, the whole range of `f64`, the hand-over between the ranges
-//! of the stages, the filter with an uncertainty, the edge cases of the
-//! generated checks, the panics of the chain and the arena of the stage on
-//! big integers.
+//! the filter, the stages that are emitted, the filter and the stage on big
+//! integers, their sign convention, a few fixed calls, random, grid,
+//! cospherical and nearly cospherical points of every type, the whole range
+//! of `f64`, the hand-over from the range of the filter, the filter with an
+//! uncertainty, the edge cases of the generated checks, the panics of the
+//! chain and the arena of the stage on big integers.
 
 mod common;
 
@@ -16,10 +16,10 @@ mod insphere_checks;
 
 use common::args::{Arg, Call5, any_points, with_concrete5};
 use common::insphere::{
-    BIG_INTEGERS, CHAIN, Decision, Points5, StagedIn, first_deciding, first_deciding_with, oracle,
-    oracle_args, oracle_at, refs, run_stage,
+    BIG_INTEGERS, CHAIN, Decision, Points5, StagedIn, first_deciding, oracle, oracle_args,
+    oracle_at, refs, run_stage,
 };
-use common::odd_points::{Long, NoCoordinates, Weighted};
+use common::odd_points::{Long, NoCoordinates, NoExpansions, Weighted};
 use common::why::Why;
 use common::{is_derived, pow2, sign_of};
 use implicit_predicates::stages::insphere::{self as stages, BIG_INTEGERS_EXPLICIT_ARENA};
@@ -64,29 +64,38 @@ fn the_emitted_constants_are_those_of_the_derivation() {
     assert_eq!(stages::D_MIN, pow2(-195));
     assert_eq!(stages::D_MAX, pow2(203));
     assert_eq!(stages::BIG_INTEGERS_EXPLICIT_ARENA, 6835);
-    assert_eq!(stages::SPANS_TRANSLATED_RANGE.0, pow2(-108));
 }
 
 #[test]
-fn no_stage_on_the_stack_is_emitted() {
-    // The exact differences need 4,154 doubles, over the limit of 4,096 of
-    // the stack, and the expansions more: every exact stage takes an arena.
-    for stage in ["exact_differences", "expansions_translated"] {
-        assert!(!SOURCE.contains(&format!("pub fn {stage}(")), "{stage}");
+fn only_the_filter_and_the_stage_on_big_integers_are_emitted() {
+    // Of degree 5, `insphere` has no stage on expansions, on the stack or
+    // over spans, nor their ranges and helpers.
+    for absent in [
+        "pub fn exact_differences(",
+        "pub fn expansions_translated(",
+        "pub fn expansions_translated_in(",
+        "pub fn exact_stages(",
+        "fn staged_in_arena(",
+        "fn exact(",
+        "fn span_in_range(",
+        "RANGE",
+        "MAX_COORD_COMPONENTS",
+    ] {
+        assert!(!SOURCE.contains(absent), "{absent}");
     }
     for stage in [
         "filter",
         "filter_points",
-        "expansions_translated_in",
         "big_integers_in",
         "staged",
         "staged_in",
-        "exact_stages",
         "exact_stages_in",
         "exact_stages_explicit_in",
     ] {
         assert!(SOURCE.contains(&format!("pub fn {stage}")), "{stage}");
     }
+    // `staged` is the filter alone, and takes no arena.
+    assert!(SOURCE.contains("pub fn staged(p: [&[f64; 3]; 5]) -> Option<Sign> {"));
 }
 
 /// The six points of the unit sphere on the axes.
@@ -170,18 +179,13 @@ fn the_chain_has_the_sign_of_an_independent_oracle_on_a_few_calls() {
         let mut buf = vec![0.0; 1 << 16];
         let mut scratch = Scratch::borrowed(&mut buf);
         assert_eq!(chain(&p), expected, "staged_in {p:?}");
-        let staged = stages::staged(&mut scratch, refs(&p)).unwrap();
+        let staged = stages::staged(refs(&p));
         assert!(staged.is_none_or(|s| s == expected), "staged {p:?}");
         let explicit = stages::exact_stages_explicit_in(&mut scratch, refs(&p));
         assert_eq!(explicit, Ok(expected), "exact_stages_explicit_in {p:?}");
         if let Some(sign) = stages::filter(refs(&p), 0.0) {
             assert_eq!(sign, expected, "filter {p:?}");
         }
-        // The stage over spans, on the exact coordinates of the points.
-        let q = p.map(|x| x.exact(&mut scratch).unwrap());
-        let q = [&q[0], &q[1], &q[2], &q[3], &q[4]];
-        let sign = stages::expansions_translated_in(&mut scratch, q);
-        assert_eq!(sign, Ok(Some(expected)), "expansions_translated_in {p:?}");
         // The stage on big integers, in the arena that suffices for
         // explicit points.
         let mut buf = vec![0.0; stages::BIG_INTEGERS_EXPLICIT_ARENA];
@@ -192,6 +196,34 @@ fn the_chain_has_the_sign_of_an_independent_oracle_on_a_few_calls() {
     }
     // Every sign occurs.
     assert!(signs.iter().all(|&n| n >= 4), "{signs:?}");
+}
+
+/// The chain has no stage on expansions: it never asks a point for its
+/// exact coordinates as expansions, only as big integers, whether the
+/// points are explicit or not, on calls that the filter decides and on
+/// calls that it does not.
+#[test]
+fn the_chain_never_asks_for_exact_coordinates_as_expansions() {
+    let mut declined = 0;
+    for p in cases() {
+        let expected = oracle(&p);
+        let mut buf = vec![0.0; 1 << 16];
+        let mut scratch = Scratch::borrowed(&mut buf);
+        for explicit in [false, true] {
+            let [a, b, c, d, e] = p.map(|point| NoExpansions { point, explicit });
+            if stages::filter_points(&a, &b, &c, &d, &e).is_none() {
+                declined += 1;
+            }
+            let sign = stages::staged_in(&mut scratch, &a, &b, &c, &d, &e);
+            assert_eq!(sign, Ok(expected), "staged_in {p:?}");
+            let sign = stages::exact_stages_in(&mut scratch, &a, &b, &c, &d, &e);
+            assert_eq!(sign, Ok(expected), "exact_stages_in {p:?}");
+        }
+        let sign = stages::exact_stages_explicit_in(&mut scratch, refs(&p));
+        assert_eq!(sign, Ok(expected), "exact_stages_explicit_in {p:?}");
+        assert_eq!(scratch.used(), 0);
+    }
+    assert!(declined > 0, "the filter decides every call");
 }
 
 /// The points of `args` when they are all explicit.
@@ -210,7 +242,7 @@ fn explicit(args: &Args5) -> Option<Points5> {
 /// stages, on `args` gives `expected` when it decides: `staged_in` on the
 /// concrete types, as `[f64; 3]` or `Explicit` and `Lnc`, and on
 /// `AnyPoint`s, `exact_stages_in`, each stage of [`CHAIN`] alone, and, when
-/// every point is explicit, `filter`, `staged`, `exact_stages` and
+/// every point is explicit, `filter`, `staged` and
 /// `exact_stages_explicit_in`. The generated `exact_at` must agree too, in
 /// addition to the oracle. Returns the stage that decides first.
 fn assert_every_call(args: &Args5, expected: Sign, staged: &mut StagedIn) -> Decision {
@@ -230,20 +262,15 @@ fn assert_every_call(args: &Args5, expected: Sign, staged: &mut StagedIn) -> Dec
     }
     let decision = first_deciding(&mut scratch, &points).expect("finite inputs");
     assert_eq!(decision.sign, expected, "{decision:?} {args:?}");
-    assert_eq!(decision.why.is_some(), decision.stage == BIG_INTEGERS);
-    assert_ne!(decision.why, Some(Why::Unexplained), "{args:?}");
+    let why = (decision.stage == BIG_INTEGERS).then_some(Why::BigIntegersOnly);
+    assert_eq!(decision.why, why, "{args:?}");
     if let Some(p) = explicit(args) {
         let r = refs(&p);
         if let Some(sign) = stages::filter(r, 0.0) {
             assert_eq!(sign, expected, "filter {args:?}");
         }
-        let decided = stages::staged(&mut scratch, r).unwrap();
+        let decided = stages::staged(r);
         assert!(decided.is_none_or(|s| s == expected), "staged {args:?}");
-        let decided = stages::exact_stages(&mut scratch, r).unwrap();
-        assert!(
-            decided.is_none_or(|s| s == expected),
-            "exact_stages {args:?}"
-        );
         let sign = stages::exact_stages_explicit_in(&mut scratch, r);
         assert_eq!(sign, Ok(expected), "exact_stages_explicit_in {args:?}");
         for (i, name) in CHAIN.iter().enumerate() {
@@ -499,79 +526,60 @@ fn centred(s: f64, a: f64) -> Points5 {
     ]
 }
 
-/// Each range of the chain, the sizes of the filter and the range of the
-/// stage over spans, with an input that has a coordinate at an end of it
-/// and the same input with that value one step outside, and the stage of
-/// `CHAIN` that decides each: the next stage whose range holds the input,
-/// and the stage on big integers outside every range, because of a
-/// component outside the range of the stage over spans. The cases of the
-/// stage over spans are checked again with every point a point on a line
-/// whose parents are both the point.
+/// The ends of the range of the filter, with an input that has a coordinate
+/// at an end and the same input with that value one step outside, and the
+/// stage of `CHAIN` that decides each: the filter inside, the stage on big
+/// integers outside. Points near a sphere, which the filter does not
+/// decide, at scales from the bottom of the range of `f64` to its top, go
+/// to the stage on big integers too, as explicit points and as points on a
+/// line whose parents are both the point.
 #[test]
-fn each_range_hands_over_to_the_next_stage() {
-    let (min, t) = stages::SPANS_TRANSLATED_RANGE;
+fn the_range_of_the_filter_hands_over_to_the_big_integers() {
     let (d_min, d_max) = (stages::D_MIN, stages::D_MAX);
-    assert!(d_min < min && t < d_max);
     let up = f64::next_up;
-    let below = min.next_down();
-    let [filter, translated, big] = CHAIN;
-    let cases: [(&str, Points5, &str); 8] = [
-        ("D_MAX", centred(d_max, d_max), filter),
-        ("above D_MAX", centred(d_max, up(d_max)), big),
-        ("D_MIN", centred(d_min, d_min), filter),
+    let [filter, big] = CHAIN;
+    let mut cases: Vec<(String, Points5, &str)> = vec![
+        ("D_MAX".into(), centred(d_max, d_max), filter),
+        ("above D_MAX".into(), centred(d_max, up(d_max)), big),
+        ("D_MIN".into(), centred(d_min, d_min), filter),
         (
-            "below D_MIN",
+            "below D_MIN".into(),
             centred(d_min.next_down(), d_min.next_down()),
             big,
         ),
-        (
-            "SPANS_TRANSLATED_RANGE.1",
-            near_sphere(t, t, 0.0),
-            translated,
-        ),
-        (
-            "above SPANS_TRANSLATED_RANGE",
-            near_sphere(t, up(t), 0.0),
-            big,
-        ),
-        (
-            "SPANS_TRANSLATED_RANGE.0",
-            near_sphere(1.0, 1.0, min),
-            translated,
-        ),
-        (
-            "below SPANS_TRANSLATED_RANGE",
-            near_sphere(1.0, 1.0, below),
-            big,
-        ),
     ];
+    for exponent in [-1000, -400, -195, -108, 0, 154, 203, 400, 1000] {
+        let v = pow2(exponent);
+        cases.push((
+            format!("near a sphere of size 2^{exponent}"),
+            near_sphere(v, v, 0.0),
+            big,
+        ));
+    }
     let mut staged = StagedIn::new();
     for (i, (case, p, stage)) in cases.into_iter().enumerate() {
         let expected = oracle(&p);
         assert_ne!(expected, Sign::Zero, "{case}: {p:?}");
         let mut lines = vec![p.map(Arg::Explicit)];
-        // The cases of the stages over spans, after the four of the filter,
-        // whose ends depend on the uncertainty, zero for explicit points.
+        // The cases near a sphere, after the four of the filter, whose ends
+        // depend on the uncertainty, zero for explicit points.
         if i >= 4 {
             lines.push(p.map(|x| Arg::Lnc(x, x, 0.375)));
         }
         for args in lines {
             let decision = assert_every_call(&args, expected, &mut staged);
             assert_eq!(decision.name(), stage, "{case}: {args:?}");
-            let why = (stage == big).then_some(Why::ComponentOutOfRange);
-            assert_eq!(decision.why, why, "{case}: {args:?}");
         }
     }
 }
 
 /// A point on a line whose exact coordinates are of order 1, near a point
-/// of a sphere, with a component below `SPANS_TRANSLATED_RANGE`: the
-/// parents differ by `3 * 2^-52` in `x` and `t = 2^-7 (1 + 2^-52)`, so the
-/// exact `x` is `1 + 3 * 2^-59 + 3 * 2^-111`, whose last bit is `2^-111`.
-/// The stage over spans declines it and the stage on big integers decides,
-/// by range.
+/// of a sphere, with components far apart: the parents differ by
+/// `3 * 2^-52` in `x` and `t = 2^-7 (1 + 2^-52)`, so the exact `x` is
+/// `1 + 3 * 2^-59 + 3 * 2^-111`, whose last bit is `2^-111`. The filter
+/// declines it and the stage on big integers decides.
 #[test]
-fn small_components_go_to_the_big_integers() {
+fn points_on_a_line_near_a_sphere_go_to_the_big_integers() {
     // The sphere of radius 5 about (1, 1, 1).
     let on = [
         [4.0, 5.0, 1.0],
@@ -582,15 +590,6 @@ fn small_components_go_to_the_big_integers() {
     let q = [1.0, -2.0, -3.0];
     let p = [1.0 + 3.0 * pow2(-52), -2.0, -3.0];
     let t = pow2(-7) * (1.0 + f64::EPSILON);
-    let line = Lnc::new(p, q, t).unwrap();
-    let mut buf = vec![0.0; 1 << 12];
-    let mut scratch = Scratch::borrowed(&mut buf);
-    let c = line.exact(&mut scratch).unwrap();
-    let x = scratch.get(c.x).to_vec();
-    assert!(x.len() <= stages::MAX_COORD_COMPONENTS, "{x:?}");
-    let low = stages::SPANS_TRANSLATED_RANGE.0;
-    assert!(x.iter().any(|v| v.abs() < low), "{x:?}");
-    assert!(x.iter().any(|v| v.abs() >= 1.0), "{x:?}");
     for position in 0..5 {
         let mut args: Vec<Arg> = on.iter().copied().map(Arg::Explicit).collect();
         args.insert(position, Arg::Lnc(p, q, t));
@@ -599,24 +598,21 @@ fn small_components_go_to_the_big_integers() {
         assert_ne!(expected, Sign::Zero);
         let decision = assert_every_call(&args, expected, &mut StagedIn::new());
         assert_eq!(decision.stage, BIG_INTEGERS, "{args:?}");
-        assert_eq!(decision.why, Some(Why::ComponentOutOfRange), "{args:?}");
+        assert_eq!(decision.why, Some(Why::BigIntegersOnly), "{args:?}");
     }
 }
 
-/// An exact coordinate of 16 components, which the stages over spans take,
-/// and one of 17, which they decline, so that the stage on big integers
-/// decides it, for the reason that the coordinate has too many components,
-/// with the coordinates from `exact_big`.
+/// An exact coordinate of 16 components and one of 17: the chain takes both
+/// on big integers, from `exact_big`, and never asks for the exact
+/// coordinates as expansions, of any length.
 #[test]
-fn seventeen_components_go_to_the_big_integers() {
-    assert_eq!(stages::MAX_COORD_COMPONENTS, 16);
+fn exact_coordinates_of_any_length_go_to_the_big_integers() {
     let one = |p: [f64; 3]| {
         let x = if p[0] == 0.0 { vec![] } else { vec![p[0]] };
         Long::new(x, p[1], p[2])
     };
-    for (n, stage, big_calls) in [(16usize, 1, 0), (17, BIG_INTEGERS, 1)] {
-        // Components 2^(-100 + 14 i), of alternating sign, inside the
-        // ranges of the stages over spans.
+    for n in [16usize, 17] {
+        // Components 2^(-100 + 14 i), of alternating sign.
         let components: Vec<f64> = (0..n)
             .map(|i| {
                 let x = pow2(-100 + 14 * i32::try_from(i).unwrap());
@@ -631,14 +627,13 @@ fn seventeen_components_go_to_the_big_integers() {
             assert_ne!(expected, Sign::Zero);
             let mut buf = vec![0.0; 1 << 16];
             let mut scratch = Scratch::borrowed(&mut buf);
-            let decision = first_deciding_with(&mut scratch, &p, |_| Why::Unexplained).unwrap();
-            let why = (n == 17).then_some(Why::TooManyComponents);
+            let decision = first_deciding(&mut scratch, &p).unwrap();
             assert_eq!(
                 decision,
                 Decision {
-                    stage,
+                    stage: BIG_INTEGERS,
                     sign: expected,
-                    why
+                    why: Some(Why::BigIntegersOnly),
                 },
                 "{n} components at {position}"
             );
@@ -646,17 +641,19 @@ fn seventeen_components_go_to_the_big_integers() {
             let sign = stages::staged_in(&mut scratch, a, b, c, d, e);
             assert_eq!(sign, Ok(expected), "{n} components at {position}");
             assert_eq!(scratch.used(), 0);
-            assert_eq!(p[position].big_calls.get(), 2 * big_calls, "{n}");
+            // Once for `first_deciding`, once for the chain; never `exact`.
+            assert_eq!(p[position].big_calls.get(), 2, "{n}");
+            assert!(p.iter().all(|q| q.exact_calls.get() == 0), "{n}");
         }
     }
 }
 
 /// Points on a line whose inputs are outside the range of the exact
 /// arithmetic of `Lnc::exact`, a parameter below the product domain and
-/// parents whose difference overflows, near a sphere: `exact` fails, and
-/// the stage on big integers decides, with that reason.
+/// parents whose difference overflows, near a sphere: the chain does not
+/// need `exact`, and the stage on big integers decides.
 #[test]
-fn a_point_without_exact_coordinates_goes_to_the_big_integers() {
+fn a_point_without_exact_coordinates_as_expansions_goes_to_the_big_integers() {
     let [a, b, c, d] = POSITIVE.map(Arg::Explicit);
     let big = [f64::MAX, 1.0, -1.0];
     let minus_big = [-f64::MAX, 0.5, 5e-324];
@@ -670,7 +667,7 @@ fn a_point_without_exact_coordinates_goes_to_the_big_integers() {
         let expected = oracle_args(&args);
         let decision = assert_every_call(&args, expected, &mut staged);
         assert_eq!(decision.stage, BIG_INTEGERS, "{args:?}");
-        assert_eq!(decision.why, Some(Why::ExactOutOfRange), "{args:?}");
+        assert_eq!(decision.why, Some(Why::BigIntegersOnly), "{args:?}");
     }
 }
 
@@ -1021,7 +1018,5 @@ fn the_arena_of_the_explicit_stage_is_enough() {
     // The worst case found, within the constant: a borrowed arena of
     // `BIG_INTEGERS_EXPLICIT_ARENA` slots fails by itself above it, so this
     // pins that these inputs still reach the stage and use what they did.
-    // The stages over spans that `staged_in` runs first decline these
-    // inputs before they use as much.
     assert_eq!(high_water, [5883, 5883]);
 }

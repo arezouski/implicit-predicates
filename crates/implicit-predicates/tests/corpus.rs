@@ -35,7 +35,7 @@ use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
-use common::corpus_sweep::{BigAlone, CrossCheck, InSphereTally, PointCounts, Sweep, Tally};
+use common::corpus_sweep::{BigAlone, CrossCheck, InSphereTally, PointCounts, Sweep, Tally, Why};
 use implicit_predicates_corpus::exact::REFERENCE_INSPHERE_FACTOR;
 use implicit_predicates_corpus::parallel::{default_jobs, map_ordered};
 use implicit_predicates_corpus::{Corpus, Predicate};
@@ -146,12 +146,34 @@ fn insphere_matches_the_recorded_sign_on_the_samples() {
         alone.add_insphere_corpus(&read(&path));
     }
     assert_big_alone("insphere: samples", &alone, total.0 + total.1);
-    assert!(
-        tally.big_integers.counts.is_empty() && tally.big_integers_explicit.counts.is_empty(),
-        "insphere calls decided on big integers on the samples: {:?} {:?}",
-        tally.big_integers.examples,
+    // The stage on big integers, the only exact stage of `insphere`, decides
+    // exactly the calls that the filter does not, all for that reason. With
+    // a single reason this is close to what the sweep counts by
+    // construction; it guards that no call is lost on the way.
+    assert_eq!(
+        tally
+            .big_integers_explicit
+            .counts
+            .iter()
+            .map(|&(why, n, _)| (why, n))
+            .collect::<Vec<_>>(),
+        [(Why::BigIntegersOnly, tally.explicit_past_filter.0)],
+        "{:?}",
         tally.big_integers_explicit.examples
     );
+    assert!(tally.explicit_past_filter.0 > 0);
+    let implicit = tally.implicit();
+    let close = |x: f64, y: f64| (x - y).abs() <= 1e-9 * y.abs();
+    let [(why, stored, weight)] = tally.big_integers.counts[..] else {
+        panic!("{:?}", tally.big_integers.counts);
+    };
+    assert_eq!(why, Why::BigIntegersOnly);
+    assert!(stored > 0);
+    let [filter, big] = implicit.columns[..] else {
+        panic!("the columns of insphere are not the filter and the big integers");
+    };
+    assert!(close(weight, big), "{weight} {big}");
+    assert!(close(filter + big, implicit.weight), "{filter} {big}");
     assert!(
         total.0 >= SAMPLE_INSPHERE_CALLS.0 && total.1 >= SAMPLE_INSPHERE_CALLS.1,
         "the samples check {total:?} insphere calls, fewer than {SAMPLE_INSPHERE_CALLS:?}"
@@ -184,8 +206,9 @@ fn the_sweep_of_insphere_fails_without_the_factor_of_the_reference() {
 /// The two ways of cross-checking the `insphere` calls give the same table
 /// and the same number of mismatches on the samples, also without the
 /// factor of the reference, where every call with a nonzero recorded sign
-/// is one. Only the descriptions of the mismatches differ: those of
-/// `ChainOnly` have no stage alone.
+/// is one. Only the descriptions of the mismatches and of the examples of
+/// the calls decided on big integers differ: those of `ChainOnly` have no
+/// stage alone.
 #[test]
 fn both_cross_checks_of_insphere_give_the_same_table_on_the_samples() {
     for factor in [REFERENCE_INSPHERE_FACTOR, 1] {
@@ -202,6 +225,7 @@ fn both_cross_checks_of_insphere_give_the_same_table_on_the_samples() {
             t.report("samples")
                 .lines()
                 .filter(|line| !described.iter().any(|m| line.trim() == m))
+                .filter(|line| !line.contains(" example: "))
                 .collect::<Vec<_>>()
                 .join("\n")
         };

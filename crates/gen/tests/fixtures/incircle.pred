@@ -1,0 +1,15 @@
+// The in-circle predicate of the projections of four points on the plane
+// z = 0, of degree 4: the sign of the determinant whose rows are
+// (x - d.x, y - d.y, (x - d.x)^2 + (y - d.y)^2) for a, b and c.
+fn incircle(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {
+    let adx = a.x - d.x;
+    let ady = a.y - d.y;
+    let bdx = b.x - d.x;
+    let bdy = b.y - d.y;
+    let cdx = c.x - d.x;
+    let cdy = c.y - d.y;
+    let alift = adx * adx + ady * ady;
+    let blift = bdx * bdx + bdy * bdy;
+    let clift = cdx * cdx + cdy * cdy;
+    alift * (bdx * cdy - cdx * bdy) + blift * (cdx * ady - adx * cdy) + clift * (adx * bdy - bdx * ady)
+}

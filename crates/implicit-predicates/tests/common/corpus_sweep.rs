@@ -138,8 +138,8 @@ const EXAMPLES: usize = 5;
 /// The most mismatches kept described.
 const MISMATCHES: usize = 20;
 
-/// The calls that the stage on big integers decides, because no stage on
-/// expansions does, by reason.
+/// The calls that the stage on big integers decides, because no stage
+/// before it does, by reason.
 #[derive(Clone, Debug, Default)]
 pub struct Reasons {
     /// The stored count and the weight of the calls of each reason, in the
@@ -603,14 +603,15 @@ impl Tally {
 
 /// The stages a call of `insphere` can be attributed to: those of its
 /// chain, in its order.
-pub const INSPHERE_COLUMNS: [&str; 3] = insphere_chain::CHAIN;
+pub const INSPHERE_COLUMNS: [&str; 2] = insphere_chain::CHAIN;
 
 /// What a sweep of the `insphere` calls found, by number of implicit points
 /// (0 to 5).
 ///
-/// `insphere` has no public function and no stages on the stack: the sweep
-/// calls `staged_in` of the hidden module, and explicit points that the
-/// filter does not decide go through the stages over spans, in the arena.
+/// `insphere` has no public function and no stage on expansions: the sweep
+/// calls `staged_in` of the hidden module, and every call that the filter
+/// does not decide, with explicit points too, goes to the stage on big
+/// integers, in the arena, for the reason [`Why::BigIntegersOnly`].
 #[derive(Debug)]
 pub struct InSphereTally {
     pub buckets: [Bucket<{ INSPHERE_COLUMNS.len() }>; 6],
@@ -650,10 +651,8 @@ pub enum CrossCheck {
     /// must give the sign of the chain, and the first that does must be the
     /// one the chain stops at.
     EveryStageAlone,
-    /// No stage alone: the stages over spans run only on calls that the
-    /// filter does not decide, and the sign of the stage on big integers is
-    /// that of the chain, which reaches it only when no stage on expansions
-    /// decides.
+    /// No stage alone: the sign of the stage on big integers is that of the
+    /// chain, which reaches it only when the filter does not decide.
     ChainOnly,
 }
 
@@ -768,7 +767,7 @@ impl InSphereTally {
         implicit: usize,
         p: &[AnyPoint; 5],
     ) {
-        let on_expansions = insphere_chain::deciding_on_expansions(&mut self.scratch, p);
+        let before_big = insphere_chain::deciding_before_big_integers(&mut self.scratch, p);
         // In `EveryStageAlone`, every stage alone; otherwise none.
         let alone: Option<[Option<Sign>; INSPHERE_COLUMNS.len()]> =
             (self.cross_check == CrossCheck::EveryStageAlone).then(|| {
@@ -778,10 +777,10 @@ impl InSphereTally {
         let arena = &mut self.arenas[implicit];
         let chain = insphere_stages::staged_in(arena, a, b, c, d, e)
             .unwrap_or_else(|e| panic!("a growable arena is exhausted: {e:?}"));
-        // When no stage on expansions decides, the sign of the stage on big
+        // When the filter does not decide, the sign of the stage on big
         // integers: the one it gave alone, or else the one of the chain,
         // which ends with it.
-        let decision = on_expansions.map(Some).unwrap_or_else(|why| {
+        let decision = before_big.map(Some).unwrap_or_else(|why| {
             let sign = match alone {
                 Some(alone) => alone[insphere_chain::BIG_INTEGERS],
                 None => Some(chain),

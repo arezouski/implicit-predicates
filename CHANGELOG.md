@@ -83,9 +83,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `2^-188..=2^239`: with a coordinate above `2^238`, such a call goes to the
   stage on big integers, in the arena of the thread.
 - The `#[exact]` form of a definition is only checked to be the same
-  polynomial as the main form; no stage evaluates it. So `generate` no
-  longer rejects an `#[exact]` form with a constant that is not exact in
-  `f64`.
+  polynomial as the main form; no stage evaluates it, and no plan of an
+  exact stage is derived from it. So `generate` no longer rejects an
+  `#[exact]` form for what such a plan required of it, such as a constant
+  that is not exact in `f64`.
+- A predicate whose main form has a total degree of 5 or more
+  (`BIG_INTEGERS_ONLY_DEGREE`, new in `implicit-predicates-gen`) uses the
+  stage on big integers as its only exact stage: its chain is the filter
+  and the stage on big integers, for points of any type. The generator
+  plans no stage on expansions for it and emits none: no
+  `exact_differences`, `expansions_translated` or `expansions_translated_in`,
+  no `exact_stages`, no `DIFFERENCES_RANGE`, `TRANSLATED_RANGE`,
+  `SPANS_TRANSLATED_RANGE` or `MAX_COORD_COMPONENTS`, and no helpers that
+  only they use. Its `staged` is the filter alone and takes no arena, and
+  `exact_stages_explicit_in` and `exact_stages_in` go straight to
+  `big_integers_in`; the chain never calls `Point::exact`, only
+  `Point::exact_big`. A definition of such a degree that the plan of the
+  stage over spans rejected, such as one with a product operand of degree
+  17, is now generated. Predicates of degree 4 or less keep their chain.
 
 ### Removed
 

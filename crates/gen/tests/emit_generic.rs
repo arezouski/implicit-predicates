@@ -7,6 +7,7 @@ use proc_macro2::TokenStream;
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
+const INCIRCLE: &str = include_str!("fixtures/incircle.pred");
 
 /// How the tests say to regenerate the code.
 const REGENERATE: &str = "run the tests.";
@@ -153,24 +154,33 @@ fn the_chain_for_points_of_any_type_takes_the_exact_stages_of_staged_for_explici
     );
     let order = positions(exact, &["exact_differences(p)", "expansions_translated(p)"]);
     assert!(order.is_sorted(), "{exact}");
-    // In-sphere has no stage on the stack: its chain for explicit points
-    // takes the arena.
-    let i = generated(INSPHERE, "predicates/insphere.pred");
+    // The translated expansions of in-circle do not fit on the stack: its
+    // chain for explicit points takes the arena.
+    let i = generated(INCIRCLE, "t.pred");
     assert!(
         function(&i.stages, "staged_in").contains("return exact_stages_explicit_in(scratch, [")
     );
     let exact = function(&i.stages, "exact_stages");
-    assert!(exact.contains("staged_in_arena(scratch, p)"), "{exact}");
+    let order = positions(
+        exact,
+        &["exact_differences(p)", "staged_in_arena(scratch, p)"],
+    );
+    assert!(order.is_sorted(), "{exact}");
     let explicit = function(&i.stages, "exact_stages_explicit_in");
     let order = positions(
         explicit,
         &[
-            "let q4 = exact_big(scratch, p[4])?;",
-            "big_integers_in(scratch, [&q0, &q1, &q2, &q3, &q4])",
+            "let q3 = exact_big(scratch, p[3])?;",
+            "big_integers_in(scratch, [&q0, &q1, &q2, &q3])",
             "if let Some(sign) = exact_stages(scratch, p)? {\nreturn Ok(sign);\n}",
         ],
     );
     assert!(order.is_sorted(), "{explicit}");
+    // In-sphere has no exact stage but the one on big integers, and no
+    // `exact_stages`.
+    let s = generated(INSPHERE, "predicates/insphere.pred");
+    assert!(!s.stages.contains("exact_stages("));
+    assert!(!function(&s.stages, "exact_stages_explicit_in").contains("if let Some"));
 }
 
 #[test]
@@ -208,8 +218,8 @@ fn the_stages_over_spans_run_on_the_exact_coordinates_in_order_and_reset_the_are
         ),
         "{exact}"
     );
-    // In-sphere runs the same stage over spans.
-    let i = generated(INSPHERE, "predicates/insphere.pred");
+    // In-circle runs the same stage over spans.
+    let i = generated(INCIRCLE, "t.pred");
     let spans = function(&i.stages, "exact_stages_in");
     assert!(
         spans.contains("expansions_translated_in(scratch, q)\n}"),
@@ -261,7 +271,7 @@ fn the_checks_hold_a_check_of_each_kind_of_edge_case_for_the_arity_of_the_predic
 fn the_stages_for_points_of_any_type_end_with_the_stage_on_big_integers() {
     for (source, file, points) in [
         (ORIENT3D, "predicates/orient3d.pred", 4),
-        (INSPHERE, "predicates/insphere.pred", 5),
+        (INCIRCLE, "t.pred", 4),
     ] {
         let g = generated(source, file);
         for name in ["exact_stages_explicit_in", "exact_stages_in", "staged_in"] {
@@ -341,4 +351,23 @@ fn the_stages_for_points_of_any_type_end_with_the_stage_on_big_integers() {
             "{file}"
         );
     }
+}
+
+#[test]
+fn a_chain_on_big_integers_alone_reports_the_weight_from_the_big_integers() {
+    // In-sphere has no stage on expansions, so no helper `exact`: the weight
+    // other than one is the panic of `exact_big`, with the same message.
+    let g = generated(INSPHERE, "predicates/insphere.pred");
+    assert!(!g.stages.contains("\nfn exact("));
+    assert!(!g.stages.contains(".exact(scratch)"));
+    let message = "\"implicit-predicates: a point has a weight other than one, which the predicates \
+                   do not support\"";
+    assert_eq!(g.stages.matches(message).count(), 1);
+    let exact_big = &g.stages[g.stages.find("\nfn exact_big(").unwrap()..];
+    assert!(
+        exact_big.contains(&format!(
+            "Err(ExactError::Weighted) => no_exact_coordinates(\n{message},\n),"
+        )),
+        "{exact_big}"
+    );
 }

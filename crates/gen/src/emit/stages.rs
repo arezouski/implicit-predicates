@@ -1,5 +1,7 @@
-//! The constants and the exact stages of a predicate: the stages on the
-//! stack that fit within [`STACK_LIMIT`], and the stages over arena spans.
+//! The constants and the exact stages on expansions of a predicate: the
+//! stages on the stack that fit within [`STACK_LIMIT`], and the stage over
+//! arena spans, none of them for a main form of degree
+//! [`BIG_INTEGERS_ONLY_DEGREE`] or more.
 
 use std::fmt::Write;
 
@@ -18,16 +20,30 @@ use crate::range::{ExactRange, MAX_COORD_COMPONENTS};
 /// spans in its place.
 pub(crate) const STACK_LIMIT: usize = 4096;
 
+/// The total degree from which a predicate has no exact stage on
+/// expansions: when its main form has at least this degree, the stage on
+/// big integers is its only exact stage, and no stage on the stack or over
+/// spans is planned or emitted for it.
+pub const BIG_INTEGERS_ONLY_DEGREE: u32 = 5;
+
 /// Whether a stage whose temporaries take `total` `f64` is emitted on the
 /// stack: at most [`STACK_LIMIT`].
 pub(crate) fn fits_on_stack(total: usize) -> bool {
     total <= STACK_LIMIT
 }
 
-/// The forms of a predicate, with the plans of their exact stages. A stage
-/// on the stack is `None` when its temporaries exceed [`STACK_LIMIT`].
+/// The forms of a predicate, with the plans of their exact stages.
 pub(crate) struct Forms<'a> {
     pub(crate) filter: FilterKind,
+    /// The exact stages on expansions, `None` for a main form of degree
+    /// [`BIG_INTEGERS_ONLY_DEGREE`] or more, whose only exact stage is the
+    /// one on big integers.
+    pub(crate) expansions: Option<Expansions<'a>>,
+}
+
+/// The exact stages on expansions of a predicate. A stage on the stack is
+/// `None` when its temporaries exceed [`STACK_LIMIT`].
+pub(crate) struct Expansions<'a> {
     pub(crate) differences: Option<(Program, ExactRange)>,
     pub(crate) translated: Option<(Program, ExactRange)>,
     /// The main form, and the range of its stage over spans.
@@ -37,12 +53,15 @@ pub(crate) struct Forms<'a> {
 impl Forms<'_> {
     /// The stages on the stack that are emitted, with their names.
     pub(crate) fn stack_stages(&self) -> impl Iterator<Item = (&'static str, &Program)> {
-        [
-            ("exact_differences", &self.differences),
-            ("expansions_translated", &self.translated),
-        ]
-        .into_iter()
-        .filter_map(|(name, stage)| stage.as_ref().map(|(program, _)| (name, program)))
+        self.expansions
+            .iter()
+            .flat_map(|e| {
+                [
+                    ("exact_differences", &e.differences),
+                    ("expansions_translated", &e.translated),
+                ]
+            })
+            .filter_map(|(name, stage)| stage.as_ref().map(|(program, _)| (name, program)))
     }
 }
 
@@ -68,7 +87,10 @@ pub(crate) fn write_constants(out: &mut String, forms: &Forms) {
             format!("({}, {})", literal(range.min), literal(range.max)),
         );
     };
-    if let Some((_, r)) = &forms.differences {
+    let Some(expansions) = &forms.expansions else {
+        return;
+    };
+    if let Some((_, r)) = &expansions.differences {
         range(
             out,
             "DIFFERENCES_RANGE",
@@ -77,7 +99,7 @@ pub(crate) fn write_constants(out: &mut String, forms: &Forms) {
             *r,
         );
     }
-    if let Some((_, r)) = &forms.translated {
+    if let Some((_, r)) = &expansions.translated {
         range(
             out,
             "TRANSLATED_RANGE",
@@ -96,12 +118,16 @@ pub(crate) fn write_constants(out: &mut String, forms: &Forms) {
         out,
         "SPANS_TRANSLATED_RANGE",
         "[`expansions_translated_in`] decides when every nonzero component of every coordinate",
-        forms.spans_translated.1,
+        expansions.spans_translated.1,
     );
 }
 
+/// Writes the exact stages on expansions, if the predicate has them.
 pub(crate) fn write_exact_stages(out: &mut String, points: usize, forms: &Forms) {
-    if let Some((program, _)) = &forms.differences {
+    let Some(expansions) = &forms.expansions else {
+        return;
+    };
+    if let Some((program, _)) = &expansions.differences {
         let doc = "The exact sign of the predicate: its main form evaluated with expansions \
              on the differences of coordinates, each computed in `f64`.\n\n\
              `None` means that this stage cannot decide: some difference is not exact in \
@@ -120,7 +146,7 @@ pub(crate) fn write_exact_stages(out: &mut String, points: usize, forms: &Forms)
             points,
         );
     }
-    if let Some((program, _)) = &forms.translated {
+    if let Some((program, _)) = &expansions.translated {
         let doc = "The exact sign of the predicate: its main form evaluated with expansions, \
              each difference of coordinates as an exact expansion of two components.\n\n\
              `None` means that this stage cannot decide: some nonzero coordinate has a \
@@ -155,7 +181,7 @@ pub(crate) fn write_exact_stages(out: &mut String, points: usize, forms: &Forms)
     let stage = SpanStage {
         name: "expansions_translated_in",
         doc,
-        graph: forms.spans_translated.0,
+        graph: expansions.spans_translated.0,
         range: "SPANS_TRANSLATED_RANGE",
     };
     write_span_stage(out, &stage, points);

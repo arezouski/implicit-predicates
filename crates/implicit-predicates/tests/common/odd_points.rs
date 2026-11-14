@@ -1,6 +1,7 @@
 //! Points of types made for the tests, which no point of this crate can
 //! be: exact coordinates with a weight other than one, no exact coordinates
-//! at all, and an exact coordinate with any number of components.
+//! at all, an exact coordinate with any number of components, and no exact
+//! coordinates as expansions.
 
 use implicit_predicates::{BigCoords, ExactCoords, ExactError, Point, Scratch, Span, Weight};
 use implicit_predicates_oracle::Dyadic;
@@ -95,10 +96,11 @@ impl Point for NoCoordinates {
 
 /// A point whose first coordinate is the sum of `components`, a valid
 /// expansion, with an infinite error so that the filter never decides; it
-/// counts the calls to `exact_big`.
+/// counts the calls to `exact` and to `exact_big`.
 pub struct Long {
     components: Vec<f64>,
     approx: [f64; 3],
+    pub exact_calls: std::cell::Cell<usize>,
     pub big_calls: std::cell::Cell<usize>,
 }
 
@@ -109,6 +111,7 @@ impl Long {
         Long {
             components,
             approx: [x, y, z],
+            exact_calls: std::cell::Cell::new(0),
             big_calls: std::cell::Cell::new(0),
         }
     }
@@ -141,6 +144,7 @@ impl Point for Long {
     }
 
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        self.exact_calls.set(self.exact_calls.get() + 1);
         fn push(scratch: &mut Scratch<'_>, e: &[f64]) -> Result<Span, ExactError> {
             Ok(scratch.push(e)?)
         }
@@ -172,5 +176,36 @@ impl Point for Long {
         let y = scratch.big_from_f64(self.approx[1])?;
         let z = scratch.big_from_f64(self.approx[2])?;
         Ok(BigCoords::new(x, y, z))
+    }
+}
+
+/// The point `point`, whose `Point::exact` panics, explicit or not as
+/// `explicit` says, without error: a chain that does not ask for exact
+/// coordinates as expansions takes it, and gets its coordinates as big
+/// integers from `exact_big` of `point`.
+pub struct NoExpansions {
+    pub point: [f64; 3],
+    pub explicit: bool,
+}
+
+impl Point for NoExpansions {
+    fn approx(&self) -> &[f64; 3] {
+        &self.point
+    }
+
+    fn err(&self) -> &[f64; 3] {
+        &[0.0; 3]
+    }
+
+    fn is_explicit(&self) -> bool {
+        self.explicit
+    }
+
+    fn exact(&self, _: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        panic!("`Point::exact` called on {:?}", self.point)
+    }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        self.point.exact_big(scratch)
     }
 }

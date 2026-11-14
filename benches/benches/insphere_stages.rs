@@ -8,25 +8,18 @@
 //! recorded calls with implicit points, as a mix and by number of implicit
 //! points.
 //!
-//! The exact stages, on the recorded calls that the filter does not decide,
-//! by number of implicit points, zero to five, in two groups (see
-//! `InSphereGroup`): the calls that the stage over spans decides, and those
-//! that go to the stage on big integers because a component of an exact
-//! coordinate is out of range. `insphere` has no stage on the stack, so the
-//! explicit calls go through the stage over spans too.
-//! `expansions_translated_in` is measured on the first group only, on exact
-//! coordinates computed beforehand. `exact_stages_in` computes the exact
-//! coordinates, then runs the stage over spans and, when it declines, the
-//! stage on big integers: the cost of the chain after the filter, on both
-//! groups. `big_integers_in` is measured with the cost of `exact_big` for
-//! the five points, which writes their coordinates to the arena, on both
-//! groups: on the first one, it is what the stage on big integers would cost
-//! instead of the stage over spans.
+//! The exact stage, on the recorded calls that the filter does not decide,
+//! by number of implicit points, zero to five, in one group, `undecided`.
+//! `insphere` is of degree five, so the stage on big integers is its only
+//! exact stage, for explicit points too. `exact_stages_in` writes the
+//! coordinates of the points as big integers to the arena and runs the
+//! stage on big integers: the cost of the chain after the filter.
+//! `big_integers_in` is measured with the cost of `exact_big` for the five
+//! points, as the chain runs it.
 //!
 //! The recorded calls come from the versioned samples, or from the corpus
-//! files of the directory named by `IMPLICIT_PREDICATES_CORPUS_DIR`. A group
-//! with no call for some number of implicit points is not measured: the
-//! samples have no call of the second group.
+//! files of the directory named by `IMPLICIT_PREDICATES_CORPUS_DIR`. A
+//! number of implicit points with no such call is not measured.
 //!
 //! As in the `orient3d_stages` benchmark, each measurement is one pass over
 //! a whole set, every stage is called through a function pointer, and the
@@ -38,21 +31,12 @@ use std::hint::black_box;
 
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main};
+use implicit_predicates::Sign;
 use implicit_predicates::stages::insphere;
-use implicit_predicates::{ExactCoords, Scratch, ScratchExhausted, Sign};
 use implicit_predicates_benches::predicates::{
-    InSphereGroup, InSphereImplicitInput, InSphereInput, InputSet, insphere_any_explicit_sets,
+    InSphereExactSet, InSphereImplicitInput, InSphereInput, InputSet, insphere_any_explicit_sets,
     insphere_big_integers_stage, insphere_exact_sets, insphere_implicit_sets, insphere_sets,
 };
-
-/// A stage over arena spans, as a function of the exact coordinates.
-type SpansStage = fn(&mut Scratch<'_>, [&ExactCoords; 5]) -> Result<Option<Sign>, ScratchExhausted>;
-
-/// The measured stages over arena spans.
-const SPANS_STAGES: &[(&str, SpansStage)] = &[(
-    "expansions_translated_in",
-    insphere::expansions_translated_in,
-)];
 
 /// The sets of explicit points the filter is measured on.
 const FILTER_SETS: [&str; 2] = ["random", "near_degenerate"];
@@ -109,22 +93,20 @@ fn filter_points(group: &mut BenchmarkGroup<'_, WallTime>) {
 /// Fewer distinct recorded calls than this make a set unrepresentative.
 const FEW_DISTINCT_CALLS: usize = 16;
 
-/// Tells on standard error which groups are not measured and which sets
-/// were drawn from very few distinct calls.
-fn report_exact_sets(sets: &[implicit_predicates_benches::predicates::InSphereExactSet]) {
-    for group in InSphereGroup::ALL {
-        let missing: Vec<String> = (0..=5)
-            .filter(|k| !sets.iter().any(|s| s.group == group && s.implicit == *k))
-            .map(|k| k.to_string())
-            .collect();
-        if !missing.is_empty() {
-            eprintln!(
-                "insphere_stages: group `{}` has no recorded calls with {} implicit points: \
-                 skipped; set IMPLICIT_PREDICATES_CORPUS_DIR to a corpus that has them",
-                group.name(),
-                missing.join(", ")
-            );
-        }
+/// Tells on standard error which numbers of implicit points are not
+/// measured and which sets were drawn from very few distinct calls.
+fn report_exact_sets(sets: &[InSphereExactSet]) {
+    let missing: Vec<String> = (0..=5)
+        .filter(|k| !sets.iter().any(|s| s.implicit == *k))
+        .map(|k| k.to_string())
+        .collect();
+    if !missing.is_empty() {
+        eprintln!(
+            "insphere_stages: no recorded calls that the filter does not decide with {} \
+             implicit points: skipped; set IMPLICIT_PREDICATES_CORPUS_DIR to a corpus that \
+             has them",
+            missing.join(", ")
+        );
     }
     for set in sets {
         let distinct: std::collections::HashSet<String> =
@@ -145,14 +127,6 @@ fn exact_stages(group: &mut BenchmarkGroup<'_, WallTime>) {
     report_exact_sets(&sets);
     for mut set in sets {
         let name = set.name();
-        if set.group == InSphereGroup::Spans {
-            for (stage_name, stage) in SPANS_STAGES {
-                let scratch = &mut set.scratch;
-                bench(group, format!("{stage_name}/{name}"), &set.coords, |q| {
-                    stage(scratch, q.each_ref()).expect("a growable arena")
-                });
-            }
-        }
         let scratch = &mut set.scratch;
         bench(
             group,

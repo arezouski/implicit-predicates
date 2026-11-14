@@ -9,10 +9,11 @@
 //! cannot decide; the last one, [`big_integers_in`], takes their coordinates as
 //! big integers and always decides. [`staged`] runs the stages before it in
 //! order on explicit points, and [`staged_in`] runs every stage on points of
-//! any type, so it decides every input.
+//! any type, so it decides every input. Its main form has degree 5: from degree
+//! 5 on, [`big_integers_in`] is the only exact stage, after the filter.
 
 use implicit_predicates_core::{
-    Big, BigCoords, ExactCoords, ExactError, Point, Scratch, ScratchExhausted, Sign, Span, Weight,
+    Big, BigCoords, ExactError, Point, Scratch, ScratchExhausted, Sign,
 };
 
 /// The degree `k` of the predicate in the differences of coordinates.
@@ -34,14 +35,6 @@ pub const D_MIN: f64 = 1.9913648889155653e-59;
 /// The largest `D` for which [`filter`] decides, `2^203`: above it, a computed
 /// value could overflow.
 pub const D_MAX: f64 = 1.2855504354071922e61;
-
-/// The most components of a coordinate that [`expansions_translated_in`]
-/// accepts.
-pub const MAX_COORD_COMPONENTS: usize = 16;
-
-/// `(min, max)`, `(2^-108, 2^154)`: [`expansions_translated_in`] decides when
-/// every nonzero component of every coordinate has a magnitude in `min..=max`.
-pub const SPANS_TRANSLATED_RANGE: (f64, f64) = (3.0814879110195774e-33, 2.283596308329536e46);
 
 /// The `f64` slots of the arena, one 64-bit word each, that suffice for
 /// [`big_integers_in`] on explicit points, their coordinates included: writing
@@ -178,144 +171,6 @@ pub fn filter(p: [&[f64; 3]; 5], e: f64) -> Option<Sign> {
     decided.then_some(sign)
 }
 
-/// The exact sign of the predicate for points given by their exact coordinates:
-/// its main form evaluated with expansions in `scratch`, each difference of
-/// coordinates computed exactly.
-///
-/// `Ok(None)` means that this stage cannot decide: some point has a weight
-/// other than [`Weight::One`], or some coordinate has more than
-/// [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude
-/// outside [`SPANS_TRANSLATED_RANGE`] or not finite.
-///
-/// Requirement: every coordinate is a valid expansion of `scratch`: nonzero
-/// components of strictly increasing magnitude that do not overlap, as
-/// [`Point::exact`](implicit_predicates_core::Point::exact) writes them. This
-/// is not checked, and the result is unspecified otherwise.
-///
-/// The arena is left as it was, on success and on error.
-///
-/// # Errors
-///
-/// [`ScratchExhausted`] if `scratch` runs out of room.
-#[cold]
-#[inline(never)]
-pub fn expansions_translated_in(
-    scratch: &mut Scratch<'_>,
-    p: [&ExactCoords; 5],
-) -> Result<Option<Sign>, ScratchExhausted> {
-    fn evaluate(scratch: &mut Scratch<'_>, c: [[Span; 3]; 5]) -> Result<Sign, ScratchExhausted> {
-        let zero = scratch.push(&[])?;
-        let e0 = scratch.diff(c[0][0], c[4][0])?;
-        let e1 = scratch.diff(c[0][1], c[4][1])?;
-        let e2 = scratch.diff(c[0][2], c[4][2])?;
-        let e3 = scratch.product(e0, e0)?;
-        let e4 = scratch.product(e1, e1)?;
-        let e5 = scratch.sum(e3, e4)?;
-        let e6 = scratch.product(e2, e2)?;
-        let e7 = scratch.sum(e5, e6)?;
-        let e8 = scratch.diff(c[1][0], c[4][0])?;
-        let e9 = scratch.diff(c[1][1], c[4][1])?;
-        let e10 = scratch.diff(c[1][2], c[4][2])?;
-        let e11 = scratch.product(e8, e8)?;
-        let e12 = scratch.product(e9, e9)?;
-        let e13 = scratch.sum(e11, e12)?;
-        let e14 = scratch.product(e10, e10)?;
-        let e15 = scratch.sum(e13, e14)?;
-        let e16 = scratch.diff(c[2][0], c[4][0])?;
-        let e17 = scratch.diff(c[2][1], c[4][1])?;
-        let e18 = scratch.diff(c[2][2], c[4][2])?;
-        let e19 = scratch.product(e16, e16)?;
-        let e20 = scratch.product(e17, e17)?;
-        let e21 = scratch.sum(e19, e20)?;
-        let e22 = scratch.product(e18, e18)?;
-        let e23 = scratch.sum(e21, e22)?;
-        let e24 = scratch.diff(c[3][0], c[4][0])?;
-        let e25 = scratch.diff(c[3][1], c[4][1])?;
-        let e26 = scratch.diff(c[3][2], c[4][2])?;
-        let e27 = scratch.product(e24, e24)?;
-        let e28 = scratch.product(e25, e25)?;
-        let e29 = scratch.sum(e27, e28)?;
-        let e30 = scratch.product(e26, e26)?;
-        let e31 = scratch.sum(e29, e30)?;
-        let e32 = scratch.product(e17, e26)?;
-        let e33 = scratch.product(e18, e25)?;
-        let e34 = scratch.diff(e32, e33)?;
-        let e35 = scratch.product(e8, e34)?;
-        let e36 = scratch.product(e16, e26)?;
-        let e37 = scratch.product(e18, e24)?;
-        let e38 = scratch.diff(e36, e37)?;
-        let e39 = scratch.product(e9, e38)?;
-        let e40 = scratch.diff(e35, e39)?;
-        let e41 = scratch.product(e16, e25)?;
-        let e42 = scratch.product(e17, e24)?;
-        let e43 = scratch.diff(e41, e42)?;
-        let e44 = scratch.product(e10, e43)?;
-        let e45 = scratch.sum(e40, e44)?;
-        let e46 = scratch.product(e0, e34)?;
-        let e47 = scratch.product(e1, e38)?;
-        let e48 = scratch.diff(e46, e47)?;
-        let e49 = scratch.product(e2, e43)?;
-        let e50 = scratch.sum(e48, e49)?;
-        let e51 = scratch.product(e9, e26)?;
-        let e52 = scratch.product(e10, e25)?;
-        let e53 = scratch.diff(e51, e52)?;
-        let e54 = scratch.product(e0, e53)?;
-        let e55 = scratch.product(e8, e26)?;
-        let e56 = scratch.product(e10, e24)?;
-        let e57 = scratch.diff(e55, e56)?;
-        let e58 = scratch.product(e1, e57)?;
-        let e59 = scratch.diff(e54, e58)?;
-        let e60 = scratch.product(e8, e25)?;
-        let e61 = scratch.product(e9, e24)?;
-        let e62 = scratch.diff(e60, e61)?;
-        let e63 = scratch.product(e2, e62)?;
-        let e64 = scratch.sum(e59, e63)?;
-        let e65 = scratch.product(e9, e18)?;
-        let e66 = scratch.product(e10, e17)?;
-        let e67 = scratch.diff(e65, e66)?;
-        let e68 = scratch.product(e0, e67)?;
-        let e69 = scratch.product(e8, e18)?;
-        let e70 = scratch.product(e10, e16)?;
-        let e71 = scratch.diff(e69, e70)?;
-        let e72 = scratch.product(e1, e71)?;
-        let e73 = scratch.diff(e68, e72)?;
-        let e74 = scratch.product(e8, e17)?;
-        let e75 = scratch.product(e9, e16)?;
-        let e76 = scratch.diff(e74, e75)?;
-        let e77 = scratch.product(e2, e76)?;
-        let e78 = scratch.sum(e73, e77)?;
-        let e79 = scratch.diff(zero, e7)?;
-        let e80 = scratch.product(e79, e45)?;
-        let e81 = scratch.product(e15, e50)?;
-        let e82 = scratch.sum(e80, e81)?;
-        let e83 = scratch.product(e23, e64)?;
-        let e84 = scratch.diff(e82, e83)?;
-        let e85 = scratch.product(e31, e78)?;
-        let e86 = scratch.sum(e84, e85)?;
-        Ok(scratch.sign(e86))
-    }
-    // Every coordinate read must be short enough and within the range; the
-    // arena is reset to its mark whatever the evaluation returns.
-    if !p.iter().all(|q| q.w == Weight::One) {
-        return Ok(None);
-    }
-    let c = p.map(|q| [q.x, q.y, q.z]);
-    let coordinates = [
-        c[0][0], c[0][1], c[0][2], c[1][0], c[1][1], c[1][2], c[2][0], c[2][1], c[2][2], c[3][0],
-        c[3][1], c[3][2], c[4][0], c[4][1], c[4][2],
-    ];
-    if !coordinates
-        .into_iter()
-        .all(|s| span_in_range(scratch.get(s), SPANS_TRANSLATED_RANGE))
-    {
-        return Ok(None);
-    }
-    let mark = scratch.mark();
-    let sign = evaluate(scratch, c);
-    scratch.reset(mark);
-    sign.map(Some)
-}
-
 /// The exact sign of the predicate for points given by their coordinates as big
 /// integers: its main form evaluated with the big-integer operations of
 /// `scratch`, which are exact whatever the size of the values, so this stage
@@ -433,57 +288,14 @@ pub fn big_integers_in(
     sign
 }
 
-/// The sign of the predicate for explicit points, from the first stage that
-/// decides.
+/// The sign of the predicate for explicit points, from its filter, the only
+/// stage before [`big_integers_in`].
 ///
-/// Runs [`filter`] with `e = 0.0`, then [`expansions_translated_in`]. The
-/// stages that take an arena run on the exact coordinates of the points written
-/// to `scratch`, which is left as it was. `Ok(None)` means that no stage can
-/// decide.
-///
-/// # Errors
-///
-/// [`ScratchExhausted`] if `scratch` runs out of room.
+/// Runs [`filter`] with `e = 0.0`. `None` means that it cannot decide;
+/// [`exact_stages_explicit_in`] then decides.
 #[inline]
-pub fn staged(
-    scratch: &mut Scratch<'_>,
-    p: [&[f64; 3]; 5],
-) -> Result<Option<Sign>, ScratchExhausted> {
-    if let Some(sign) = filter(p, 0.0) {
-        return Ok(Some(sign));
-    }
-    staged_in_arena(scratch, p)
-}
-
-/// The stages of [`staged`] from the first one that takes an arena, on the
-/// exact coordinates of the points written to `scratch`, which is reset to its
-/// mark whatever they return.
-#[cold]
-#[inline(never)]
-fn staged_in_arena(
-    scratch: &mut Scratch<'_>,
-    p: [&[f64; 3]; 5],
-) -> Result<Option<Sign>, ScratchExhausted> {
-    fn run(scratch: &mut Scratch<'_>, p: [&[f64; 3]; 5]) -> Result<Option<Sign>, ScratchExhausted> {
-        let (Some(q0), Some(q1), Some(q2), Some(q3), Some(q4)) = (
-            exact(scratch, p[0])?,
-            exact(scratch, p[1])?,
-            exact(scratch, p[2])?,
-            exact(scratch, p[3])?,
-            exact(scratch, p[4])?,
-        ) else {
-            return Ok(None);
-        };
-        let q = [&q0, &q1, &q2, &q3, &q4];
-        if let Some(sign) = expansions_translated_in(scratch, q)? {
-            return Ok(Some(sign));
-        }
-        Ok(None)
-    }
-    let mark = scratch.mark();
-    let result = run(scratch, p);
-    scratch.reset(mark);
-    result
+pub fn staged(p: [&[f64; 3]; 5]) -> Option<Sign> {
+    filter(p, 0.0)
 }
 
 /// [`filter`] on the approximations of points of any type, with the uncertainty
@@ -527,27 +339,9 @@ pub fn filter_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
     filter(p, e)
 }
 
-/// The exact stages of [`staged`], after its filter:
-/// [`expansions_translated_in`]. The stages that take an arena run on the exact
-/// coordinates of the points written to `scratch`, which is left as it was.
-/// `Ok(None)` means that no stage can decide.
-///
-/// # Errors
-///
-/// [`ScratchExhausted`] if `scratch` runs out of room.
-#[cold]
-#[inline(never)]
-pub fn exact_stages(
-    scratch: &mut Scratch<'_>,
-    p: [&[f64; 3]; 5],
-) -> Result<Option<Sign>, ScratchExhausted> {
-    staged_in_arena(scratch, p)
-}
-
-/// The exact sign of the predicate for explicit points: [`exact_stages`], with
-/// `scratch`, then, when it does not decide, [`big_integers_in`] on the
-/// coordinates of the points written to `scratch` as big integers, which always
-/// decides. `scratch` is left as it was.
+/// The exact sign of the predicate for explicit points: [`big_integers_in`] on
+/// the coordinates of the points written to `scratch` as big integers, which
+/// always decides. `scratch` is left as it was.
 ///
 /// # Errors
 ///
@@ -570,23 +364,17 @@ pub fn exact_stages_explicit_in(
         let q4 = exact_big(scratch, p[4])?;
         big_integers_in(scratch, [&q0, &q1, &q2, &q3, &q4])
     }
-    if let Some(sign) = exact_stages(scratch, p)? {
-        return Ok(sign);
-    }
     let mark = scratch.mark();
     let result = big(scratch, p);
     scratch.reset(mark);
     result
 }
 
-/// The exact sign of the predicate for points of any type:
-/// [`expansions_translated_in`], on the exact coordinates of the points written
-/// to `scratch`, then, when it does not decide, [`big_integers_in`] on the
-/// coordinates of the points as big integers written to `scratch`, which always
-/// decides. The stage over spans is skipped when a point cannot give its exact
-/// coordinates as expansions, as when its inputs are outside the range of its
-/// exact arithmetic ([`ExactError::OutOfRange`]). Each attempt starts from the
-/// mark of `scratch` on entry, to which it is reset whatever they return.
+/// The exact sign of the predicate for points of any type: [`big_integers_in`]
+/// on the coordinates of the points as big integers written to `scratch`, which
+/// always decides: [`Point::exact_big`] of each point is called, never
+/// [`Point::exact`]. `scratch` is reset to its mark on entry whatever the stage
+/// returns.
 ///
 /// # Errors
 ///
@@ -594,11 +382,10 @@ pub fn exact_stages_explicit_in(
 ///
 /// # Panics
 ///
-/// If the exact coordinates of a point have a weight other than
-/// [`Weight::One`], which the predicates do not support, or a point cannot give
-/// its exact coordinates as big integers, which by the contract of
-/// [`Point::exact_big`] happens only when an input is not finite or the
-/// coordinates have a weight other than one.
+/// If a point cannot give its exact coordinates as big integers, which by the
+/// contract of [`Point::exact_big`] happens only when an input is not finite or
+/// the coordinates have a weight other than one, which the predicates do not
+/// support.
 #[cold]
 #[inline(never)]
 pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
@@ -609,25 +396,6 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
     p3: &P3,
     p4: &P4,
 ) -> Result<Sign, ScratchExhausted> {
-    fn spans<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
-        scratch: &mut Scratch<'_>,
-        p0: &P0,
-        p1: &P1,
-        p2: &P2,
-        p3: &P3,
-        p4: &P4,
-    ) -> Result<Option<Sign>, ScratchExhausted> {
-        let q0 = exact(scratch, p0)?;
-        let q1 = exact(scratch, p1)?;
-        let q2 = exact(scratch, p2)?;
-        let q3 = exact(scratch, p3)?;
-        let q4 = exact(scratch, p4)?;
-        let (Some(q0), Some(q1), Some(q2), Some(q3), Some(q4)) = (q0, q1, q2, q3, q4) else {
-            return Ok(None);
-        };
-        let q = [&q0, &q1, &q2, &q3, &q4];
-        expansions_translated_in(scratch, q)
-    }
     fn big<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
         scratch: &mut Scratch<'_>,
         p0: &P0,
@@ -644,11 +412,6 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
         big_integers_in(scratch, [&q0, &q1, &q2, &q3, &q4])
     }
     let mark = scratch.mark();
-    let decided = spans(scratch, p0, p1, p2, p3, p4);
-    scratch.reset(mark);
-    if let Some(sign) = decided? {
-        return Ok(sign);
-    }
     let result = big(scratch, p0, p1, p2, p3, p4);
     scratch.reset(mark);
     result
@@ -699,28 +462,6 @@ pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
     exact_stages_in(scratch, p0, p1, p2, p3, p4)
 }
 
-/// The exact coordinates of the point `p`, written to `scratch`, or `None` if
-/// it cannot give them for any reason other than the room of the arena, such as
-/// inputs outside the range of its exact arithmetic.
-///
-/// # Panics
-///
-/// If the coordinates have a weight other than [`Weight::One`], which the
-/// predicates do not support.
-fn exact(
-    scratch: &mut Scratch<'_>,
-    p: &impl Point,
-) -> Result<Option<ExactCoords>, ScratchExhausted> {
-    match p.exact(scratch) {
-        Ok(c) if c.w != Weight::One => no_exact_coordinates(
-            "implicit-predicates: a point has a weight other than one, which the predicates do not support",
-        ),
-        Ok(c) => Ok(Some(c)),
-        Err(ExactError::Exhausted(e)) => Err(e),
-        Err(_) => Ok(None),
-    }
-}
-
 /// The exact coordinates of the point `p` as big integers, written to
 /// `scratch`.
 ///
@@ -755,11 +496,4 @@ fn no_exact_coordinates(reason: &str) -> ! {
 #[inline]
 fn max(a: f64, b: f64) -> f64 {
     if a > b { a } else { b }
-}
-
-/// Whether the expansion `e` has at most [`MAX_COORD_COMPONENTS`] components,
-/// each of a magnitude in `min..=max`. A zero component is not: zero is the
-/// empty expansion, and an expansion with a zero component is not valid.
-fn span_in_range(e: &[f64], (min, max): (f64, f64)) -> bool {
-    e.len() <= MAX_COORD_COMPONENTS && e.iter().all(|&x| (min..=max).contains(&x.abs()))
 }

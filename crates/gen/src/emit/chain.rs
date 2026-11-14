@@ -2,9 +2,11 @@
 //!
 //! The exact stages are tried in the order: differences that are exact, then
 //! the translated expansion form. The order is the same for every predicate
-//! for now. A stage whose temporaries do not fit on the stack is replaced by
-//! the stage over spans of the same form, run on the exact coordinates of the explicit points written to an
-//! arena; `staged` then takes the arena.
+//! that has stages on expansions. A stage whose temporaries do not fit on
+//! the stack is replaced by the stage over spans of the same form, run on
+//! the exact coordinates of the explicit points written to an arena;
+//! `staged` then takes the arena. A predicate without stages on expansions
+//! has the filter alone in `staged`.
 
 use std::fmt::Write;
 
@@ -22,7 +24,7 @@ pub(crate) enum ChainStage {
 
 /// Writes `staged`: the filter for explicit points, called with the
 /// uncertainty `explicit` (`0.0`, or `[0.0; 3]` for a per-axis filter), then
-/// the exact `stages` in order.
+/// the exact `stages` in order, if there are any.
 pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage], explicit: &str) {
     let names: Vec<String> = stages
         .iter()
@@ -30,10 +32,9 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
             ChainStage::Stack(name) | ChainStage::Spans(name) => format!("[`{name}`]"),
         })
         .collect();
-    let first_spans = stages
-        .iter()
-        .position(|stage| matches!(stage, ChainStage::Spans(_)));
-    let Some(first_spans) = first_spans else {
+    // The stage over spans, if any, takes the place of the last stage on the
+    // stack.
+    let Some((ChainStage::Spans(spans), before)) = stages.split_last() else {
         write_stack_chain(out, points, &names, stages, explicit);
         return;
     };
@@ -44,8 +45,8 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
         &format!(
             "The sign of the predicate for explicit points, from the first stage that \
              decides.\n\n\
-             Runs [`filter`] with `e = {explicit}`, then {}. The stages that take an arena \
-             run on the exact coordinates of the points written to `scratch`, which is \
+             Runs [`filter`] with `e = {explicit}`, then {}. The stage that takes an arena \
+             runs on the exact coordinates of the points written to `scratch`, which is \
              left as it was. `Ok(None)` means that no stage can decide.\n\n\
              # Errors\n\n\
              [`ScratchExhausted`] if `scratch` runs out of room.",
@@ -62,7 +63,7 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
          if let Some(sign) = filter(p, {explicit}) {{\nreturn Ok(Some(sign));\n}}"
     )
     .unwrap();
-    for stage in &stages[..first_spans] {
+    for stage in before {
         if let ChainStage::Stack(name) = stage {
             writeln!(
                 out,
@@ -72,7 +73,7 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
         }
     }
     writeln!(out, "staged_in_arena(scratch, p)\n}}\n").unwrap();
-    // The stages from the first one over spans, on the exact coordinates.
+    // The stage over spans, on the exact coordinates.
     let q: Vec<String> = (0..points).map(|i| format!("Some(q{i})")).collect();
     let exact: Vec<String> = (0..points)
         .map(|i| format!("exact(scratch, p[{i}])?"))
@@ -82,40 +83,24 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
         out,
         "///",
         0,
-        "The stages of [`staged`] from the first one that takes an arena, on the exact \
-         coordinates of the points written to `scratch`, which is reset to its mark \
-         whatever they return.",
+        "The stage of [`staged`] that takes an arena, on the exact coordinates of the \
+         points written to `scratch`, which is reset to its mark whatever it returns.",
     );
     writeln!(
         out,
         "#[cold]\n#[inline(never)]\nfn staged_in_arena{signature} {{\n\
          fn run{signature} {{\n\
          let ({},) = ({},) else {{\nreturn Ok(None);\n}};\n\
-         let q = [{}];",
+         let q = [{}];\n\
+         {spans}(scratch, q)\n}}",
         q.join(", "),
         exact.join(", "),
         refs.join(", ")
     )
     .unwrap();
-    for stage in &stages[first_spans..] {
-        match stage {
-            ChainStage::Stack(name) => {
-                writeln!(
-                    out,
-                    "if let Some(sign) = {name}(p) {{\nreturn Ok(Some(sign));\n}}"
-                )
-            }
-            ChainStage::Spans(name) => writeln!(
-                out,
-                "if let Some(sign) = {name}(scratch, q)? {{\nreturn Ok(Some(sign));\n}}"
-            ),
-        }
-        .unwrap();
-    }
     writeln!(
         out,
-        "Ok(None)\n}}\n\
-         let mark = scratch.mark();\n\
+        "let mark = scratch.mark();\n\
          let result = run(scratch, p);\n\
          scratch.reset(mark);\n\
          result\n}}\n"
@@ -123,7 +108,8 @@ pub(crate) fn write_chain(out: &mut String, points: usize, stages: &[ChainStage]
     .unwrap();
 }
 
-/// Writes `staged` when every stage is on the stack.
+/// Writes `staged` when every stage is on the stack, or there is none after
+/// the filter.
 fn write_stack_chain(
     out: &mut String,
     points: usize,
@@ -131,18 +117,23 @@ fn write_stack_chain(
     stages: &[ChainStage],
     explicit: &str,
 ) {
-    comment(
-        out,
-        "///",
-        0,
-        &format!(
+    let doc = if names.is_empty() {
+        format!(
+            "The sign of the predicate for explicit points, from its filter, the only \
+             stage before [`big_integers_in`].\n\n\
+             Runs [`filter`] with `e = {explicit}`. `None` means that it cannot decide; \
+             [`exact_stages_explicit_in`] then decides."
+        )
+    } else {
+        format!(
             "The sign of the predicate for explicit points, from the first stage that \
              decides.\n\n\
              Runs [`filter`] with `e = {explicit}`, then {}. `None` means that no stage \
              can decide.",
             names.join(", then ")
-        ),
-    );
+        )
+    };
+    comment(out, "///", 0, &doc);
     write!(
         out,
         "#[inline]\n\

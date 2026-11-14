@@ -1,10 +1,9 @@
 //! Input sets of `orient3d` and `insphere` on points of any type: the
 //! recorded calls with implicit points, the explicit sets as [`AnyPoint`],
-//! and the exact coordinates of the recorded calls that the filter does not
-//! decide. Those of `insphere` are in two groups for each number of
-//! implicit points ([`InSphereGroup`]): the calls that a stage over spans
-//! decides, and those that it cannot decide because of a component out of
-//! its range, which go to the stage on big integers.
+//! and the recorded calls that the filter does not decide, with their exact
+//! coordinates for `orient3d`. `insphere` has no stage on expansions, so
+//! those of its calls all go to the stage on big integers, in one group for
+//! each number of implicit points.
 //!
 //! The recorded calls are drawn from the sample corpora, or from the corpus
 //! files of the directory named by the environment variable
@@ -22,7 +21,6 @@ use implicit_predicates_corpus::exact::{REFERENCE_INSPHERE_FACTOR, REFERENCE_ORI
 use implicit_predicates_corpus::weighted::weighted_sample;
 use implicit_predicates_corpus::{Call, Corpus, Predicate};
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
@@ -266,9 +264,7 @@ pub const INSPHERE_MAX_IMPLICIT: usize = 5;
 pub const INSPHERE_IMPLICIT_SEED: u64 = 0x696e_7370;
 
 /// Seed of the weighted resampling of [`insphere_exact_sets`]: the set of
-/// calls with `k` implicit points of group `g` uses
-/// `INSPHERE_EXACT_SEED + 2 k + g`, with `g` 0 for [`InSphereGroup::Spans`]
-/// and 1 for [`InSphereGroup::OutOfRange`].
+/// calls with `k` implicit points uses `INSPHERE_EXACT_SEED + 2 k`.
 pub const INSPHERE_EXACT_SEED: u64 = 0x6973_6578;
 
 /// The name of the set of `insphere` calls with `k` implicit points, or of
@@ -332,78 +328,15 @@ pub fn insphere_any_explicit_sets() -> Vec<InputSet<InSphereImplicitInput>> {
         .collect()
 }
 
-/// Why a recorded `insphere` call that the filter does not decide goes
-/// where it goes in the chain. `insphere` has no stage on the stack: every
-/// such call, with explicit points too, goes to the stage over spans.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InSphereGroup {
-    /// The stage over spans decides the call.
-    Spans,
-    /// The stage over spans does not decide the call because a component of
-    /// an exact coordinate is outside `SPANS_TRANSLATED_RANGE`, and none has more
-    /// than `MAX_COORD_COMPONENTS` components: the stage on big integers
-    /// decides it.
-    OutOfRange,
-}
-
-impl InSphereGroup {
-    /// Both groups, in the order of the seeds of [`insphere_exact_sets`].
-    pub const ALL: [InSphereGroup; 2] = [InSphereGroup::Spans, InSphereGroup::OutOfRange];
-
-    /// The name of the group, used in the benchmark identifiers.
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            InSphereGroup::Spans => "spans",
-            InSphereGroup::OutOfRange => "out_of_range",
-        }
-    }
-}
-
-/// The group of a call of `insphere`, or `None` if the filter decides it,
-/// a point cannot give its exact coordinates, or the stage over spans does
-/// not decide it for another reason than a component out of range. `scratch` is left
-/// as it was.
+/// Whether the filter of `insphere` declines a call: `insphere` has no
+/// stage on expansions, so every such call, with explicit points too, goes
+/// to the stage on big integers.
 ///
-/// This is the same range test that the corpus sweep uses, and
 /// `benches/tests/predicate_inputs.rs` checks every drawn case against the
-/// sweep's own logic.
-fn insphere_group(scratch: &mut Scratch<'_>, p: &InSphereImplicitInput) -> Option<InSphereGroup> {
+/// logic of the corpus sweep.
+fn insphere_undecided(p: &InSphereImplicitInput) -> bool {
     let [a, b, c, d, e] = p;
-    if insphere::filter_points(a, b, c, d, e).is_some() {
-        return None;
-    }
-    let mark = scratch.mark();
-    let group = (|| {
-        let mut q = Vec::with_capacity(5);
-        for point in p {
-            q.push(point.exact(scratch).ok()?);
-        }
-        let r = [&q[0], &q[1], &q[2], &q[3], &q[4]];
-        let room = "a growable arena";
-        if insphere::expansions_translated_in(scratch, r)
-            .expect(room)
-            .is_some()
-        {
-            return Some(InSphereGroup::Spans);
-        }
-        let spans: Vec<_> = q.iter().flat_map(|c| [c.x, c.y, c.z]).collect();
-        let (min, max) = insphere::SPANS_TRANSLATED_RANGE;
-        let out_of_range = |x: f64| x != 0.0 && !(min..=max).contains(&x.abs());
-        if spans
-            .iter()
-            .all(|s| s.len() <= insphere::MAX_COORD_COMPONENTS)
-            && spans
-                .iter()
-                .any(|&s| scratch.get(s).iter().any(|&x| out_of_range(x)))
-        {
-            Some(InSphereGroup::OutOfRange)
-        } else {
-            None
-        }
-    })();
-    scratch.reset(mark);
-    group
+    insphere::filter_points(a, b, c, d, e).is_none()
 }
 
 /// The stage on big integers of `insphere` on the points of one call, as
@@ -426,83 +359,52 @@ pub fn insphere_big_integers_stage(scratch: &mut Scratch<'_>, p: &InSphereImplic
     sign
 }
 
-/// The recorded `insphere` calls with `k` implicit points of one
-/// [`InSphereGroup`], as points and as their exact coordinates.
+/// The recorded `insphere` calls with `k` implicit points that the filter
+/// does not decide.
 pub struct InSphereExactSet {
     /// The number of implicit points of each call, zero to five.
     pub implicit: usize,
-    /// The group of every call.
-    pub group: InSphereGroup,
     /// The points of each call.
     pub points: Vec<InSphereImplicitInput>,
     /// The recorded sign of each call, in the convention of
     /// `implicit_predicates_corpus::exact`.
     pub recorded: Vec<i8>,
-    /// The exact coordinates of the points of each call, in `scratch`.
-    pub coords: Vec<[ExactCoords; 5]>,
-    /// The arena that holds every coordinate of `coords`, and has room for
-    /// the stages to work after them.
+    /// The arena that the stages work in.
     pub scratch: Scratch<'static>,
 }
 
 impl InSphereExactSet {
     /// The name of the set, used in the benchmark identifiers:
-    /// `<group>/<k>_implicit`.
+    /// `undecided/<k>_implicit`.
     #[must_use]
     pub fn name(&self) -> String {
-        format!("{}/{}_implicit", self.group.name(), self.implicit)
+        format!("undecided/{}_implicit", self.implicit)
     }
 }
 
-/// For `k` from zero to five and each [`InSphereGroup`], the [`SET_SIZE`]
-/// recorded `insphere` calls with `k` implicit points of that group, drawn
-/// by weighted resampling with seed `INSPHERE_EXACT_SEED + 2 k + g`, with
-/// the exact coordinates of their points. A group with no such call in the
-/// corpora read is left out, so the sets of the versioned samples are not
-/// those of every group and number of implicit points: see the tests of
-/// this package.
-///
-/// # Panics
-///
-/// Panics if a point cannot compute its exact coordinates; no point of the
-/// sets is out of the range of its exact arithmetic.
+/// For `k` from zero to five, the [`SET_SIZE`] recorded `insphere` calls
+/// with `k` implicit points that the filter does not decide, drawn by
+/// weighted resampling with seed `INSPHERE_EXACT_SEED + 2 k`. A number of
+/// implicit points with no such call in the corpora read is left out.
 #[must_use]
 pub fn insphere_exact_sets() -> Vec<InSphereExactSet> {
     let mut sets = Vec::new();
     for k in 0..=INSPHERE_MAX_IMPLICIT {
-        for (g, group) in InSphereGroup::ALL.into_iter().enumerate() {
-            let probe = RefCell::new(Scratch::growable(1 << 16));
-            let seed = INSPHERE_EXACT_SEED + 2 * k as u64 + g as u64;
-            let draws = draw_calls(
-                Predicate::InSphere,
-                |n| n == k,
-                seed,
-                |p| insphere_group(&mut probe.borrow_mut(), p) == Some(group),
-            );
-            if draws.is_empty() {
-                continue;
-            }
-            let (points, signs): (Vec<_>, Vec<_>) = draws.into_iter().unzip();
-            let mut scratch = Scratch::growable(1 << 16);
-            let coords = points
-                .iter()
-                .map(|p: &InSphereImplicitInput| {
-                    p.each_ref()
-                        .map(|q| q.exact(&mut scratch).expect("exact coordinates"))
-                })
-                .collect();
-            sets.push(InSphereExactSet {
-                implicit: k,
-                group,
-                points,
-                recorded: signs
-                    .into_iter()
-                    .map(|s| REFERENCE_INSPHERE_FACTOR * s)
-                    .collect(),
-                coords,
-                scratch,
-            });
+        let seed = INSPHERE_EXACT_SEED + 2 * k as u64;
+        let draws = draw_calls(Predicate::InSphere, |n| n == k, seed, insphere_undecided);
+        if draws.is_empty() {
+            continue;
         }
+        let (points, signs): (Vec<_>, Vec<_>) = draws.into_iter().unzip();
+        sets.push(InSphereExactSet {
+            implicit: k,
+            points,
+            recorded: signs
+                .into_iter()
+                .map(|s| REFERENCE_INSPHERE_FACTOR * s)
+                .collect(),
+            scratch: Scratch::growable(1 << 16),
+        });
     }
     sets
 }

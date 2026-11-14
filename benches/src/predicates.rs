@@ -45,10 +45,10 @@ pub use contenders::{
 };
 pub use implicit::{
     CORPUS_DIR, EXACT_SEED, ExactSet, IMPLICIT_SEED, INSPHERE_EXACT_SEED, INSPHERE_IMPLICIT_SEED,
-    INSPHERE_MAX_IMPLICIT, ImplicitInput, InSphereExactSet, InSphereGroup, InSphereImplicitInput,
-    MAX_IMPLICIT, any_explicit_sets, big_integers_stage, exact_sets, implicit_recorded_signs,
-    implicit_set_name, implicit_sets, insphere_any_explicit_sets, insphere_big_integers_stage,
-    insphere_exact_sets, insphere_implicit_sets, insphere_set_name,
+    INSPHERE_MAX_IMPLICIT, ImplicitInput, InSphereExactSet, InSphereImplicitInput, MAX_IMPLICIT,
+    any_explicit_sets, big_integers_stage, exact_sets, implicit_recorded_signs, implicit_set_name,
+    implicit_sets, insphere_any_explicit_sets, insphere_big_integers_stage, insphere_exact_sets,
+    insphere_implicit_sets, insphere_set_name,
 };
 
 /// Four points of `orient3d`.

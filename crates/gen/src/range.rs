@@ -100,12 +100,11 @@ pub struct ExactPlan {
     pub range: ExactRange,
     /// The worst-case length of the expansion of each node, in the order of
     /// the graph. For a stage on the stack: 1 or 2 for a leaf (see
-    /// [`Leaves`]), `l_x + l_y` for
-    /// a sum or difference, `2 l_x l_y` for a product and `l_x` for a
-    /// negation. For a stage over spans, whose coordinates are expansions
-    /// of up to [`MAX_COORD_COMPONENTS`] components, the lengths that its
-    /// plan derives for inputs in the range (see
-    /// [`exact_plan_spans_translated`]), which are shorter.
+    /// [`Leaves`]), `l_x + l_y` for a sum or difference, `2 l_x l_y` for a
+    /// product and `l_x` for a negation. For a stage over spans, whose
+    /// coordinates are expansions of up to [`MAX_COORD_COMPONENTS`]
+    /// components, the lengths that its plan derives for inputs in the range
+    /// (see [`exact_plan_spans_translated`]), which are shorter.
     pub lengths: Vec<usize>,
     /// The sum of `lengths`: the size of all the temporaries, each shared
     /// node counted once.
@@ -202,9 +201,7 @@ fn plan(shape: &Shape, low: i64, high: i64) -> Result<ExactPlan, String> {
 /// component of every product operand is at least `2^low`.
 fn grids_fit(shape: &Shape, m: i64, low: i64) -> bool {
     let grids = shape.grids(m);
-    shape
-        .operands()
-        .all(|x| grids[x].is_none_or(|grid| grid >= low))
+    shape.operands().all(|x| grids[x] >= low)
 }
 
 /// Whether, with leaves of magnitude at most `2^big_m`, every component of

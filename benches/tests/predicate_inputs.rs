@@ -2,17 +2,18 @@
 //! and that the baseline libraries and `implicit-predicates` agree with the
 //! exact signs on them, on explicit points and on points of any type.
 //!
-//! The group of each recorded `insphere` call that the filter does not
-//! decide is checked with the logic of the corpus sweep of
-//! `implicit-predicates`, whose test helpers are included from that crate.
+//! That each recorded `insphere` call of the sets of its exact stage is one
+//! that the filter does not decide is checked with the logic of the corpus
+//! sweep of `implicit-predicates`, whose test helpers are included from that
+//! crate.
 
 use implicit_predicates::stages::insphere;
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{AnyPoint, Point, Scratch, orient3d_in};
 use implicit_predicates_benches::predicates::{
-    CORPUS_DIR, INSPHERE_MAX_IMPLICIT, ImplicitInput, InSphereGroup, InSphereImplicitInput,
-    InSphereInput, InputSet, MAX_IMPLICIT, Orient3dInput, SET_SIZE, any_explicit_sets,
-    big_integers_stage, exact_sets, geometry_insphere_sign, geometry_orient3d_sign,
+    CORPUS_DIR, INSPHERE_MAX_IMPLICIT, ImplicitInput, InSphereImplicitInput, InSphereInput,
+    InputSet, MAX_IMPLICIT, Orient3dInput, SET_SIZE, any_explicit_sets, big_integers_stage,
+    exact_sets, geometry_insphere_sign, geometry_orient3d_sign,
     implicit_predicates_insphere_any_sign, implicit_predicates_orient3d_any_sign,
     implicit_predicates_orient3d_sign, implicit_recorded_signs, implicit_set_name, implicit_sets,
     insphere_any_explicit_sets, insphere_big_integers_stage, insphere_exact_sets,
@@ -28,7 +29,7 @@ use implicit_predicates_oracle::Dyadic;
 #[path = "../../crates/implicit-predicates/tests/common/mod.rs"]
 mod common;
 
-use common::insphere::{BIG_INTEGERS, FILTER, deciding_on_expansions};
+use common::insphere::deciding_before_big_integers;
 use common::sign_of;
 use common::why::Why;
 
@@ -478,24 +479,21 @@ fn insphere_implicit_sets_have_their_counts_and_the_recorded_and_exact_signs() {
     }
 }
 
-/// Every case of every set of [`insphere_exact_sets`] is in its group by the
-/// logic of the corpus sweep, which decides the calls of the group
-/// [`InSphereGroup::Spans`] on a stage over spans and gives
-/// [`Why::ComponentOutOfRange`] for the calls of
-/// [`InSphereGroup::OutOfRange`]; and every stage measured on it has the
-/// sign of the independent oracle, which is also the recorded one.
+/// Every case of every set of [`insphere_exact_sets`] is one that the filter
+/// does not decide, by the logic of the corpus sweep, which gives it
+/// [`Why::BigIntegersOnly`]; and every stage measured on it has the sign of
+/// the independent oracle, which is also the recorded one.
 #[test]
-fn insphere_exact_sets_are_in_their_group_and_have_the_exact_sign_at_every_stage() {
+fn insphere_exact_sets_are_undecided_by_the_filter_and_have_the_exact_sign_at_every_stage() {
     let mut sets = insphere_exact_sets();
     assert!(!sets.is_empty());
     let mut sweep = Scratch::growable(1 << 16);
     for set in &mut sets {
         let name = set.name();
         assert_eq!(set.points.len(), SET_SIZE, "{name}");
-        assert_eq!(set.coords.len(), SET_SIZE, "{name}");
         assert_eq!(set.recorded.len(), SET_SIZE, "{name}");
         let used = set.scratch.used();
-        for ((case, coords), &recorded) in set.points.iter().zip(&set.coords).zip(&set.recorded) {
+        for (case, &recorded) in set.points.iter().zip(&set.recorded) {
             assert_eq!(
                 insphere_implicit_count(case),
                 set.implicit,
@@ -503,51 +501,37 @@ fn insphere_exact_sets_are_in_their_group_and_have_the_exact_sign_at_every_stage
             );
             let exact = exact_insphere_any(case);
             assert_eq!(recorded, exact, "{name}: {case:?}");
-            let sign = Some(sign_of(exact));
+            let sign = sign_of(exact);
             let [a, b, c, d, e] = case;
             assert_eq!(
                 insphere::filter_points(a, b, c, d, e),
                 None,
                 "{name}: {case:?}"
             );
-            let decision = deciding_on_expansions(&mut sweep, case);
-            let q = coords.each_ref();
+            let decision = deciding_before_big_integers(&mut sweep, case);
+            assert_eq!(decision, Err(Why::BigIntegersOnly), "{name}: {case:?}");
             let s = &mut set.scratch;
-            let translated = insphere::expansions_translated_in(s, q).expect("room");
-            match set.group {
-                InSphereGroup::Spans => {
-                    let decision = decision.unwrap_or_else(|why| panic!("{name}: {why:?}"));
-                    assert_ne!(decision.stage, FILTER, "{name}: {case:?}");
-                    assert_ne!(decision.stage, BIG_INTEGERS, "{name}: {case:?}");
-                    assert_eq!(Some(decision.sign), sign, "{name}: {case:?}");
-                    assert_eq!(translated, sign, "{name}: {case:?}");
-                }
-                InSphereGroup::OutOfRange => {
-                    assert_eq!(decision, Err(Why::ComponentOutOfRange), "{name}: {case:?}");
-                    assert_eq!(translated, None, "{name}: {case:?}");
-                }
-            }
             let chain = insphere::exact_stages_in(s, a, b, c, d, e).expect("room");
-            assert_eq!(Some(chain), sign, "{name}: {case:?}");
+            assert_eq!(chain, sign, "{name}: {case:?}");
             let big = insphere_big_integers_stage(s, case);
-            assert_eq!(Some(big), sign, "{name}: {case:?}");
+            assert_eq!(big, sign, "{name}: {case:?}");
+            let staged = insphere::staged_in(s, a, b, c, d, e).expect("room");
+            assert_eq!(staged, sign, "{name}: {case:?}");
             assert_eq!(s.used(), used, "the stages leave the arena as it was");
         }
     }
 }
 
-/// The versioned samples have no `insphere` call that no stage over spans
-/// decides, so they give only the group [`InSphereGroup::Spans`], for every
-/// number of implicit points. The other group needs larger corpora, named by
-/// [`CORPUS_DIR`].
+/// The versioned samples have calls that the filter does not decide for
+/// every number of implicit points, so they give every set.
 #[test]
-fn the_versioned_samples_give_only_calls_that_a_stage_over_spans_decides() {
+fn the_versioned_samples_give_a_set_for_every_number_of_implicit_points() {
     if std::env::var_os(CORPUS_DIR).is_some() {
         return;
     }
     let names: Vec<_> = insphere_exact_sets().iter().map(|s| s.name()).collect();
     let expected: Vec<_> = (0..=INSPHERE_MAX_IMPLICIT)
-        .map(|k| format!("spans/{k}_implicit"))
+        .map(|k| format!("undecided/{k}_implicit"))
         .collect();
     assert_eq!(names, expected);
 }

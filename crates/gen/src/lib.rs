@@ -6,8 +6,9 @@
 //! **Status: early development.** [`generate`] takes the definitions of a
 //! `.pred` file and returns, for each predicate, the Rust module of its
 //! stages: a floating-point filter, exact stages on floating-point
-//! expansions, and the chain that runs them (see [`generate`] for the items
-//! of the module), and the module of its checks for tests: an exact
+//! expansions (below degree [`BIG_INTEGERS_ONLY_DEGREE`]) and on big
+//! integers, and the chain that runs them (see [`generate`] for the items of
+//! the module), and the module of its checks for tests: an exact
 //! evaluator and inputs at the edge of the error bound of the filter. The
 //! `implicit-predicates-gen` command line tool writes those modules for a
 //! directory of definitions, formatted with `rustfmt`, or checks with
@@ -90,9 +91,12 @@
 //! arithmetic core stays in its domain and no value overflows, and the
 //! worst-case length of every temporary; [`generate`] sizes the stack
 //! buffers of the emitted stages from them. [`exact_plan_spans_translated`]
-//! derives the same for the stage over arena spans, whose leaves are expansions of up to
-//! [`MAX_COORD_COMPONENTS`] components: the range bounds every nonzero
-//! component, so it does not depend on the type of the points.
+//! derives the same for the stage over arena spans, whose leaves are
+//! expansions of up to [`MAX_COORD_COMPONENTS`] components: the range bounds
+//! every nonzero component, so it does not depend on the type of the points.
+//! [`generate`] derives neither for a main form of total degree
+//! [`BIG_INTEGERS_ONLY_DEGREE`] or more, whose only exact stage is the one
+//! on big integers.
 
 #![forbid(unsafe_code)]
 
@@ -114,7 +118,7 @@ pub use bound::{
     AxisBound, AxisConstants, FilterBound, FilterConstants, FilterForm, filter_bound, filter_form,
 };
 pub use differences::{DiffGraph, DiffNode, difference_graph};
-pub use emit::{Generated, generate, generate_points};
+pub use emit::{BIG_INTEGERS_ONLY_DEGREE, Generated, generate, generate_points};
 pub use error::Error;
 pub use graph::{Graph, Node, NodeId};
 pub use parse::{Position, Predicate, parse};

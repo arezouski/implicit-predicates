@@ -3,14 +3,14 @@
 //! emitted only when their temporaries fit.
 
 use super::readback::{function, interpret_span_stage};
-use super::{INSPHERE, NEGATIONS, ORIENT3D, expand};
+use super::{INCIRCLE, INSPHERE, NEGATIONS, ORIENT3D, expand};
 use crate::emit::stages::{STACK_LIMIT, fits_on_stack};
 use crate::parse::parse;
 
 #[test]
 fn the_text_of_every_stage_over_spans_has_the_value_of_the_source_polynomial() {
     let mut checked = 0;
-    for source in [ORIENT3D, INSPHERE, NEGATIONS] {
+    for source in [ORIENT3D, INCIRCLE, NEGATIONS] {
         for (p, g) in parse(source, "t.pred")
             .unwrap()
             .iter()
@@ -46,7 +46,7 @@ fn a_stage_is_on_the_stack_exactly_when_its_temporaries_fit() {
     use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
     let (mut fit, mut not) = (0, 0);
-    for source in [ORIENT3D, INSPHERE, NEGATIONS] {
+    for source in [ORIENT3D, INCIRCLE, NEGATIONS] {
         for (p, g) in parse(source, "t.pred")
             .unwrap()
             .iter()
@@ -71,9 +71,9 @@ fn a_stage_is_on_the_stack_exactly_when_its_temporaries_fit() {
             }
         }
     }
-    // In-sphere needs 4,154 doubles for its exact differences and 122,448
-    // for its translated expansions.
-    assert_eq!((fit, not), (2 + 2 + 2, 2));
+    // The translated expansions of in-circle pass the limit, its exact
+    // differences do not.
+    assert_eq!((fit, not), (2 + 1 + 2 + 2, 1));
 }
 
 #[test]
@@ -115,10 +115,12 @@ fn a_form_without_a_plan_on_the_stack_is_left_to_the_stage_over_spans() {
     // A temporary of `2^32` components or more has no plan on the stack;
     // the stage over spans still has one.
     assert_eq!(stages(&doubled(33)), [false, false, true]);
-    // The predicates of the fixtures: every stage, and only the one over
-    // spans, because the temporaries of the others pass the limit.
+    // The predicates of the fixtures: every stage; the exact differences
+    // and, in place of the translated expansions, whose temporaries pass the
+    // limit, the stage over spans; and none, from degree 5 on.
     assert_eq!(stages(ORIENT3D), [true, true, true]);
-    assert_eq!(stages(INSPHERE), [false, false, true]);
+    assert_eq!(stages(INCIRCLE), [true, false, true]);
+    assert_eq!(stages(INSPHERE), [false, false, false]);
 }
 
 #[test]
@@ -140,7 +142,7 @@ fn the_check_of_one_coordinate_is_emitted_only_with_a_stage_on_the_stack() {
 
 #[test]
 fn every_stage_over_spans_declines_long_coordinates_and_other_weights() {
-    for source in [ORIENT3D, INSPHERE, NEGATIONS] {
+    for source in [ORIENT3D, INCIRCLE, NEGATIONS] {
         for g in super::super::generate(source, "t.pred", "run the tests.").unwrap() {
             // The helper that every stage over spans calls on each
             // coordinate it reads.
@@ -168,7 +170,7 @@ fn every_stage_over_spans_declines_long_coordinates_and_other_weights() {
 
 #[test]
 fn every_stage_over_spans_states_that_its_coordinates_must_be_valid_expansions() {
-    for source in [ORIENT3D, INSPHERE, NEGATIONS] {
+    for source in [ORIENT3D, INCIRCLE, NEGATIONS] {
         for g in super::super::generate(source, "t.pred", "run the tests.").unwrap() {
             let stage = "expansions_translated_in";
             let at = g.stages.find(&format!("pub fn {stage}(")).unwrap();

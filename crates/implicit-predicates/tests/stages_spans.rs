@@ -95,9 +95,10 @@ fn expansion_points() -> impl Strategy<Value = [[Vec<f64>; 3]; 4]> {
     points
 }
 
-/// An expansion of 16 components that spans the range over spans, with the signs of `signs`: from `2^234`, its top, down
-/// to `2^-158` every 28 binades, then `(1 + 2^-52) 2^-188`, at its bottom,
-/// whose last bit is `2^-240`.
+/// An expansion of 16 components that spans the range over spans, with the
+/// signs of `signs`: from `2^234`, its top, down to `2^-158` every 28
+/// binades, then `(1 + 2^-52) 2^-188`, at its bottom, whose last bit is
+/// `2^-240`.
 fn spanning(signs: u16) -> Vec<f64> {
     let mut e: Vec<f64> = (0..15).map(|k| pow2(234 - 28 * k)).collect();
     e.push((1.0 + f64::EPSILON) * pow2(-188));

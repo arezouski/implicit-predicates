@@ -85,11 +85,11 @@ const MAX_OPERATIONS: u128 = 1 << 50;
 /// does. They are multiples of `2^g`, `g` the grid of the node, and at
 /// most `B < 2 S <= 2^(c + 1)` in magnitude, with `c` the smallest integer
 /// such that `S <= 2^c`; so their bits lie in positions `g..=c`, and there
-/// are at most `c - g + 1` of them. The length `l` of a
-/// node is the smaller of that and of its structural length: `2 L` for a
-/// leaf, `l_x` for a negation, `l_x + l_y` for a sum or difference and `2 l_x l_y` for a product. The cap holds for
-/// the running sums of a product too, whose values are partial sums of the
-/// product, below its `B` and on its grid.
+/// are at most `c - g + 1` of them. The length `l` of a node is the smaller
+/// of that and of its structural length: `2 L` for a leaf, `l_x` for a
+/// negation, `l_x + l_y` for a sum or difference and `2 l_x l_y` for a
+/// product. The cap holds for the running sums of a product too, whose
+/// values are partial sums of the product, below its `B` and on its grid.
 ///
 /// **Counts.** With those lengths: a leaf merges two coordinates,
 /// at most `4 L` transformations; a sum or difference at most
@@ -216,20 +216,16 @@ impl Arena {
     }
 
     /// For components of magnitude at least `2^m`, the exponent of a power
-    /// of two dividing every component of each node, or `None` for a node
-    /// that is identically zero; saturated at `i64::MIN`, which is below
-    /// every domain.
-    fn grids(&self, m: i64) -> Vec<Option<i64>> {
-        let mut grids: Vec<Option<i64>> = Vec::with_capacity(self.ops.len());
+    /// of two dividing every component of each node, saturated at
+    /// `i64::MIN`, which is below every domain.
+    fn grids(&self, m: i64) -> Vec<i64> {
+        let mut grids: Vec<i64> = Vec::with_capacity(self.ops.len());
         for op in &self.ops {
             let grid = match *op {
-                Op::Leaf => Some(m - 52),
+                Op::Leaf => m - 52,
                 Op::Neg(x) => grids[x],
-                Op::Sum(x, y) => match (grids[x], grids[y]) {
-                    (Some(gx), Some(gy)) => Some(gx.min(gy)),
-                    (grid, None) | (None, grid) => grid,
-                },
-                Op::Product(x, y) => grids[x].zip(grids[y]).map(|(gx, gy)| gx.saturating_add(gy)),
+                Op::Sum(x, y) => grids[x].min(grids[y]),
+                Op::Product(x, y) => grids[x].saturating_add(grids[y]),
             };
             grids.push(grid);
         }
@@ -241,9 +237,7 @@ impl Arena {
     fn grids_fit(&self, m: i64, low: i64) -> bool {
         let grids = self.grids(m);
         self.ops.iter().all(|op| match *op {
-            Op::Product(x, y) => [x, y]
-                .into_iter()
-                .all(|n| grids[n].is_none_or(|g| g >= low)),
+            Op::Product(x, y) => grids[x] >= low && grids[y] >= low,
             _ => true,
         })
     }
@@ -266,7 +260,6 @@ impl Arena {
         // as the factor of `M` in its `S`, and merges the two.
         let (leaf_length, leaf_operations) = (2 * self.components, 4 * self.components);
         let leaf = &Dyadic::integer(leaf_length) * &Dyadic::pow2(big_m);
-        let zero = Dyadic::integer(0);
         let overflow = Dyadic::pow2(OVERFLOW_EXPONENT);
         let operand_max = Dyadic::pow2(high);
         let six_u = Dyadic::new(6, -53);
@@ -297,14 +290,13 @@ impl Arena {
                 Op::Sum(x, y) => lengths[x].saturating_add(lengths[y]),
                 Op::Product(x, y) => lengths[x].saturating_mul(lengths[y]).saturating_mul(2),
             };
-            let length = match grids[node] {
-                None => 0,
-                Some(_) if magnitude == zero => 0,
-                Some(grid) => {
-                    let bits = magnitude.ceil_log2().saturating_sub(grid).saturating_add(1);
-                    structural.min(u128::try_from(bits).unwrap_or(0))
-                }
-            };
+            // `S` is positive: every leaf has a positive bound, and sums and
+            // products of positive bounds are positive.
+            let bits = magnitude
+                .ceil_log2()
+                .saturating_sub(grids[node])
+                .saturating_add(1);
+            let length = structural.min(u128::try_from(bits).unwrap_or(0));
             let own = match *op {
                 Op::Leaf => leaf_operations,
                 Op::Neg(x) => lengths[x].saturating_mul(2),
