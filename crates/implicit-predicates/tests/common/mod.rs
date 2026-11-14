@@ -49,11 +49,10 @@ const FILTER: (&str, Stage) = ("filter", |p| stages::filter(p, [0.0; 3]));
 
 /// Every stage of the chain with its name, the filter for explicit points;
 /// then the chain itself.
-pub const STAGES: [(&str, Stage); 5] = [
+pub const STAGES: [(&str, Stage); 4] = [
     FILTER,
     stage!(exact_differences),
     stage!(expansions_translated),
-    stage!(expansions_untranslated),
     stage!(staged),
 ];
 
@@ -61,17 +60,16 @@ pub const STAGES: [(&str, Stage); 5] = [
 /// tries them, by name: those of `staged`, then the stage on big integers.
 /// The tests check that the first of them that decides gives the result of
 /// `orient3d`, so this list cannot drift from the generated chain.
-pub const CHAIN: [(&str, Stage); 5] = [
+pub const CHAIN: [(&str, Stage); 4] = [
     FILTER,
     stage!(exact_differences),
     stage!(expansions_translated),
-    stage!(expansions_untranslated),
     ("big_integers", big_integers),
 ];
 
 /// The number of stages of [`CHAIN`] that `staged` runs: all but the stage
 /// on big integers.
-pub const STAGED: usize = 4;
+pub const STAGED: usize = 3;
 
 /// `big_integers_in` on the coordinates of the points as big integers,
 /// written by `exact_big` to an arena of
@@ -129,12 +127,8 @@ pub fn all_finite(p: &Points) -> bool {
 /// The ends of the ranges of the exact stages and of the filter, for
 /// generators of values just inside and just outside each of them.
 pub fn edges() -> Vec<f64> {
-    let (d, t, u) = (
-        stages::DIFFERENCES_RANGE,
-        stages::TRANSLATED_RANGE,
-        stages::UNTRANSLATED_RANGE,
-    );
-    vec![d.0, d.1, t.0, t.1, u.0, u.1, stages::D_MIN, stages::D_MAX]
+    let (d, t) = (stages::DIFFERENCES_RANGE, stages::TRANSLATED_RANGE);
+    vec![d.0, d.1, t.0, t.1, stages::D_MIN, stages::D_MAX]
 }
 
 /// `2^exponent`, for `exponent` in `-1074..=1023`, built from its bits.

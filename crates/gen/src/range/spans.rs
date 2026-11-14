@@ -1,13 +1,11 @@
 //! The range of the exact stages over arena spans.
 //!
 //! An exact stage over spans reads each coordinate of each point as an
-//! expansion of up to `L` components in a `Scratch` arena and evaluates a
-//! form with the operations of the arena: a leaf of the translated form is
-//! `diff` of two coordinates, a leaf of the untranslated form is the
-//! coordinate itself, a constant is `push` of one component (none for
-//! zero), a sum or difference is `sum` or `diff`, a negation is `diff` from
-//! the empty expansion, and a product is `product`, the sum of the scalings
-//! of the longer operand by each component of the shorter one. This module
+//! expansion of up to `L` components in a `Scratch` arena and evaluates the
+//! main form with the operations of the arena: a leaf is `diff` of two
+//! coordinates, a sum or difference is `sum` or `diff`, a negation is `diff`
+//! from the empty expansion, and a product is `product`, the sum of the
+//! scalings of the longer operand by each component of the shorter one. This module
 //! derives the magnitudes `[m, M]` of the components of the coordinates for
 //! which every exact product of that evaluation has both operands in the
 //! product domain and no value overflows.
@@ -20,10 +18,9 @@
 use crate::differences::DiffGraph;
 use crate::dyadic::Dyadic;
 use crate::error::Error;
-use crate::graph::Graph;
 use crate::parse::Position;
 
-use super::shape::{MAX_LENGTH, Op, difference_ops, raw_ops};
+use super::shape::{MAX_LENGTH, Op, difference_ops};
 use super::{ExactPlan, ExactRange, OVERFLOW_EXPONENT, domain, first_failure};
 
 /// The most components of a coordinate that the exact stages over spans
@@ -89,13 +86,12 @@ const MAX_OPERATIONS: u128 = 1 << 50;
 /// most `B < 2 S <= 2^(c + 1)` in magnitude, with `c` the smallest integer
 /// such that `S <= 2^c`; so their bits lie in positions `g..=c`, and there
 /// are at most `c - g + 1` of them. The length `l` of a
-/// node is the smaller of that and of its structural length: `L` or `2 L`
-/// for a leaf, 1 for a nonzero constant, `l_x` for a negation, `l_x + l_y`
-/// for a sum or difference and `2 l_x l_y` for a product. The cap holds for
+/// node is the smaller of that and of its structural length: `2 L` for a
+/// leaf, `l_x` for a negation, `l_x + l_y` for a sum or difference and `2 l_x l_y` for a product. The cap holds for
 /// the running sums of a product too, whose values are partial sums of the
 /// product, below its `B` and on its grid.
 ///
-/// **Counts.** With those lengths: a translated leaf merges two coordinates,
+/// **Counts.** With those lengths: a leaf merges two coordinates,
 /// at most `4 L` transformations; a sum or difference at most
 /// `2 (l_x + l_y)`, a negation `2 l_x`; a product with `s` the smaller and
 /// `t` the larger length of its operands scales the longer operand `s`
@@ -137,41 +133,10 @@ pub fn exact_plan_spans_translated(
     operand_min: f64,
     operand_max: f64,
 ) -> Result<ExactPlan, Error> {
-    let arena = Arena::new(difference_ops(graph), components, true);
+    let arena = Arena::new(difference_ops(graph), components);
     let (low, high) = domain(operand_min, operand_max);
     arena
         .plan(low, high)
-        .map_err(|message| Error::at(file, position, message))
-}
-
-/// Derives the exact stage over spans of a raw form, whose leaves are
-/// coordinates of up to `components` components, for the product domain
-/// `[operand_min, operand_max]`.
-///
-/// The rule and its proof are those of [`exact_plan_spans_translated`],
-/// with the coordinates themselves as leaves, a constant written with
-/// `push` of one component (of none for zero) and a negation `0 - x` as
-/// `diff` from that empty expansion.
-///
-/// # Errors
-///
-/// As [`exact_plan_spans_translated`], and when a constant is not exact in
-/// `f64`.
-///
-/// # Panics
-///
-/// As [`exact_plan_spans_translated`].
-pub fn exact_plan_spans_untranslated(
-    graph: &Graph,
-    components: usize,
-    file: &str,
-    position: Position,
-    operand_min: f64,
-    operand_max: f64,
-) -> Result<ExactPlan, Error> {
-    let (low, high) = domain(operand_min, operand_max);
-    raw_ops(graph)
-        .and_then(|ops| Arena::new(ops, components, false).plan(low, high))
         .map_err(|message| Error::at(file, position, message))
 }
 
@@ -180,19 +145,13 @@ struct Arena {
     ops: Vec<Op>,
     /// `L`, the most components of a coordinate.
     components: u128,
-    /// Whether a leaf is a difference of two coordinates.
-    translated: bool,
 }
 
 impl Arena {
-    fn new(ops: Vec<Op>, components: usize, translated: bool) -> Arena {
+    fn new(ops: Vec<Op>, components: usize) -> Arena {
         assert!(components > 0, "a coordinate has at least one component");
         let components = u128::try_from(components).expect("a usize fits in u128");
-        Arena {
-            ops,
-            components,
-            translated,
-        }
+        Arena { ops, components }
     }
 
     /// The plan for the product domain `[2^low, 2^high]`, or the message to
@@ -244,7 +203,6 @@ impl Arena {
         for op in &self.ops {
             let degree = match *op {
                 Op::Leaf => 1,
-                Op::Constant(_) => 0,
                 Op::Neg(x) => degrees[x],
                 Op::Sum(x, y) => degrees[x].max(degrees[y]),
                 Op::Product(x, y) => {
@@ -266,7 +224,6 @@ impl Arena {
         for op in &self.ops {
             let grid = match *op {
                 Op::Leaf => Some(m - 52),
-                Op::Constant(n) => (n != 0).then(|| i64::from(n.trailing_zeros())),
                 Op::Neg(x) => grids[x],
                 Op::Sum(x, y) => match (grids[x], grids[y]) {
                     (Some(gx), Some(gy)) => Some(gx.min(gy)),
@@ -305,12 +262,9 @@ impl Arena {
     /// [`Arena::fit`], with the count `T` of every node.
     fn fit_with_counts(&self, m: i64, big_m: i64, high: i64) -> Option<(Vec<u128>, Vec<u128>)> {
         let grids = self.grids(m);
-        // A leaf has as many components as the factor of `M` in its `S`.
-        let (leaf_length, leaf_operations) = if self.translated {
-            (2 * self.components, 4 * self.components)
-        } else {
-            (self.components, 0)
-        };
+        // A leaf, the difference of two coordinates, has as many components
+        // as the factor of `M` in its `S`, and merges the two.
+        let (leaf_length, leaf_operations) = (2 * self.components, 4 * self.components);
         let leaf = &Dyadic::integer(leaf_length) * &Dyadic::pow2(big_m);
         let zero = Dyadic::integer(0);
         let overflow = Dyadic::pow2(OVERFLOW_EXPONENT);
@@ -325,7 +279,6 @@ impl Arena {
         for (node, op) in self.ops.iter().enumerate() {
             let magnitude = match *op {
                 Op::Leaf => leaf.clone(),
-                Op::Constant(c) => Dyadic::integer(c.unsigned_abs()),
                 Op::Neg(x) => magnitudes[x].clone(),
                 Op::Sum(x, y) => &magnitudes[x] + &magnitudes[y],
                 Op::Product(x, y) => {
@@ -340,7 +293,6 @@ impl Arena {
             }
             let structural = match *op {
                 Op::Leaf => leaf_length,
-                Op::Constant(c) => u128::from(c != 0),
                 Op::Neg(x) => lengths[x],
                 Op::Sum(x, y) => lengths[x].saturating_add(lengths[y]),
                 Op::Product(x, y) => lengths[x].saturating_mul(lengths[y]).saturating_mul(2),
@@ -355,7 +307,6 @@ impl Arena {
             };
             let own = match *op {
                 Op::Leaf => leaf_operations,
-                Op::Constant(_) => 0,
                 Op::Neg(x) => lengths[x].saturating_mul(2),
                 Op::Sum(x, y) => lengths[x].saturating_add(lengths[y]).saturating_mul(2),
                 Op::Product(x, y) => {
@@ -364,7 +315,7 @@ impl Arena {
                 }
             };
             let below = match *op {
-                Op::Leaf | Op::Constant(_) => 0,
+                Op::Leaf => 0,
                 Op::Neg(x) => operations[x],
                 Op::Sum(x, y) | Op::Product(x, y) => operations[x].saturating_add(operations[y]),
             };

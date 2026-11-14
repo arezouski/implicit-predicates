@@ -2,68 +2,48 @@ use super::shape::Shape;
 use super::{ExactPlan, Leaves, grids_fit, magnitudes_fit, plan};
 use crate::differences::{DiffGraph, DiffNode, difference_graph};
 use crate::dyadic::Dyadic;
-use crate::graph::{Graph, Node};
 use crate::parse::parse;
 
 const ORIENT3D: &str = include_str!("../../tests/fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("../../tests/fixtures/insphere.pred");
-const INSPHERE_RAW: &str = include_str!("../../tests/fixtures/insphere_raw.pred");
 
 /// The exponents of the product domain of the arithmetic core,
 /// `[2^-480, 2^480]`; the generator passes the core's own constants.
 const LOW: i64 = -480;
 const HIGH: i64 = 480;
 
-/// A form to evaluate exactly.
-enum Form {
-    Raw(Graph),
-    Differences(DiffGraph, Leaves),
-}
-
-/// A form with its shape, its plan and its number of points.
+/// A difference form with its kind of leaves, its shape, its plan and its
+/// number of points.
 struct Case {
     name: &'static str,
-    form: Form,
+    graph: DiffGraph,
+    leaves: Leaves,
     shape: Shape,
     plan: ExactPlan,
     points: usize,
 }
 
-fn case(name: &'static str, source: &str, form: impl Fn(&crate::Predicate) -> Form) -> Case {
+fn case(name: &'static str, source: &str, leaves: Leaves) -> Case {
     let p = parse(source, "t.pred").unwrap().remove(0);
-    let form = form(&p);
-    let shape = match &form {
-        Form::Raw(g) => Shape::raw(g),
-        Form::Differences(g, leaves) => Shape::differences(g, *leaves),
-    }
-    .unwrap();
+    let graph = difference_graph(&p.main, "t.pred", p.position).unwrap();
+    let shape = Shape::differences(&graph, leaves).unwrap();
     let plan = plan(&shape, LOW, HIGH).unwrap();
     Case {
         name,
-        form,
+        graph,
+        leaves,
         shape,
         plan,
         points: p.params.len(),
     }
 }
 
-fn differences(p: &crate::Predicate, leaves: Leaves) -> Form {
-    Form::Differences(
-        difference_graph(&p.main, "t.pred", p.position).unwrap(),
-        leaves,
-    )
-}
-
 fn cases() -> Vec<Case> {
     vec![
-        case("orient3d raw", ORIENT3D, |p| {
-            Form::Raw(p.exact.clone().unwrap())
-        }),
-        case("orient3d one", ORIENT3D, |p| differences(p, Leaves::One)),
-        case("orient3d two", ORIENT3D, |p| differences(p, Leaves::Two)),
-        case("insphere raw", INSPHERE_RAW, |p| Form::Raw(p.main.clone())),
-        case("insphere one", INSPHERE, |p| differences(p, Leaves::One)),
-        case("insphere two", INSPHERE, |p| differences(p, Leaves::Two)),
+        case("orient3d one", ORIENT3D, Leaves::One),
+        case("orient3d two", ORIENT3D, Leaves::Two),
+        case("insphere one", INSPHERE, Leaves::One),
+        case("insphere two", INSPHERE, Leaves::Two),
     ]
 }
 
@@ -148,42 +128,26 @@ fn evaluate(c: &Case, rng: &mut Rng) -> Vec<Dyadic> {
         .map(|_| [(); 3].map(|()| Dyadic::from_f64(rng.edge(m, big_m))))
         .collect();
     let mut values: Vec<Dyadic> = Vec::new();
-    match &c.form {
-        Form::Raw(g) => {
-            for node in &g.nodes {
-                let value = match *node {
-                    Node::Coord { point, axis } => coordinates[point][usize::from(axis)].clone(),
-                    Node::Int(n) => Dyadic::integer(n),
-                    Node::Add(x, y) => &values[x] + &values[y],
-                    Node::Sub(x, y) => &values[x] - &values[y],
-                    Node::Mul(x, y) => &values[x] * &values[y],
-                };
-                values.push(value);
+    for node in &c.graph.nodes {
+        let value = match *node {
+            // Every leaf is an exact difference in its own range.
+            DiffNode::Leaf { .. } if c.leaves == Leaves::One => {
+                Dyadic::from_f64(rng.edge(m, big_m))
             }
-        }
-        Form::Differences(g, leaves) => {
-            for node in &g.nodes {
-                let value = match *node {
-                    // Every leaf is an exact difference in its own range.
-                    DiffNode::Leaf { .. } if *leaves == Leaves::One => {
-                        Dyadic::from_f64(rng.edge(m, big_m))
-                    }
-                    DiffNode::Leaf {
-                        axis,
-                        minuend,
-                        subtrahend,
-                    } => {
-                        let axis = usize::from(axis);
-                        &coordinates[minuend][axis] - &coordinates[subtrahend][axis]
-                    }
-                    DiffNode::Neg(x) => &Dyadic::integer(0) - &values[x],
-                    DiffNode::Add(x, y) => &values[x] + &values[y],
-                    DiffNode::Sub(x, y) => &values[x] - &values[y],
-                    DiffNode::Mul(x, y) => &values[x] * &values[y],
-                };
-                values.push(value);
+            DiffNode::Leaf {
+                axis,
+                minuend,
+                subtrahend,
+            } => {
+                let axis = usize::from(axis);
+                &coordinates[minuend][axis] - &coordinates[subtrahend][axis]
             }
-        }
+            DiffNode::Neg(x) => &Dyadic::integer(0) - &values[x],
+            DiffNode::Add(x, y) => &values[x] + &values[y],
+            DiffNode::Sub(x, y) => &values[x] - &values[y],
+            DiffNode::Mul(x, y) => &values[x] * &values[y],
+        };
+        values.push(value);
     }
     values
 }

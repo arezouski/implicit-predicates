@@ -334,13 +334,13 @@ pub fn insphere_any_explicit_sets() -> Vec<InputSet<InSphereImplicitInput>> {
 
 /// Why a recorded `insphere` call that the filter does not decide goes
 /// where it goes in the chain. `insphere` has no stage on the stack: every
-/// such call, with explicit points too, goes to the stages over spans.
+/// such call, with explicit points too, goes to the stage over spans.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InSphereGroup {
-    /// A stage over spans decides the call.
+    /// The stage over spans decides the call.
     Spans,
-    /// No stage over spans decides the call because a component of an exact
-    /// coordinate is outside `SPANS_UNTRANSLATED_RANGE`, and none has more
+    /// The stage over spans does not decide the call because a component of
+    /// an exact coordinate is outside `SPANS_TRANSLATED_RANGE`, and none has more
     /// than `MAX_COORD_COMPONENTS` components: the stage on big integers
     /// decides it.
     OutOfRange,
@@ -361,8 +361,8 @@ impl InSphereGroup {
 }
 
 /// The group of a call of `insphere`, or `None` if the filter decides it,
-/// a point cannot give its exact coordinates, or no stage over spans decides
-/// it for another reason than a component out of range. `scratch` is left
+/// a point cannot give its exact coordinates, or the stage over spans does
+/// not decide it for another reason than a component out of range. `scratch` is left
 /// as it was.
 ///
 /// This is the same range test that the corpus sweep uses, and
@@ -384,14 +384,11 @@ fn insphere_group(scratch: &mut Scratch<'_>, p: &InSphereImplicitInput) -> Optio
         if insphere::expansions_translated_in(scratch, r)
             .expect(room)
             .is_some()
-            || insphere::expansions_untranslated_in(scratch, r)
-                .expect(room)
-                .is_some()
         {
             return Some(InSphereGroup::Spans);
         }
         let spans: Vec<_> = q.iter().flat_map(|c| [c.x, c.y, c.z]).collect();
-        let (min, max) = insphere::SPANS_UNTRANSLATED_RANGE;
+        let (min, max) = insphere::SPANS_TRANSLATED_RANGE;
         let out_of_range = |x: f64| x != 0.0 && !(min..=max).contains(&x.abs());
         if spans
             .iter()

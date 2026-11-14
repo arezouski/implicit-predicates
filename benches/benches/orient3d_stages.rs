@@ -7,12 +7,11 @@
 //! On points of any type (`AnyPoint`): `filter_points`, the filter with the
 //! uncertainty of the errors of the points, on the `random` set as explicit
 //! `AnyPoint` and on the recorded calls with implicit points, as a mix and
-//! by number of implicit points; and the exact stages over arena spans on
+//! by number of implicit points; and the exact stage over arena spans on
 //! the recorded calls that the filter does not decide, by number of
-//! implicit points. `expansions_translated_in` and
-//! `expansions_untranslated_in` are measured on exact coordinates computed
-//! beforehand; `exact_stages_in` computes them, then runs the stages in the
-//! order of the chain. `big_integers_in` is measured with the cost of
+//! implicit points. `expansions_translated_in` is measured on exact
+//! coordinates computed beforehand; `exact_stages_in` computes them, then
+//! runs the stages in the order of the chain. `big_integers_in` is measured with the cost of
 //! `exact_big` for the four points, which writes their coordinates to the
 //! arena: on the explicit `near_degenerate` and `degenerate` sets and on the
 //! same recorded calls as the stages over spans.
@@ -57,24 +56,13 @@ const STAGES: &[(&str, Stage, &[&str])] = &[
         orient3d::expansions_translated,
         &["near_degenerate", "degenerate"],
     ),
-    (
-        "expansions_untranslated",
-        orient3d::expansions_untranslated,
-        &["near_degenerate", "degenerate"],
-    ),
 ];
 
 /// The measured stages over arena spans.
-const SPANS_STAGES: &[(&str, SpansStage)] = &[
-    (
-        "expansions_translated_in",
-        orient3d::expansions_translated_in,
-    ),
-    (
-        "expansions_untranslated_in",
-        orient3d::expansions_untranslated_in,
-    ),
-];
+const SPANS_STAGES: &[(&str, SpansStage)] = &[(
+    "expansions_translated_in",
+    orient3d::expansions_translated_in,
+)];
 
 fn points(case: &Orient3dInput) -> [&[f64; 3]; 4] {
     [&case[0], &case[1], &case[2], &case[3]]

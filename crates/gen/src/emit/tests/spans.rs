@@ -16,65 +16,22 @@ fn the_text_of_every_stage_over_spans_has_the_value_of_the_source_polynomial() {
             .iter()
             .zip(super::super::generate(source, "t.pred", "run the tests.").unwrap())
         {
-            for stage in ["expansions_translated_in", "expansions_untranslated_in"] {
-                if stage == "expansions_untranslated_in" && p.exact.is_none() {
-                    assert!(!g.stages.contains(stage), "{}", p.name);
-                    assert!(!g.stages.contains("SPANS_UNTRANSLATED_RANGE"), "{}", p.name);
-                    continue;
-                }
-                let code = function(&g.stages, stage);
-                // Only the arena computes: no expansion function, no
-                // error-free transformation, no stack buffer.
-                for forbidden in ["expansion::", "eft::", "[0.0;"] {
-                    assert!(!code.contains(forbidden), "{} {stage}: {code}", p.name);
-                }
-                assert_eq!(
-                    expand(&interpret_span_stage(code)),
-                    expand(&p.main),
-                    "{} {stage}",
-                    p.name
-                );
-                checked += 1;
+            let code = function(&g.stages, "expansions_translated_in");
+            // Only the arena computes: no expansion function, no error-free
+            // transformation, no stack buffer.
+            for forbidden in ["expansion::", "eft::", "[0.0;"] {
+                assert!(!code.contains(forbidden), "{}: {code}", p.name);
             }
+            assert_eq!(
+                expand(&interpret_span_stage(code)),
+                expand(&p.main),
+                "{}",
+                p.name
+            );
+            checked += 1;
         }
     }
-    // orient3d and n have both forms, in-sphere and linear only one.
-    assert_eq!(checked, 2 + 1 + 2 + 1);
-}
-
-/// The in-sphere predicate with both forms: the main form of its fixture,
-/// and the form on raw coordinates of `insphere_raw.pred` as its exact form.
-fn insphere_with_raw_form() -> String {
-    let raw = include_str!("../../../tests/fixtures/insphere_raw.pred");
-    let raw = &raw[raw.find("fn insphere(").unwrap()..];
-    format!("{INSPHERE}\n#[exact]\n{raw}")
-}
-
-#[test]
-fn the_untranslated_stage_over_spans_of_insphere_has_the_value_of_the_source_polynomial() {
-    let source = insphere_with_raw_form();
-    let p = parse(&source, "t.pred").unwrap().remove(0);
-    assert!(p.exact.is_some());
-    let g = super::super::generate(&source, "t.pred", "run the tests.")
-        .unwrap()
-        .remove(0);
-    for stage in ["expansions_translated_in", "expansions_untranslated_in"] {
-        let code = function(&g.stages, stage);
-        for forbidden in ["expansion::", "eft::", "[0.0;"] {
-            assert!(!code.contains(forbidden), "{stage}: {code}");
-        }
-        assert_eq!(
-            expand(&interpret_span_stage(code)),
-            expand(&p.main),
-            "{stage}"
-        );
-    }
-    // The raw form is the one the stage reads: it differs from the main
-    // form in its text, not only in its value.
-    assert_ne!(
-        function(&g.stages, "expansions_translated_in"),
-        function(&g.stages, "expansions_untranslated_in")
-    );
+    assert_eq!(checked, 4);
 }
 
 #[test]
@@ -85,7 +42,7 @@ fn the_stack_limit_is_4096_doubles() {
 #[test]
 fn a_stage_is_on_the_stack_exactly_when_its_temporaries_fit() {
     use crate::differences::difference_graph;
-    use crate::range::{Leaves, exact_plan_differences, exact_plan_raw};
+    use crate::range::{Leaves, exact_plan_differences};
     use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
     let (mut fit, mut not) = (0, 0);
@@ -96,7 +53,7 @@ fn a_stage_is_on_the_stack_exactly_when_its_temporaries_fit() {
             .zip(super::super::generate(source, "t.pred", "run the tests.").unwrap())
         {
             let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();
-            let mut totals = vec![
+            let totals = vec![
                 ("exact_differences", Leaves::One),
                 ("expansions_translated", Leaves::Two),
             ]
@@ -107,10 +64,6 @@ fn a_stage_is_on_the_stack_exactly_when_its_temporaries_fit() {
                 (name, plan.total)
             })
             .collect::<Vec<_>>();
-            if let Some(exact) = &p.exact {
-                let plan = exact_plan_raw(exact, "t.pred", p.position, min, max).unwrap();
-                totals.push(("expansions_untranslated", plan.total));
-            }
             for (name, total) in totals {
                 let emitted = g.stages.contains(&format!("pub fn {name}("));
                 assert_eq!(emitted, total <= STACK_LIMIT, "{} {name}: {total}", p.name);
@@ -120,7 +73,7 @@ fn a_stage_is_on_the_stack_exactly_when_its_temporaries_fit() {
     }
     // In-sphere needs 4,154 doubles for its exact differences and 122,448
     // for its translated expansions.
-    assert_eq!((fit, not), (3 + 3 + 2, 2));
+    assert_eq!((fit, not), (2 + 2 + 2, 2));
 }
 
 #[test]
@@ -199,20 +152,16 @@ fn every_stage_over_spans_declines_long_coordinates_and_other_weights() {
                 g.stages
                     .contains("pub const MAX_COORD_COMPONENTS: usize = 16;")
             );
-            for stage in ["expansions_translated_in", "expansions_untranslated_in"] {
-                if !g.stages.contains(&format!("pub fn {stage}(")) {
-                    continue;
-                }
-                let code = function(&g.stages, stage);
-                let weights = code
-                    .find("if !p.iter().all(|q| q.w == Weight::One) {\nreturn Ok(None);\n}")
-                    .unwrap_or_else(|| panic!("{} {stage}: no check of the weights", g.name));
-                let range = code
-                    .find(".all(|s| span_in_range(scratch.get(s), SPANS_")
-                    .unwrap_or_else(|| panic!("{} {stage}: no check of the range", g.name));
-                let mark = code.find("let mark = scratch.mark();").unwrap();
-                assert!(weights < mark && range < mark, "{} {stage}", g.name);
-            }
+            let stage = "expansions_translated_in";
+            let code = function(&g.stages, stage);
+            let weights = code
+                .find("if !p.iter().all(|q| q.w == Weight::One) {\nreturn Ok(None);\n}")
+                .unwrap_or_else(|| panic!("{} {stage}: no check of the weights", g.name));
+            let range = code
+                .find(".all(|s| span_in_range(scratch.get(s), SPANS_")
+                .unwrap_or_else(|| panic!("{} {stage}: no check of the range", g.name));
+            let mark = code.find("let mark = scratch.mark();").unwrap();
+            assert!(weights < mark && range < mark, "{} {stage}", g.name);
         }
     }
 }
@@ -221,29 +170,26 @@ fn every_stage_over_spans_declines_long_coordinates_and_other_weights() {
 fn every_stage_over_spans_states_that_its_coordinates_must_be_valid_expansions() {
     for source in [ORIENT3D, INSPHERE, NEGATIONS] {
         for g in super::super::generate(source, "t.pred", "run the tests.").unwrap() {
-            for stage in ["expansions_translated_in", "expansions_untranslated_in"] {
-                let Some(at) = g.stages.find(&format!("pub fn {stage}(")) else {
-                    continue;
-                };
-                let doc_start = g.stages[..at].rfind("\n\n").unwrap();
-                let doc: String = g.stages[doc_start..at]
-                    .lines()
-                    .filter_map(|l| l.strip_prefix("///"))
-                    .collect::<Vec<_>>()
-                    .join("");
-                let doc = doc.split_whitespace().collect::<Vec<_>>().join(" ");
-                assert!(
-                    doc.contains(
-                        "Requirement: every coordinate is a valid expansion of `scratch`: \
-                         nonzero components of strictly increasing magnitude that do not \
-                         overlap, as [`Point::exact`](implicit_predicates_core::Point::exact) \
-                         writes them. This is not checked, and the result is unspecified \
-                         otherwise."
-                    ),
-                    "{} {stage}: {doc}",
-                    g.name
-                );
-            }
+            let stage = "expansions_translated_in";
+            let at = g.stages.find(&format!("pub fn {stage}(")).unwrap();
+            let doc_start = g.stages[..at].rfind("\n\n").unwrap();
+            let doc: String = g.stages[doc_start..at]
+                .lines()
+                .filter_map(|l| l.strip_prefix("///"))
+                .collect::<Vec<_>>()
+                .join("");
+            let doc = doc.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                doc.contains(
+                    "Requirement: every coordinate is a valid expansion of `scratch`: \
+                     nonzero components of strictly increasing magnitude that do not \
+                     overlap, as [`Point::exact`](implicit_predicates_core::Point::exact) \
+                     writes them. This is not checked, and the result is unspecified \
+                     otherwise."
+                ),
+                "{} {stage}: {doc}",
+                g.name
+            );
         }
     }
 }

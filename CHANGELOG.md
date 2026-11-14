@@ -72,6 +72,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   corners of the boxes of the errors is the sign in the whole boxes only
   for a predicate that is affine in each coordinate; for any other it says
   that the corners do not show it.
+- The exact stages evaluate the main form only. The chain for explicit
+  points is the filter, the exact differences, the expansions on the
+  differences and the stage on big integers; for points of any type it is
+  the filter, the expansions on the differences over arena spans and the
+  stage on big integers. A call that the expansions on the differences
+  decline goes to the stage on big integers.
+- So no call of `orient3d` on explicit points whose nonzero coordinates
+  have magnitudes in `2^-188..=2^238` allocates, instead of
+  `2^-188..=2^239`: with a coordinate above `2^238`, such a call goes to the
+  stage on big integers, in the arena of the thread.
+- The `#[exact]` form of a definition is only checked to be the same
+  polynomial as the main form; no stage evaluates it. So `generate` no
+  longer rejects an `#[exact]` form with a constant that is not exact in
+  `f64`.
+
+### Removed
+
+- **Breaking:** the generated stages on the `#[exact]` form,
+  `expansions_untranslated` and `expansions_untranslated_in`, and their
+  ranges `UNTRANSLATED_RANGE` and `SPANS_UNTRANSLATED_RANGE`. They took
+  longer than the stages on the differences, and decided no recorded call
+  that those decline.
+- **Breaking:** `exact_plan_raw` and `exact_plan_spans_untranslated`, in
+  `implicit-predicates-gen`, which derived the ranges of those stages.
 
 ### Fixed
 

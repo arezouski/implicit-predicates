@@ -51,22 +51,20 @@ pub fn oracle_args(args: &[Arg; 5]) -> Sign {
 
 /// The stages of the chain of `insphere`, in the order in which `staged_in`
 /// tries them, by name: the filter, on the approximations of the points
-/// with their uncertainty, the two stages over spans, on their exact
+/// with their uncertainty, the stage over spans, on their exact
 /// coordinates, and the stage on big integers, which decides every call
 /// that the others do not. There are no stages on the stack: the points of
-/// every type, explicit ones included, go through the stages over spans.
-pub const CHAIN: [&str; 4] = [
-    "filter",
-    "expansions_translated_in",
-    "expansions_untranslated_in",
-    "big_integers",
-];
+/// every type, explicit ones included, go through the stage over spans.
+pub const CHAIN: [&str; 3] = ["filter", "expansions_translated_in", "big_integers"];
 
 /// The index of the filter in [`CHAIN`].
 pub const FILTER: usize = 0;
 
+/// The index of the stage over spans in [`CHAIN`].
+pub const SPANS: usize = 1;
+
 /// The index of the stage on big integers in [`CHAIN`].
-pub const BIG_INTEGERS: usize = 3;
+pub const BIG_INTEGERS: usize = 2;
 
 /// The stage that decides a call first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,7 +99,7 @@ fn in_mark<T>(scratch: &mut Scratch<'_>, f: impl FnOnce(&mut Scratch<'_>) -> T) 
 }
 
 /// What `stage` of [`CHAIN`] alone gives on `p`, `None` when it does not
-/// decide: `filter_points`; a stage over spans on the exact coordinates of
+/// decide: `filter_points`; the stage over spans on the exact coordinates of
 /// the points, which does not decide when a point cannot give them; or
 /// `big_integers_in` on their coordinates as big integers, which does not
 /// decide only when a point cannot give them, when an input is not finite.
@@ -115,18 +113,13 @@ pub fn run_stage<P: Point>(stage: usize, scratch: &mut Scratch<'_>, p: &[P; 5]) 
     let [a, b, c, d, e] = p;
     in_mark(scratch, |scratch| match stage {
         FILTER => stages::filter_points(a, b, c, d, e),
-        1 | 2 => {
+        SPANS => {
             let q: Vec<_> = p
                 .iter()
                 .map(|x| x.exact(scratch).ok())
                 .collect::<Option<_>>()?;
             let q = [&q[0], &q[1], &q[2], &q[3], &q[4]];
-            let sign = if stage == 1 {
-                stages::expansions_translated_in(scratch, q)
-            } else {
-                stages::expansions_untranslated_in(scratch, q)
-            };
-            sign.unwrap_or_else(room)
+            stages::expansions_translated_in(scratch, q).unwrap_or_else(room)
         }
         BIG_INTEGERS => {
             let q: Vec<_> = p
@@ -228,10 +221,7 @@ pub fn deciding_on_expansions_with<P: Point>(
         );
         let r = [&q[0], &q[1], &q[2], &q[3], &q[4]];
         if let Some(sign) = stages::expansions_translated_in(scratch, r).unwrap_or_else(room) {
-            return Ok(decided(1, sign));
-        }
-        if let Some(sign) = stages::expansions_untranslated_in(scratch, r).unwrap_or_else(room) {
-            return Ok(decided(2, sign));
+            return Ok(decided(SPANS, sign));
         }
         let spans = q.iter().flat_map(|c| [c.x, c.y, c.z]);
         Err(
@@ -242,7 +232,7 @@ pub fn deciding_on_expansions_with<P: Point>(
                 Why::TooManyComponents
             } else if spans
                 .flat_map(|s| scratch.get(s))
-                .any(|&x| !in_range(x, stages::SPANS_UNTRANSLATED_RANGE))
+                .any(|&x| !in_range(x, stages::SPANS_TRANSLATED_RANGE))
             {
                 Why::ComponentOutOfRange
             } else {

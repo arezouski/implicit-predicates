@@ -46,22 +46,6 @@ proptest! {
     }
 
     #[test]
-    fn the_two_expansion_forms_agree(
-        p in prop_oneof![random4(), coplanar4(), near_coplanar4(), grid4(), extreme4(&edges())],
-    ) {
-        let translated = stages::expansions_translated(refs(&p));
-        let untranslated = stages::expansions_untranslated(refs(&p));
-        if let (Some(t), Some(u)) = (translated, untranslated) {
-            prop_assert_eq!(t, u, "{:?}", p);
-        }
-        // Within the range of the translated form both decide.
-        if all_in_range(&p, stages::TRANSLATED_RANGE) {
-            prop_assert_eq!(translated, Some(exact(&p)), "{:?}", p);
-            prop_assert_eq!(untranslated, Some(exact(&p)), "{:?}", p);
-        }
-    }
-
-    #[test]
     fn exact_differences_decides_grid_cases(
         p in prop_oneof![grid4(), coplanar4(), signed_zeros4()],
     ) {
@@ -110,7 +94,7 @@ fn the_bound_edge_cases_are_decided_correctly() {
     }
     // The stages before the one on big integers, on points of a type whose
     // exact coordinates are written to an arena: the filter on the points,
-    // then the stages over spans in the order of `exact_stages_in`.
+    // then the stage over spans of `exact_stages_in`.
     fn before_big_integers<P: Point>(p: &Points, point: impl Fn([f64; 3]) -> P) -> Option<Sign> {
         let [a, b, c, d] = p.map(point);
         if let Some(sign) = stages::filter_points(&a, &b, &c, &d) {
@@ -120,21 +104,15 @@ fn the_bound_edge_cases_are_decided_correctly() {
         let mut scratch = Scratch::borrowed(&mut buf);
         let q = [a, b, c, d].map(|x| x.exact(&mut scratch).unwrap());
         let q = [&q[0], &q[1], &q[2], &q[3]];
-        stages::expansions_translated_in(&mut scratch, q)
-            .unwrap()
-            .or_else(|| stages::expansions_untranslated_in(&mut scratch, q).unwrap())
+        stages::expansions_translated_in(&mut scratch, q).unwrap()
     }
     let stack = |p: &Points| stages::staged(refs(p));
     let arrays = |p: &Points| before_big_integers(p, |x| x);
     let lnc = |p: &Points| before_big_integers(p, |x| Lnc::new_unchecked(x, x, 0.375));
     let before: [(&str, &Decider, (f64, f64)); 3] = [
-        ("staged", &stack, stages::UNTRANSLATED_RANGE),
-        (
-            "arrays over spans",
-            &arrays,
-            stages::SPANS_UNTRANSLATED_RANGE,
-        ),
-        ("Lnc over spans", &lnc, stages::SPANS_UNTRANSLATED_RANGE),
+        ("staged", &stack, stages::TRANSLATED_RANGE),
+        ("arrays over spans", &arrays, stages::SPANS_TRANSLATED_RANGE),
+        ("Lnc over spans", &lnc, stages::SPANS_TRANSLATED_RANGE),
     ];
     for (name, stage, range) in before {
         let inside = cases.iter().filter(|p| all_in_range(p, range));

@@ -1,8 +1,7 @@
 //! Tests for the ranges and buffer sizes of the exact stages.
 
 use implicit_predicates_gen::{
-    Error, ExactPlan, Leaves, canonical, difference_graph, exact_plan_differences, exact_plan_raw,
-    parse,
+    Error, ExactPlan, Leaves, canonical, difference_graph, exact_plan_differences, parse,
 };
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
@@ -16,16 +15,6 @@ fn domain() -> (f64, f64) {
     (2f64.powi(-480), 2f64.powi(480))
 }
 
-/// The plan of the raw form, the `#[exact]` form if the file has one and the
-/// main form otherwise, with the id of its root.
-fn try_raw(source: &str) -> Result<(ExactPlan, usize), Error> {
-    let p = parse(source, "t.pred").unwrap().remove(0);
-    let position = p.exact_position.unwrap_or(p.position);
-    let g = p.exact.unwrap_or(p.main);
-    let (min, max) = domain();
-    exact_plan_raw(&g, "t.pred", position, min, max).map(|plan| (plan, g.root))
-}
-
 /// The plan of the difference form of the main form, with the id of its
 /// root.
 fn try_differences(source: &str, leaves: Leaves) -> Result<(ExactPlan, usize), Error> {
@@ -33,10 +22,6 @@ fn try_differences(source: &str, leaves: Leaves) -> Result<(ExactPlan, usize), E
     let g = difference_graph(&p.main, "t.pred", p.position).unwrap();
     let (min, max) = domain();
     exact_plan_differences(&g, leaves, "t.pred", p.position, min, max).map(|plan| (plan, g.root))
-}
-
-fn raw(source: &str) -> (ExactPlan, usize) {
-    try_raw(source).unwrap()
 }
 
 fn differences(source: &str, leaves: Leaves) -> (ExactPlan, usize) {
@@ -81,14 +66,12 @@ fn exponents((plan, _): &(ExactPlan, usize)) -> (i32, i32) {
 
 #[test]
 fn orient3d_lengths_match_the_known_worst_cases() {
-    assert_eq!(root_length(&raw(ORIENT3D)), 96);
     assert_eq!(root_length(&differences(ORIENT3D, Leaves::Two)), 192);
     assert_eq!(root_length(&differences(ORIENT3D, Leaves::One)), 24);
 }
 
 #[test]
 fn insphere_lengths_match_the_known_worst_cases() {
-    assert_eq!(root_length(&raw(INSPHERE_RAW)), 5_760);
     assert_eq!(root_length(&differences(INSPHERE, Leaves::Two)), 36_864);
     assert_eq!(root_length(&differences(INSPHERE, Leaves::One)), 1_152);
 }
@@ -105,7 +88,7 @@ fn the_two_insphere_forms_are_the_same_polynomial() {
 
 #[test]
 fn orient3d_range_follows_from_the_operand_domain() {
-    let (plan, _) = raw(ORIENT3D);
+    let (plan, _) = differences(ORIENT3D, Leaves::Two);
     assert_eq!(plan.range.min, 2f64.powi(-188));
     assert!(2f64.powi(238) <= plan.range.max && plan.range.max <= 2f64.powi(240));
 }
@@ -115,10 +98,8 @@ fn orient3d_range_follows_from_the_operand_domain() {
 /// orient3d and the 3x3 minors of in-sphere), not from the code under test.
 #[test]
 fn every_shape_has_the_derived_range() {
-    assert_eq!(exponents(&raw(ORIENT3D)), (-188, 239));
     assert_eq!(exponents(&differences(ORIENT3D, Leaves::One)), (-188, 239));
     assert_eq!(exponents(&differences(ORIENT3D, Leaves::Two)), (-188, 238));
-    assert_eq!(exponents(&raw(INSPHERE_RAW)), (-108, 159));
     assert_eq!(exponents(&differences(INSPHERE, Leaves::One)), (-108, 159));
     assert_eq!(exponents(&differences(INSPHERE, Leaves::Two)), (-108, 158));
 }
@@ -127,7 +108,6 @@ fn every_shape_has_the_derived_range() {
 fn a_degree_one_predicate_has_the_full_domain_as_range() {
     let (min, max) = domain();
     for (plan, length) in [
-        (raw(DIFFERENCE), 2),
         (differences(DIFFERENCE, Leaves::One), 1),
         (differences(DIFFERENCE, Leaves::Two), 2),
     ] {
@@ -143,9 +123,6 @@ fn shared_nodes_are_one_temporary_each() {
     let (plan, _) = differences(source, Leaves::Two);
     assert_eq!(plan.lengths, [2, 8]);
     assert_eq!(plan.total, 10);
-    let (plan, _) = raw(source);
-    assert_eq!(plan.lengths, [1, 1, 2, 8]);
-    assert_eq!(plan.total, 12);
 }
 
 #[test]
@@ -165,27 +142,15 @@ fn a_degree_too_high_for_any_range_is_an_error_not_a_panic() {
     rejected(try_differences(&source, Leaves::One), "no input range");
     // With two components per leaf the expression is first too large.
     rejected(try_differences(&source, Leaves::Two), "too large");
-    let raw_product = vec!["a.x"; 21].join(" * ");
-    let source = format!("fn p(a: Point3, b: Point3) -> Sign {{ {raw_product} - b.x }}");
-    rejected(try_raw(&source), "no input range");
-    rejected(try_raw(&source), "degree 20");
-}
-
-#[test]
-fn a_constant_too_large_is_an_error() {
-    // 2^53 + 1 is not exact in `f64`; 2^60 is.
-    let inexact = "fn p(a: Point3, b: Point3) -> Sign { 9007199254740993 * a.x - b.x }";
-    rejected(try_raw(inexact), "the constant 9007199254740993");
-    let exact = "fn p(a: Point3, b: Point3) -> Sign { 1152921504606846976 * a.x - b.x }";
-    assert!(try_raw(exact).is_ok());
+    rejected(try_differences(&source, Leaves::One), "degree 20");
 }
 
 #[test]
 fn a_temporary_too_large_is_an_error() {
-    // Forty squarings would need 2^(2^40) components; the sizes are
-    // checked node by node, so this returns at the sixth.
-    let source = squarings(40, "t0");
-    rejected(try_raw(&source), "too large");
+    // Ten squarings would need 2^1023 components; the sizes are checked
+    // node by node, so this returns at the sixth.
+    let source = squarings(10, "t0");
+    rejected(try_differences(&source, Leaves::One), "too large");
 }
 
 #[test]

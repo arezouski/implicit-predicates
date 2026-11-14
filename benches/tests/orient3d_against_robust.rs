@@ -6,7 +6,7 @@
 //! `cargo test -p implicit-predicates-benches --release -- --ignored
 //! --nocapture`, which also shows the counts it prints.
 
-use implicit_predicates::stages::orient3d::UNTRANSLATED_RANGE;
+use implicit_predicates::stages::orient3d::TRANSLATED_RANGE;
 use implicit_predicates_benches::Rng;
 use implicit_predicates_benches::predicates::{Orient3dInput, robust_orient3d_sign};
 use implicit_predicates_corpus::exact;
@@ -92,7 +92,7 @@ fn case(rng: &mut Rng, index: usize) -> Orient3dInput {
 }
 
 fn in_range(x: f64) -> bool {
-    let (min, max) = UNTRANSLATED_RANGE;
+    let (min, max) = TRANSLATED_RANGE;
     x == 0.0 || (min..=max).contains(&x.abs())
 }
 

@@ -7,10 +7,9 @@ use super::exact::{Check, Stage, write_stage};
 use super::filter::{self, FilterKind};
 use super::filter_axis;
 use super::program::Program;
-use super::spans::{SpanForm, SpanStage, write_span_stage};
+use super::spans::{SpanStage, write_span_stage};
 use super::{comment, literal, power_of_two};
 use crate::differences::DiffGraph;
-use crate::graph::Graph;
 use crate::range::{ExactRange, MAX_COORD_COMPONENTS};
 
 /// The most `f64` of temporaries, [`crate::ExactPlan::total`], that an
@@ -31,11 +30,8 @@ pub(crate) struct Forms<'a> {
     pub(crate) filter: FilterKind,
     pub(crate) differences: Option<(Program, ExactRange)>,
     pub(crate) translated: Option<(Program, ExactRange)>,
-    pub(crate) untranslated: Option<(Program, ExactRange)>,
     /// The main form, and the range of its stage over spans.
     pub(crate) spans_translated: (&'a DiffGraph, ExactRange),
-    /// The `#[exact]` form, if any, and the range of its stage over spans.
-    pub(crate) spans_untranslated: Option<(&'a Graph, ExactRange)>,
 }
 
 impl Forms<'_> {
@@ -44,7 +40,6 @@ impl Forms<'_> {
         [
             ("exact_differences", &self.differences),
             ("expansions_translated", &self.translated),
-            ("expansions_untranslated", &self.untranslated),
         ]
         .into_iter()
         .filter_map(|(name, stage)| stage.as_ref().map(|(program, _)| (name, program)))
@@ -90,42 +85,19 @@ pub(crate) fn write_constants(out: &mut String, forms: &Forms) {
             *r,
         );
     }
-    if let Some((_, r)) = &forms.untranslated {
-        range(
-            out,
-            "UNTRANSLATED_RANGE",
-            "[`expansions_untranslated`] decides when every nonzero coordinate",
-            *r,
-        );
-    }
-    let stages = if forms.spans_untranslated.is_some() {
-        "[`expansions_translated_in`] and [`expansions_untranslated_in`] accept"
-    } else {
-        "[`expansions_translated_in`] accepts"
-    };
     constant(
         out,
-        &format!("The most components of a coordinate that {stages}."),
+        "The most components of a coordinate that [`expansions_translated_in`] accepts.",
         "MAX_COORD_COMPONENTS",
         "usize",
         MAX_COORD_COMPONENTS.to_string(),
     );
-    let what =
-        |name: &str| format!("[`{name}`] decides when every nonzero component of every coordinate");
     range(
         out,
         "SPANS_TRANSLATED_RANGE",
-        &what("expansions_translated_in"),
+        "[`expansions_translated_in`] decides when every nonzero component of every coordinate",
         forms.spans_translated.1,
     );
-    if let Some((_, r)) = forms.spans_untranslated {
-        range(
-            out,
-            "SPANS_UNTRANSLATED_RANGE",
-            &what("expansions_untranslated_in"),
-            r,
-        );
-    }
 }
 
 pub(crate) fn write_exact_stages(out: &mut String, points: usize, forms: &Forms) {
@@ -166,65 +138,25 @@ pub(crate) fn write_exact_stages(out: &mut String, points: usize, forms: &Forms)
             points,
         );
     }
-    if let Some((program, _)) = &forms.untranslated {
-        let doc = "The exact sign of the predicate: its form for exact evaluation, marked \
-             `#[exact]` in the definition, evaluated with expansions on the coordinates.\n\n\
-             `None` means that this stage cannot decide: some nonzero coordinate has a \
-             magnitude outside [`UNTRANSLATED_RANGE`] or is not finite.";
-        let check = Check::Coordinates("UNTRANSLATED_RANGE");
-        let name = "expansions_untranslated";
-        write_stage(
-            out,
-            &Stage {
-                name,
-                doc,
-                program,
-                check,
-            },
-            points,
-        );
-    }
-    let decline = |range: &str| {
-        format!(
-            "`Ok(None)` means that this stage cannot decide: some point has a weight other \
-             than [`Weight::One`], or some coordinate has more than \
-             [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude \
-             outside [`{range}`] or not finite.\n\n\
-             Requirement: every coordinate is a valid expansion of `scratch`: nonzero \
-             components of strictly increasing magnitude that do not overlap, as \
-             [`Point::exact`](implicit_predicates_core::Point::exact) writes them. This is \
-             not checked, and the result is unspecified otherwise.\n\n\
-             The arena is left as it was, on success and on error.\n\n\
-             # Errors\n\n\
-             [`ScratchExhausted`] if `scratch` runs out of room."
-        )
-    };
-    let doc = format!(
-        "The exact sign of the predicate for points given by their exact coordinates: its \
-         main form evaluated with expansions in `scratch`, each difference of coordinates \
-         computed exactly.\n\n{}",
-        decline("SPANS_TRANSLATED_RANGE")
-    );
+    let doc = "The exact sign of the predicate for points given by their exact coordinates: \
+         its main form evaluated with expansions in `scratch`, each difference of \
+         coordinates computed exactly.\n\n\
+         `Ok(None)` means that this stage cannot decide: some point has a weight other \
+         than [`Weight::One`], or some coordinate has more than \
+         [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude \
+         outside [`SPANS_TRANSLATED_RANGE`] or not finite.\n\n\
+         Requirement: every coordinate is a valid expansion of `scratch`: nonzero \
+         components of strictly increasing magnitude that do not overlap, as \
+         [`Point::exact`](implicit_predicates_core::Point::exact) writes them. This is \
+         not checked, and the result is unspecified otherwise.\n\n\
+         The arena is left as it was, on success and on error.\n\n\
+         # Errors\n\n\
+         [`ScratchExhausted`] if `scratch` runs out of room.";
     let stage = SpanStage {
         name: "expansions_translated_in",
-        doc: &doc,
-        form: SpanForm::Translated(forms.spans_translated.0),
+        doc,
+        graph: forms.spans_translated.0,
         range: "SPANS_TRANSLATED_RANGE",
     };
     write_span_stage(out, &stage, points);
-    if let Some((graph, _)) = forms.spans_untranslated {
-        let doc = format!(
-            "The exact sign of the predicate for points given by their exact coordinates: \
-             its form for exact evaluation, marked `#[exact]` in the definition, evaluated \
-             with expansions in `scratch` on the coordinates.\n\n{}",
-            decline("SPANS_UNTRANSLATED_RANGE")
-        );
-        let stage = SpanStage {
-            name: "expansions_untranslated_in",
-            doc: &doc,
-            form: SpanForm::Untranslated(graph),
-            range: "SPANS_UNTRANSLATED_RANGE",
-        };
-        write_span_stage(out, &stage, points);
-    }
 }

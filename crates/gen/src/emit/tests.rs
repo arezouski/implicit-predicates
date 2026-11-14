@@ -22,7 +22,7 @@ use crate::dyadic::Dyadic;
 use crate::graph::{Graph, Node, NodeId};
 use crate::parse::{Position, Predicate, parse};
 use crate::polynomial::{Polynomial, canonical};
-use crate::range::{Leaves, exact_plan_differences, exact_plan_raw};
+use crate::range::{Leaves, exact_plan_differences};
 use readback::{Symbolic, interpret_statements};
 
 const ORIENT3D: &str = include_str!("../../tests/fixtures/orient3d.pred");
@@ -74,14 +74,6 @@ fn programs(p: &Predicate) -> Vec<(&'static str, Program, DiffGraph)> {
             diff.clone(),
         ));
     }
-    if let Some(exact) = &p.exact {
-        let plan = exact_plan_raw(exact, "t.pred", p.position, min, max).unwrap();
-        out.push((
-            "untranslated",
-            Program::raw(exact, &plan.lengths),
-            diff.clone(),
-        ));
-    }
     out
 }
 
@@ -94,10 +86,6 @@ fn interpret(program: &Program) -> Graph {
     let scalar = |g: &mut Symbolic, scalars: &BTreeMap<NodeId, NodeId>, x: Scalar| match x {
         Scalar::Coordinate { point, axis } => g.coordinate(point, axis),
         Scalar::Local(n) => scalars[&n],
-        Scalar::Constant(c) => {
-            assert_eq!(c.fract(), 0.0);
-            g.push(Node::Int(c as i64))
-        }
     };
     for step in &program.steps {
         match *step {
@@ -164,7 +152,7 @@ fn every_exact_stage_has_the_value_of_the_source_polynomial() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 3 + 2 + 3 + 2);
+    assert_eq!(checked, 2 + 2 + 2 + 2);
 }
 
 /// The capacity each step needs from its output buffer, given the
@@ -257,15 +245,7 @@ fn emitted_stages() -> Vec<(String, String, Polynomial)> {
             .iter()
             .zip(super::generate(source, "t.pred", "run the tests.").unwrap())
         {
-            for stage in [
-                "exact_differences",
-                "expansions_translated",
-                "expansions_untranslated",
-            ] {
-                if stage == "expansions_untranslated" && p.exact.is_none() {
-                    assert!(!g.stages.contains(stage));
-                    continue;
-                }
+            for stage in ["exact_differences", "expansions_translated"] {
                 // A stage whose temporaries do not fit on the stack is not
                 // emitted; in-sphere has none that fits.
                 if p.name == "insphere" {
@@ -290,9 +270,8 @@ fn the_text_of_every_exact_stage_has_the_value_of_the_source_polynomial() {
             "{name}"
         );
     }
-    // orient3d and n have three stages on the stack, in-sphere none and
-    // linear two.
-    assert_eq!(stages.len(), 3 + 3 + 2);
+    // orient3d, n and linear have two stages on the stack, in-sphere none.
+    assert_eq!(stages.len(), 2 + 2 + 2);
 }
 
 #[test]

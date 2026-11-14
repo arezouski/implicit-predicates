@@ -4,7 +4,7 @@
 
 use crate::differences::{DiffGraph, DiffNode};
 use crate::dyadic::Dyadic;
-use crate::graph::{Graph, Node, NodeId};
+use crate::graph::NodeId;
 
 use super::Leaves;
 
@@ -12,10 +12,9 @@ use super::Leaves;
 /// concerned: a difference is an exact sum of a negated operand.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Op {
-    /// An input: a coordinate, or a difference of two coordinates.
+    /// An input: a difference of coordinates, computed in `f64` or as the
+    /// `two_diff` of the two coordinates.
     Leaf,
-    /// An integer constant of the raw form.
-    Constant(i64),
     /// A negation.
     Neg(NodeId),
     /// A sum or a difference.
@@ -38,8 +37,8 @@ pub(crate) const MAX_LENGTH: u64 = 1 << 32;
 pub(crate) struct Shape {
     ops: Vec<Op>,
     /// The exponent `s` such that every component of a leaf is at most
-    /// `2^s M` times the component factor: 0 for a coordinate, 1 for a
-    /// difference of two coordinates.
+    /// `2^s M` times the component factor: 0 for a difference computed in
+    /// `f64`, 1 for the `two_diff` of two coordinates.
     leaf_scale: i64,
     /// The worst-case length of every node.
     pub(crate) lengths: Vec<usize>,
@@ -53,14 +52,6 @@ pub(crate) struct Shape {
 }
 
 impl Shape {
-    /// The raw form: every coordinate is a leaf of one component.
-    ///
-    /// Fails, with the message to report, when a constant is not exact in
-    /// `f64` or the evaluation is too large (see [`Shape::new`]).
-    pub(crate) fn raw(graph: &Graph) -> Result<Self, String> {
-        Shape::new(raw_ops(graph)?, Leaves::One)
-    }
-
     /// A difference form, with leaves of one or two components.
     ///
     /// Fails, with the message to report, when the evaluation is too large
@@ -95,7 +86,6 @@ impl Shape {
             // Lengths are below 2^32, so none of this overflows.
             let (length, degree, own) = match *op {
                 Op::Leaf => (leaf_length, 1, leaf_operations),
-                Op::Constant(n) => (u64::from(n != 0), 0, 0),
                 Op::Neg(x) => (lengths[x], degrees[x], 0),
                 Op::Sum(x, y) => {
                     let length = lengths[x] + lengths[y];
@@ -116,7 +106,7 @@ impl Shape {
                 );
             }
             let below = match *op {
-                Op::Leaf | Op::Constant(_) => 0,
+                Op::Leaf => 0,
                 Op::Neg(x) => operations[x],
                 Op::Sum(x, y) | Op::Product(x, y) => operations[x].saturating_add(operations[y]),
             };
@@ -160,15 +150,14 @@ impl Shape {
     /// of a power of two that divides the value and every component of each
     /// node, or `None` for a node that is identically zero.
     ///
-    /// A leaf gets `m - 52`, a nonzero constant the power of two that divides
-    /// it, a negation that of its operand, a sum or difference the smaller of
-    /// those of its operands, and a product their sum.
+    /// A leaf gets `m - 52`, a negation that of its operand, a sum or
+    /// difference the smaller of those of its operands, and a product their
+    /// sum.
     pub(crate) fn grids(&self, m: i64) -> Vec<Option<i64>> {
         let mut grids: Vec<Option<i64>> = Vec::with_capacity(self.ops.len());
         for op in &self.ops {
             let grid = match *op {
                 Op::Leaf => Some(m - 52),
-                Op::Constant(n) => (n != 0).then(|| i64::from(n.trailing_zeros())),
                 Op::Neg(x) => grids[x],
                 Op::Sum(x, y) => match (grids[x], grids[y]) {
                     (Some(gx), Some(gy)) => Some(gx.min(gy)),
@@ -183,9 +172,9 @@ impl Shape {
 
     /// For leaves of magnitude at most `M = 2^big_m`, the bound `S` on the
     /// sum of the magnitudes of the components of each node, before the
-    /// rounding factor: `2^s M` for a leaf (see `leaf_scale`), `|n|` for a
-    /// constant, the sum of the operands' bounds for a sum or difference,
-    /// their product for a product, and that of the operand for a negation.
+    /// rounding factor: `2^s M` for a leaf (see `leaf_scale`), the sum of
+    /// the operands' bounds for a sum or difference, their product for a
+    /// product, and that of the operand for a negation.
     ///
     /// `S` also bounds the magnitude of the exact value of the node.
     pub(crate) fn magnitudes(&self, big_m: i64) -> Vec<Dyadic> {
@@ -194,7 +183,6 @@ impl Shape {
         for op in &self.ops {
             let magnitude = match *op {
                 Op::Leaf => leaf.clone(),
-                Op::Constant(n) => Dyadic::integer(n.unsigned_abs()),
                 Op::Neg(x) => magnitudes[x].clone(),
                 Op::Sum(x, y) => &magnitudes[x] + &magnitudes[y],
                 Op::Product(x, y) => &magnitudes[x] * &magnitudes[y],
@@ -221,33 +209,6 @@ impl Shape {
             })
             .collect()
     }
-}
-
-/// The operations of the raw form `graph`, whose leaves are coordinates.
-///
-/// Fails, with the message to report, when a constant is not exact in
-/// `f64`.
-pub(super) fn raw_ops(graph: &Graph) -> Result<Vec<Op>, String> {
-    graph
-        .nodes
-        .iter()
-        .map(|node| match *node {
-            Node::Coord { .. } => Ok(Op::Leaf),
-            Node::Int(n) => {
-                let magnitude = n.unsigned_abs();
-                if magnitude >> magnitude.trailing_zeros().min(63) < 1 << 53 {
-                    Ok(Op::Constant(n))
-                } else {
-                    Err(format!(
-                        "the constant {n} is not exactly representable in f64, \
-                         so it cannot be used in exact evaluation"
-                    ))
-                }
-            }
-            Node::Add(x, y) | Node::Sub(x, y) => Ok(Op::Sum(x, y)),
-            Node::Mul(x, y) => Ok(Op::Product(x, y)),
-        })
-        .collect()
 }
 
 /// The operations of the difference form `graph`, whose leaves are

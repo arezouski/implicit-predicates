@@ -3,8 +3,8 @@
 use implicit_predicates_core::eft::{PRODUCT_OPERAND_MAX, PRODUCT_OPERAND_MIN};
 use implicit_predicates_gen::{
     ExactRange, FilterForm, Generated, Leaves, MAX_COORD_COMPONENTS, difference_graph,
-    exact_plan_differences, exact_plan_raw, exact_plan_spans_translated,
-    exact_plan_spans_untranslated, filter_bound, filter_form, generate, parse,
+    exact_plan_differences, exact_plan_spans_translated, filter_bound, filter_form, generate,
+    parse,
 };
 use proc_macro2::TokenStream;
 
@@ -130,22 +130,12 @@ fn the_constants_in_the_output_are_the_derived_ones() {
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
     let one = exact_plan_differences(&diff, Leaves::One, "t.pred", p.position, min, max).unwrap();
     let two = exact_plan_differences(&diff, Leaves::Two, "t.pred", p.position, min, max).unwrap();
-    let raw = exact_plan_raw(
-        p.exact.as_ref().unwrap(),
-        "t.pred",
-        p.exact_position.unwrap(),
-        min,
-        max,
-    )
-    .unwrap();
     assert_range(code, "DIFFERENCES_RANGE", one.range);
     assert_range(code, "TRANSLATED_RANGE", two.range);
-    assert_range(code, "UNTRANSLATED_RANGE", raw.range);
     // The values themselves, as derived for orient3d.
     assert_eq!(one.range.min, 2f64.powi(-188));
     assert_eq!(one.range.max, 2f64.powi(239));
     assert_eq!(two.range.max, 2f64.powi(238));
-    assert_eq!(raw.range.max, 2f64.powi(239));
 }
 
 #[test]
@@ -180,11 +170,9 @@ fn the_header_says_do_not_edit() {
 }
 
 #[test]
-fn a_predicate_without_an_exact_form_has_no_untranslated_stage_and_chains_the_main_form() {
+fn insphere_chains_the_main_form_over_spans() {
     let g = generated(INSPHERE, "predicates/insphere.pred");
     assert_eq!(g.name, "insphere");
-    assert!(!g.stages.contains("expansions_untranslated"));
-    assert!(!g.stages.contains("UNTRANSLATED_RANGE"));
     // No stage of in-sphere fits on the stack, so its chain takes an arena
     // and runs the translated form over spans after the filter.
     for stage in ["exact_differences", "expansions_translated("] {
@@ -224,14 +212,12 @@ fn a_predicate_without_an_exact_form_has_no_untranslated_stage_and_chains_the_ma
 }
 
 #[test]
-fn orient3d_keeps_its_three_stages_on_the_stack_and_its_chain() {
+fn orient3d_keeps_its_two_stages_on_the_stack_and_its_chain() {
     let g = generated(ORIENT3D, "predicates/orient3d.pred");
     for stage in [
         "exact_differences",
         "expansions_translated",
-        "expansions_untranslated",
         "expansions_translated_in",
-        "expansions_untranslated_in",
     ] {
         assert!(g.stages.contains(&format!("pub fn {stage}(")), "{stage}");
     }
@@ -240,6 +226,24 @@ fn orient3d_keeps_its_three_stages_on_the_stack_and_its_chain() {
             .contains("pub fn staged(p: [&[f64; 3]; 4]) -> Option<Sign> {")
     );
     assert!(!g.stages.contains("staged_in_arena"));
+}
+
+#[test]
+fn the_output_has_no_untranslated_stage() {
+    // The `#[exact]` form is only checked against the main form: no stage,
+    // range or check is emitted for it.
+    for (source, file) in [
+        (ORIENT3D, "predicates/orient3d.pred"),
+        (INSPHERE, "predicates/insphere.pred"),
+    ] {
+        let g = generated(source, file);
+        for (what, text) in [("stages", &g.stages), ("checks", &g.checks)] {
+            assert!(
+                !text.to_lowercase().contains("untranslated"),
+                "{file}: {what}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -253,16 +257,10 @@ fn the_ranges_over_spans_in_the_output_are_the_derived_ones() {
     let (min, max) = (PRODUCT_OPERAND_MIN, PRODUCT_OPERAND_MAX);
     let translated =
         exact_plan_spans_translated(&diff, 16, "t.pred", p.position, min, max).unwrap();
-    let exact = p.exact.as_ref().unwrap();
-    let untranslated =
-        exact_plan_spans_untranslated(exact, 16, "t.pred", p.position, min, max).unwrap();
     assert_range(code, "SPANS_TRANSLATED_RANGE", translated.range);
-    assert_range(code, "SPANS_UNTRANSLATED_RANGE", untranslated.range);
     // The values themselves, as derived for orient3d.
     assert_eq!(translated.range.min, 2f64.powi(-188));
     assert_eq!(translated.range.max, 2f64.powi(234));
-    assert_eq!(untranslated.range.min, 2f64.powi(-188));
-    assert_eq!(untranslated.range.max, 2f64.powi(235));
 }
 
 #[test]
@@ -273,11 +271,7 @@ fn the_ranges_over_spans_do_not_depend_on_the_point_types_of_the_file() {
     let mut all = generate(&with_points, "predicates/orient3d.pred", REGENERATE).unwrap();
     assert_eq!(all.len(), 1);
     let with_points = all.remove(0);
-    for name in [
-        "MAX_COORD_COMPONENTS",
-        "SPANS_TRANSLATED_RANGE",
-        "SPANS_UNTRANSLATED_RANGE",
-    ] {
+    for name in ["MAX_COORD_COMPONENTS", "SPANS_TRANSLATED_RANGE"] {
         let ty = if name == "MAX_COORD_COMPONENTS" {
             "usize"
         } else {
@@ -293,7 +287,7 @@ fn the_ranges_over_spans_do_not_depend_on_the_point_types_of_the_file() {
 }
 
 #[test]
-fn the_chain_tries_the_translated_form_before_the_exact_form() {
+fn the_chain_tries_the_exact_differences_before_the_translated_form() {
     let o = generated(ORIENT3D, "predicates/orient3d.pred");
     let staged = &o.stages[o.stages.find("pub fn staged").unwrap()..];
     let body = &staged[..staged.find("\n}").unwrap()];
@@ -301,7 +295,6 @@ fn the_chain_tries_the_translated_form_before_the_exact_form() {
         "filter(p, [0.0; 3])",
         "exact_differences(p)",
         "expansions_translated(p)",
-        "expansions_untranslated(p)",
     ]
     .map(|stage| {
         body.find(stage)
@@ -312,14 +305,15 @@ fn the_chain_tries_the_translated_form_before_the_exact_form() {
 
 #[test]
 fn shared_subexpressions_are_emitted_once() {
-    // `c.y * d.z` is shared by two cofactors of the exact form of orient3d.
+    // The leaf `c.y - d.y` is shared by two minors of orient3d: the stage
+    // on two components computes it once and reads it twice.
     let g = generated(ORIENT3D, "predicates/orient3d.pred");
-    assert_eq!(
-        g.stages
-            .matches("expansion::from_two_product(p[2][1], p[3][2],")
-            .count(),
-        1
-    );
+    let stage = &g.stages[g.stages.find("pub fn expansions_translated(").unwrap()..];
+    let stage = &stage[..stage.find("\n}\n\n").unwrap()];
+    let leaf = "let l7 = expansion::from_two_diff(p[2][1], p[3][1], &mut e7);";
+    assert_eq!(g.stages.matches(leaf).count(), 1);
+    assert_eq!(stage.matches(leaf).count(), 1, "{stage}");
+    assert_eq!(stage.matches("&e7[..l7]").count(), 2, "{stage}");
     // In-sphere: the minor `cy * dz - cz * dy` is shared by two cofactors,
     // and the leaf `c.y - e.y` by many products.
     let s = generated(INSPHERE, "predicates/insphere.pred");

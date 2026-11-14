@@ -10,18 +10,18 @@
 //!
 //! The exact stages, on the recorded calls that the filter does not decide,
 //! by number of implicit points, zero to five, in two groups (see
-//! `InSphereGroup`): the calls that a stage over spans decides, and those
+//! `InSphereGroup`): the calls that the stage over spans decides, and those
 //! that go to the stage on big integers because a component of an exact
 //! coordinate is out of range. `insphere` has no stage on the stack, so the
-//! explicit calls go through the stages over spans too.
-//! `expansions_translated_in` and `expansions_untranslated_in` are measured
-//! on the first group only, on exact coordinates computed beforehand.
-//! `exact_stages_in` computes the exact coordinates, then runs the stages
-//! over spans and, when they decline, the stage on big integers: the cost of
-//! the chain after the filter, on both groups. `big_integers_in` is measured
-//! with the cost of `exact_big` for the five points, which writes their
-//! coordinates to the arena, on both groups: on the first one, it is what
-//! the stage on big integers would cost instead of the stages over spans.
+//! explicit calls go through the stage over spans too.
+//! `expansions_translated_in` is measured on the first group only, on exact
+//! coordinates computed beforehand. `exact_stages_in` computes the exact
+//! coordinates, then runs the stage over spans and, when it declines, the
+//! stage on big integers: the cost of the chain after the filter, on both
+//! groups. `big_integers_in` is measured with the cost of `exact_big` for
+//! the five points, which writes their coordinates to the arena, on both
+//! groups: on the first one, it is what the stage on big integers would cost
+//! instead of the stage over spans.
 //!
 //! The recorded calls come from the versioned samples, or from the corpus
 //! files of the directory named by `IMPLICIT_PREDICATES_CORPUS_DIR`. A group
@@ -49,16 +49,10 @@ use implicit_predicates_benches::predicates::{
 type SpansStage = fn(&mut Scratch<'_>, [&ExactCoords; 5]) -> Result<Option<Sign>, ScratchExhausted>;
 
 /// The measured stages over arena spans.
-const SPANS_STAGES: &[(&str, SpansStage)] = &[
-    (
-        "expansions_translated_in",
-        insphere::expansions_translated_in,
-    ),
-    (
-        "expansions_untranslated_in",
-        insphere::expansions_untranslated_in,
-    ),
-];
+const SPANS_STAGES: &[(&str, SpansStage)] = &[(
+    "expansions_translated_in",
+    insphere::expansions_translated_in,
+)];
 
 /// The sets of explicit points the filter is measured on.
 const FILTER_SETS: [&str; 2] = ["random", "near_degenerate"];

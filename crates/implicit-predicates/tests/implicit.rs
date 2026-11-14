@@ -34,17 +34,14 @@ const CHAIN: [&str; 6] = [
 
 /// The names of [`every_stage`] that decide whenever the stages over spans
 /// are documented to.
-const OVER_SPANS: [&str; 1] = ["expansions_untranslated_in"];
+const OVER_SPANS: [&str; 1] = ["expansions_translated_in"];
 
 /// The ends of the ranges of the stages on the stack, of the filter and of
-/// the stages over spans.
+/// the stage over spans.
 fn span_edges() -> Vec<f64> {
-    let (t, u) = (
-        stages::SPANS_TRANSLATED_RANGE,
-        stages::SPANS_UNTRANSLATED_RANGE,
-    );
+    let t = stages::SPANS_TRANSLATED_RANGE;
     let mut edges = edges();
-    edges.extend([t.0, t.1, u.0, u.1]);
+    edges.extend([t.0, t.1]);
     edges
 }
 

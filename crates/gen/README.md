@@ -37,8 +37,11 @@ predicate is the sign of that polynomial.
 The main form must be homogeneous in differences of coordinates: built from
 differences of one coordinate of two points, combined by sums of terms of
 equal degree and by products. An optional second form, marked `#[exact]`,
-gives the polynomial to use for exact evaluation; it may use the raw
-coordinates and integer constants.
+writes the same polynomial in another way; it may use the raw coordinates
+and integer constants. It is a check at generation time only: the generator
+requires it to be the same polynomial as the main form, and no emitted
+stage evaluates it, so every stage, exact ones included, works on the main
+form.
 
 ## Point types
 
@@ -156,8 +159,8 @@ numbers of `implicit-predicates-oracle`.
 
 ## What the generator checks
 
-Before writing anything, the generator expands both forms and requires them
-to be the same nonzero polynomial, checks that the main form is homogeneous
+Before writing anything, the generator expands both forms, when there is an
+`#[exact]` one, and requires them to be the same nonzero polynomial, checks that the main form is homogeneous
 in the differences, and derives, in exact arithmetic:
 
 - the error bound of the floating-point filter and the range of scales in
@@ -174,7 +177,7 @@ message`.
 For each predicate the generator writes one module with:
 
 - the constants of the filter and the ranges of the exact stages
-  (`DIFFERENCES_RANGE`, `TRANSLATED_RANGE`, `UNTRANSLATED_RANGE`);
+  (`DIFFERENCES_RANGE`, `TRANSLATED_RANGE` and `SPANS_TRANSLATED_RANGE`);
 - `filter`, the main form evaluated in `f64` with its error bound. When
   every term of the main form has the same degree in the differences of
   each axis, as for an orientation, the bound has one size and one
@@ -184,20 +187,21 @@ For each predicate the generator writes one module with:
   positive degree in it. Otherwise the bound is global: the constants are
   `DEGREE`, `EPSILON`, `KAPPA`, `D_MIN` and `D_MAX`, and the filter takes
   `e: f64`;
-- `exact_differences`, `expansions_translated` and, when there is an
-  `#[exact]` form, `expansions_untranslated`: exact evaluations with
-  floating-point expansions on stack buffers. A stage whose buffers would
-  take more than 4,096 `f64`, or too many to plan, is not emitted, and the
-  stages over arena spans take its place;
+- `exact_differences` and `expansions_translated`: exact evaluations of
+  the main form with floating-point expansions on stack buffers, on the
+  differences of coordinates computed in `f64`, which must be exact, and
+  on each difference as the exact expansion of two components. A stage
+  whose buffers would take more than 4,096 `f64`, or too many to plan, is
+  not emitted, and the stage over arena spans takes its place;
 - `staged`, which runs the filter and then the exact stages in the order:
-  differences that are exact, the translated expansion form, then the
-  `#[exact]` form if one is given. The order is the same for every
-  predicate for now;
+  differences that are exact, then the translated expansion form. The order
+  is the same for every predicate for now;
 - for points of any type: `filter_points`, the filter on the approximations
   of the points with the uncertainty of their errors (zero when every point
   is explicit); `exact_stages`, the exact stages of `staged`;
-  `exact_stages_in`, the expansion forms over spans of an arena, on the
-  exact coordinates of the points, followed by `big_integers_in`;
+  `exact_stages_in`, `expansions_translated_in`, the expansion form over
+  spans of an arena, on the exact coordinates of the points, followed by
+  `big_integers_in`;
   `exact_stages_explicit_in`, `exact_stages` followed by `big_integers_in`
   for points that are all explicit; and `staged_in`, which runs
   `filter_points`, then `exact_stages_explicit_in` when every point is

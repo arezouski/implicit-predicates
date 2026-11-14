@@ -33,7 +33,9 @@ pub struct Predicate {
     pub params: Vec<String>,
     /// The main form of the polynomial.
     pub main: Graph,
-    /// The form marked `#[exact]`, if the file has one.
+    /// The form marked `#[exact]`, if the file has one: the same polynomial
+    /// as the main form, which [`crate::generate`] checks and does not
+    /// evaluate.
     pub exact: Option<Graph>,
     /// Position of the name of the main form.
     pub position: Position,

@@ -1,10 +1,9 @@
 //! The function that runs the stages of a predicate in order.
 //!
-//! The exact stages are tried in the order: differences that are exact, the
-//! translated expansion form, then the `#[exact]` form if one is given. The
-//! order is the same for every predicate for now. A stage whose temporaries
-//! do not fit on the stack is replaced by the stage over spans of the same
-//! form, run on the exact coordinates of the explicit points written to an
+//! The exact stages are tried in the order: differences that are exact, then
+//! the translated expansion form. The order is the same for every predicate
+//! for now. A stage whose temporaries do not fit on the stack is replaced by
+//! the stage over spans of the same form, run on the exact coordinates of the explicit points written to an
 //! arena; `staged` then takes the arena.
 
 use std::fmt::Write;

@@ -36,7 +36,7 @@ them, and `AnyPoint`, either of the last two.
 A floating-point filter on the approximations of the points decides most
 calls. When it cannot, explicit points go to exact stages on floating-point
 expansions held on the stack, so no call on explicit points whose nonzero
-coordinates have magnitudes in `2^-188..=2^239` allocates. With a point on a
+coordinates have magnitudes in `2^-188..=2^238` allocates. With a point on a
 segment, the exact coordinates of the points go to an arena of the calling
 thread, 16,384 `f64` to start with, allocated on the first such call, that
 grows on the heap when a call needs more. When the expansions cannot decide

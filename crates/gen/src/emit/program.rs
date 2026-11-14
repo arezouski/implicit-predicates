@@ -4,8 +4,8 @@
 //! functions of the arithmetic core. This module turns the form into a list
 //! of [`Step`]s, each one call of the core, following the evaluation model
 //! that the range and the buffer sizes of [`crate::ExactPlan`] are derived
-//! for: a leaf is a coordinate, an exactly computed difference or the
-//! `two_diff` of two coordinates; a product of two `f64` is
+//! for: a leaf is an exactly computed difference or the `two_diff` of two
+//! coordinates; a product of two `f64` is
 //! `from_two_product`, an expansion times an `f64` is `scale`, and an
 //! expansion times an expansion is a sum of scalings, each component of the
 //! shorter operand scaling the longer one, accumulated with `sum`; sums and
@@ -15,7 +15,7 @@
 //! is the value of the emitted code.
 
 use crate::differences::{DiffGraph, DiffNode};
-use crate::graph::{Graph, Node, NodeId};
+use crate::graph::NodeId;
 use crate::range::Leaves;
 
 /// An `f64` that a stage reads without an expansion.
@@ -26,8 +26,6 @@ pub(crate) enum Scalar {
     /// The local `v{node}` defined by a [`Step::Difference`] or a
     /// [`Step::NegateScalar`].
     Local(NodeId),
-    /// An integer constant, exact in `f64`.
-    Constant(f64),
 }
 
 /// One operation of an exact stage. Every node `n` of the form holds either
@@ -91,11 +89,6 @@ enum Value {
 /// What a node is, as far as the evaluation is concerned.
 #[derive(Clone, Copy)]
 enum Op {
-    Coordinate {
-        point: usize,
-        axis: u8,
-    },
-    Constant(i64),
     Leaf {
         axis: u8,
         minuend: usize,
@@ -108,21 +101,6 @@ enum Op {
 }
 
 impl Program {
-    /// The program of the raw form `graph`, whose leaves are coordinates,
-    /// with the worst-case lengths `lengths` of its exact plan. A difference
-    /// `0 - x` is a negation.
-    pub(crate) fn raw(graph: &Graph, lengths: &[usize]) -> Program {
-        let ops = graph.nodes.iter().map(|node| match *node {
-            Node::Coord { point, axis } => Op::Coordinate { point, axis },
-            Node::Int(n) => Op::Constant(n),
-            Node::Sub(x, y) if graph.nodes[x] == Node::Int(0) => Op::Neg(y),
-            Node::Add(x, y) => Op::Add(x, y),
-            Node::Sub(x, y) => Op::Sub(x, y),
-            Node::Mul(x, y) => Op::Mul(x, y),
-        });
-        build(ops.collect(), graph.root, lengths, Leaves::One)
-    }
-
     /// The program of the difference form `graph` with leaves of the given
     /// kind and the worst-case lengths `lengths` of its exact plan.
     pub(crate) fn differences(graph: &DiffGraph, leaves: Leaves, lengths: &[usize]) -> Program {
@@ -203,11 +181,6 @@ fn build(ops: Vec<Op>, root: NodeId, lengths: &[usize], leaves: Leaves) -> Progr
     };
     for (node, op) in ops.iter().enumerate() {
         let value = match *op {
-            Op::Coordinate { point, axis } => {
-                b.coordinate(point, axis);
-                Value::Scalar(Scalar::Coordinate { point, axis })
-            }
-            Op::Constant(n) => Value::Scalar(Scalar::Constant(n as f64)),
             Op::Leaf {
                 axis,
                 minuend,
@@ -234,7 +207,6 @@ fn build(ops: Vec<Op>, root: NodeId, lengths: &[usize], leaves: Leaves) -> Progr
                 }
             },
             Op::Neg(x) => match b.values[x] {
-                Value::Scalar(Scalar::Constant(c)) => Value::Scalar(Scalar::Constant(-c)),
                 Value::Scalar(s) => {
                     b.steps.push(Step::NegateScalar { node, x: s });
                     Value::Scalar(Scalar::Local(node))

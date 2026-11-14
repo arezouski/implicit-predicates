@@ -65,25 +65,19 @@ fn the_emitted_constants_are_those_of_the_derivation() {
     assert_eq!(stages::D_MAX, pow2(203));
     assert_eq!(stages::BIG_INTEGERS_EXPLICIT_ARENA, 6835);
     assert_eq!(stages::SPANS_TRANSLATED_RANGE.0, pow2(-108));
-    assert_eq!(stages::SPANS_UNTRANSLATED_RANGE.0, pow2(-108));
 }
 
 #[test]
 fn no_stage_on_the_stack_is_emitted() {
     // The exact differences need 4,154 doubles, over the limit of 4,096 of
     // the stack, and the expansions more: every exact stage takes an arena.
-    for stage in [
-        "exact_differences",
-        "expansions_translated",
-        "expansions_untranslated",
-    ] {
+    for stage in ["exact_differences", "expansions_translated"] {
         assert!(!SOURCE.contains(&format!("pub fn {stage}(")), "{stage}");
     }
     for stage in [
         "filter",
         "filter_points",
         "expansions_translated_in",
-        "expansions_untranslated_in",
         "big_integers_in",
         "staged",
         "staged_in",
@@ -183,21 +177,11 @@ fn the_chain_has_the_sign_of_an_independent_oracle_on_a_few_calls() {
         if let Some(sign) = stages::filter(refs(&p), 0.0) {
             assert_eq!(sign, expected, "filter {p:?}");
         }
-        // Each stage over spans, on the exact coordinates of the points.
+        // The stage over spans, on the exact coordinates of the points.
         let q = p.map(|x| x.exact(&mut scratch).unwrap());
         let q = [&q[0], &q[1], &q[2], &q[3], &q[4]];
-        for (name, sign) in [
-            (
-                "translated",
-                stages::expansions_translated_in(&mut scratch, q),
-            ),
-            (
-                "untranslated",
-                stages::expansions_untranslated_in(&mut scratch, q),
-            ),
-        ] {
-            assert_eq!(sign, Ok(Some(expected)), "{name} {p:?}");
-        }
+        let sign = stages::expansions_translated_in(&mut scratch, q);
+        assert_eq!(sign, Ok(Some(expected)), "expansions_translated_in {p:?}");
         // The stage on big integers, in the arena that suffices for
         // explicit points.
         let mut buf = vec![0.0; stages::BIG_INTEGERS_EXPLICIT_ARENA];
@@ -515,25 +499,23 @@ fn centred(s: f64, a: f64) -> Points5 {
     ]
 }
 
-/// Each range of the chain, the sizes of the filter and the ranges of the
-/// stages over spans, with an input that has a coordinate at an end of it
+/// Each range of the chain, the sizes of the filter and the range of the
+/// stage over spans, with an input that has a coordinate at an end of it
 /// and the same input with that value one step outside, and the stage of
 /// `CHAIN` that decides each: the next stage whose range holds the input,
 /// and the stage on big integers outside every range, because of a
-/// component outside the range of the stages over spans. The cases of the
-/// stages over spans are checked again with every point a point on a line
+/// component outside the range of the stage over spans. The cases of the
+/// stage over spans are checked again with every point a point on a line
 /// whose parents are both the point.
 #[test]
 fn each_range_hands_over_to_the_next_stage() {
     let (min, t) = stages::SPANS_TRANSLATED_RANGE;
-    let (umin, u) = stages::SPANS_UNTRANSLATED_RANGE;
-    assert!(min == umin && t < u, "{min:e} {umin:e} {t:e} {u:e}");
     let (d_min, d_max) = (stages::D_MIN, stages::D_MAX);
-    assert!(d_min < min && u < d_max);
+    assert!(d_min < min && t < d_max);
     let up = f64::next_up;
     let below = min.next_down();
-    let [filter, translated, untranslated, big] = CHAIN;
-    let cases: [(&str, Points5, &str); 12] = [
+    let [filter, translated, big] = CHAIN;
+    let cases: [(&str, Points5, &str); 8] = [
         ("D_MAX", centred(d_max, d_max), filter),
         ("above D_MAX", centred(d_max, up(d_max)), big),
         ("D_MIN", centred(d_min, d_min), filter),
@@ -550,7 +532,7 @@ fn each_range_hands_over_to_the_next_stage() {
         (
             "above SPANS_TRANSLATED_RANGE",
             near_sphere(t, up(t), 0.0),
-            untranslated,
+            big,
         ),
         (
             "SPANS_TRANSLATED_RANGE.0",
@@ -560,28 +542,6 @@ fn each_range_hands_over_to_the_next_stage() {
         (
             "below SPANS_TRANSLATED_RANGE",
             near_sphere(1.0, 1.0, below),
-            big,
-        ),
-        (
-            "SPANS_UNTRANSLATED_RANGE.1",
-            near_sphere(u, u, 0.0),
-            untranslated,
-        ),
-        (
-            "above SPANS_UNTRANSLATED_RANGE",
-            near_sphere(u, up(u), 0.0),
-            big,
-        ),
-        // `a` above `SPANS_TRANSLATED_RANGE`, so that the lower end is that
-        // of the untranslated stage.
-        (
-            "SPANS_UNTRANSLATED_RANGE.0",
-            near_sphere(u, u, min),
-            untranslated,
-        ),
-        (
-            "below SPANS_UNTRANSLATED_RANGE",
-            near_sphere(u, u, below),
             big,
         ),
     ];
@@ -605,10 +565,10 @@ fn each_range_hands_over_to_the_next_stage() {
 }
 
 /// A point on a line whose exact coordinates are of order 1, near a point
-/// of a sphere, with a component below `SPANS_UNTRANSLATED_RANGE`: the
+/// of a sphere, with a component below `SPANS_TRANSLATED_RANGE`: the
 /// parents differ by `3 * 2^-52` in `x` and `t = 2^-7 (1 + 2^-52)`, so the
 /// exact `x` is `1 + 3 * 2^-59 + 3 * 2^-111`, whose last bit is `2^-111`.
-/// The stages over spans decline it and the stage on big integers decides,
+/// The stage over spans declines it and the stage on big integers decides,
 /// by range.
 #[test]
 fn small_components_go_to_the_big_integers() {
@@ -628,7 +588,7 @@ fn small_components_go_to_the_big_integers() {
     let c = line.exact(&mut scratch).unwrap();
     let x = scratch.get(c.x).to_vec();
     assert!(x.len() <= stages::MAX_COORD_COMPONENTS, "{x:?}");
-    let low = stages::SPANS_UNTRANSLATED_RANGE.0;
+    let low = stages::SPANS_TRANSLATED_RANGE.0;
     assert!(x.iter().any(|v| v.abs() < low), "{x:?}");
     assert!(x.iter().any(|v| v.abs() >= 1.0), "{x:?}");
     for position in 0..5 {

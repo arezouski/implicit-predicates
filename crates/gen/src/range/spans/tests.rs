@@ -2,11 +2,10 @@ use super::{Arena, MAX_COORD_COMPONENTS, MAX_OPERATIONS};
 use crate::differences::difference_graph;
 use crate::dyadic::Dyadic;
 use crate::parse::parse;
-use crate::range::shape::{difference_ops, raw_ops};
+use crate::range::shape::difference_ops;
 
 const ORIENT3D: &str = include_str!("../../../tests/fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("../../../tests/fixtures/insphere.pred");
-const INSPHERE_RAW: &str = include_str!("../../../tests/fixtures/insphere_raw.pred");
 
 /// The exponents of the product domain of the arithmetic core.
 const LOW: i64 = -480;
@@ -15,21 +14,13 @@ const HIGH: i64 = 480;
 fn translated(source: &str) -> Arena {
     let p = parse(source, "t.pred").unwrap().remove(0);
     let g = difference_graph(&p.main, "t.pred", p.position).unwrap();
-    Arena::new(difference_ops(&g), MAX_COORD_COMPONENTS, true)
-}
-
-fn untranslated(source: &str) -> Arena {
-    let p = parse(source, "t.pred").unwrap().remove(0);
-    let g = p.exact.unwrap_or(p.main);
-    Arena::new(raw_ops(&g).unwrap(), MAX_COORD_COMPONENTS, false)
+    Arena::new(difference_ops(&g), MAX_COORD_COMPONENTS)
 }
 
 fn cases() -> Vec<(&'static str, Arena)> {
     vec![
-        ("orient3d translated", translated(ORIENT3D)),
-        ("orient3d untranslated", untranslated(ORIENT3D)),
-        ("insphere translated", translated(INSPHERE)),
-        ("insphere untranslated", untranslated(INSPHERE_RAW)),
+        ("orient3d", translated(ORIENT3D)),
+        ("insphere", translated(INSPHERE)),
     ]
 }
 
@@ -59,14 +50,8 @@ fn the_caps_never_exceed_the_structural_lengths() {
         let mut structural: Vec<u128> = Vec::new();
         for op in &arena.ops {
             use crate::range::shape::Op;
-            let leaf = if arena.translated {
-                2 * arena.components
-            } else {
-                arena.components
-            };
             structural.push(match *op {
-                Op::Leaf => leaf,
-                Op::Constant(c) => u128::from(c != 0),
+                Op::Leaf => 2 * arena.components,
                 Op::Neg(x) => structural[x],
                 Op::Sum(x, y) => structural[x] + structural[y],
                 Op::Product(x, y) => 2 * structural[x] * structural[y],
@@ -110,15 +95,16 @@ fn the_operation_counts_follow_the_evaluation() {
     let (lengths, counts) = arena.fit_with_counts(m, big_m, HIGH).unwrap();
     let l = lengths[2];
     assert_eq!(l, u128::try_from(plan.lengths[2]).unwrap());
-    assert_eq!(counts, [64, 64, 64 + 64 + 32 * (3 * 32 + 2 * (l + 64))]);
-    // Untranslated: the coordinates are read as they are, with no count;
-    // `0 - x` is a merge from the empty expansion, `2 l_x`.
-    let arena = untranslated("fn p(a: Point3, b: Point3) -> Sign { 0 - a.x * b.y }");
+    let product = 64 + 64 + 32 * (3 * 32 + 2 * (l + 64));
+    assert_eq!(counts, [64, 64, product]);
+    // A negation is a merge from the empty expansion, `2 l_x`.
+    let negated = "fn p(a: Point3, b: Point3) -> Sign { -((a.x - b.x) * (a.y - b.y)) }";
+    let arena = translated(negated);
     let plan = arena.plan(LOW, HIGH).unwrap();
     let (m, big_m) = (exponent(plan.range.min), exponent(plan.range.max));
     let (lengths, counts) = arena.fit_with_counts(m, big_m, HIGH).unwrap();
-    let product = 16 * (3 * 16 + 2 * (lengths[3] + 32));
-    assert_eq!(counts, [0, 0, 0, product, product + 2 * lengths[3]]);
+    assert_eq!(lengths[2], l);
+    assert_eq!(counts, [64, 64, product, product + 2 * l]);
 }
 
 /// `d = a.x - b.x`, `q0 = d * d` and `q_k = q_(k-1) + q_(k-1)` up to

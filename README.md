@@ -56,7 +56,7 @@ exact coordinates as floating-point expansions. Most calls are decided by
 the filter, without heap allocation. When it cannot decide, explicit points
 go through exact stages whose temporaries are on the stack, so no call on
 explicit points whose nonzero coordinates have magnitudes in
-`2^-188..=2^239` allocates. With a point on a segment, the exact
+`2^-188..=2^238` allocates. With a point on a segment, the exact
 coordinates are written to an arena of the calling thread, which is
 allocated on the first such call and grows when a call needs more; explicit
 points outside that range use the same arena, for the last stage described

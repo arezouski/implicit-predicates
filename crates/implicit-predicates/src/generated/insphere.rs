@@ -35,17 +35,13 @@ pub const D_MIN: f64 = 1.9913648889155653e-59;
 /// value could overflow.
 pub const D_MAX: f64 = 1.2855504354071922e61;
 
-/// The most components of a coordinate that [`expansions_translated_in`] and
-/// [`expansions_untranslated_in`] accept.
+/// The most components of a coordinate that [`expansions_translated_in`]
+/// accepts.
 pub const MAX_COORD_COMPONENTS: usize = 16;
 
 /// `(min, max)`, `(2^-108, 2^154)`: [`expansions_translated_in`] decides when
 /// every nonzero component of every coordinate has a magnitude in `min..=max`.
 pub const SPANS_TRANSLATED_RANGE: (f64, f64) = (3.0814879110195774e-33, 2.283596308329536e46);
-
-/// `(min, max)`, `(2^-108, 2^155)`: [`expansions_untranslated_in`] decides when
-/// every nonzero component of every coordinate has a magnitude in `min..=max`.
-pub const SPANS_UNTRANSLATED_RANGE: (f64, f64) = (3.0814879110195774e-33, 4.567192616659072e46);
 
 /// The `f64` slots of the arena, one 64-bit word each, that suffice for
 /// [`big_integers_in`] on explicit points, their coordinates included: writing
@@ -320,227 +316,6 @@ pub fn expansions_translated_in(
     sign.map(Some)
 }
 
-/// The exact sign of the predicate for points given by their exact coordinates:
-/// its form for exact evaluation, marked `#[exact]` in the definition,
-/// evaluated with expansions in `scratch` on the coordinates.
-///
-/// `Ok(None)` means that this stage cannot decide: some point has a weight
-/// other than [`Weight::One`], or some coordinate has more than
-/// [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude
-/// outside [`SPANS_UNTRANSLATED_RANGE`] or not finite.
-///
-/// Requirement: every coordinate is a valid expansion of `scratch`: nonzero
-/// components of strictly increasing magnitude that do not overlap, as
-/// [`Point::exact`](implicit_predicates_core::Point::exact) writes them. This
-/// is not checked, and the result is unspecified otherwise.
-///
-/// The arena is left as it was, on success and on error.
-///
-/// # Errors
-///
-/// [`ScratchExhausted`] if `scratch` runs out of room.
-#[cold]
-#[inline(never)]
-pub fn expansions_untranslated_in(
-    scratch: &mut Scratch<'_>,
-    p: [&ExactCoords; 5],
-) -> Result<Option<Sign>, ScratchExhausted> {
-    fn evaluate(scratch: &mut Scratch<'_>, c: [[Span; 3]; 5]) -> Result<Sign, ScratchExhausted> {
-        let e1 = scratch.product(c[0][0], c[0][0])?;
-        let e3 = scratch.product(c[0][1], c[0][1])?;
-        let e4 = scratch.sum(e1, e3)?;
-        let e6 = scratch.product(c[0][2], c[0][2])?;
-        let e7 = scratch.sum(e4, e6)?;
-        let e9 = scratch.product(c[1][0], c[1][0])?;
-        let e11 = scratch.product(c[1][1], c[1][1])?;
-        let e12 = scratch.sum(e9, e11)?;
-        let e14 = scratch.product(c[1][2], c[1][2])?;
-        let e15 = scratch.sum(e12, e14)?;
-        let e17 = scratch.product(c[2][0], c[2][0])?;
-        let e19 = scratch.product(c[2][1], c[2][1])?;
-        let e20 = scratch.sum(e17, e19)?;
-        let e22 = scratch.product(c[2][2], c[2][2])?;
-        let e23 = scratch.sum(e20, e22)?;
-        let e25 = scratch.product(c[3][0], c[3][0])?;
-        let e27 = scratch.product(c[3][1], c[3][1])?;
-        let e28 = scratch.sum(e25, e27)?;
-        let e30 = scratch.product(c[3][2], c[3][2])?;
-        let e31 = scratch.sum(e28, e30)?;
-        let e33 = scratch.product(c[4][0], c[4][0])?;
-        let e35 = scratch.product(c[4][1], c[4][1])?;
-        let e36 = scratch.sum(e33, e35)?;
-        let e38 = scratch.product(c[4][2], c[4][2])?;
-        let e39 = scratch.sum(e36, e38)?;
-        let e40 = scratch.product(c[1][1], c[2][2])?;
-        let e41 = scratch.product(c[1][2], c[2][1])?;
-        let e42 = scratch.diff(e40, e41)?;
-        let e43 = scratch.product(c[0][0], e42)?;
-        let e44 = scratch.product(c[1][0], c[2][2])?;
-        let e45 = scratch.product(c[1][2], c[2][0])?;
-        let e46 = scratch.diff(e44, e45)?;
-        let e47 = scratch.product(c[0][1], e46)?;
-        let e48 = scratch.diff(e43, e47)?;
-        let e49 = scratch.product(c[1][0], c[2][1])?;
-        let e50 = scratch.product(c[1][1], c[2][0])?;
-        let e51 = scratch.diff(e49, e50)?;
-        let e52 = scratch.product(c[0][2], e51)?;
-        let e53 = scratch.sum(e48, e52)?;
-        let e54 = scratch.product(c[1][1], c[3][2])?;
-        let e55 = scratch.product(c[1][2], c[3][1])?;
-        let e56 = scratch.diff(e54, e55)?;
-        let e57 = scratch.product(c[0][0], e56)?;
-        let e58 = scratch.product(c[1][0], c[3][2])?;
-        let e59 = scratch.product(c[1][2], c[3][0])?;
-        let e60 = scratch.diff(e58, e59)?;
-        let e61 = scratch.product(c[0][1], e60)?;
-        let e62 = scratch.diff(e57, e61)?;
-        let e63 = scratch.product(c[1][0], c[3][1])?;
-        let e64 = scratch.product(c[1][1], c[3][0])?;
-        let e65 = scratch.diff(e63, e64)?;
-        let e66 = scratch.product(c[0][2], e65)?;
-        let e67 = scratch.sum(e62, e66)?;
-        let e68 = scratch.product(c[1][1], c[4][2])?;
-        let e69 = scratch.product(c[1][2], c[4][1])?;
-        let e70 = scratch.diff(e68, e69)?;
-        let e71 = scratch.product(c[0][0], e70)?;
-        let e72 = scratch.product(c[1][0], c[4][2])?;
-        let e73 = scratch.product(c[1][2], c[4][0])?;
-        let e74 = scratch.diff(e72, e73)?;
-        let e75 = scratch.product(c[0][1], e74)?;
-        let e76 = scratch.diff(e71, e75)?;
-        let e77 = scratch.product(c[1][0], c[4][1])?;
-        let e78 = scratch.product(c[1][1], c[4][0])?;
-        let e79 = scratch.diff(e77, e78)?;
-        let e80 = scratch.product(c[0][2], e79)?;
-        let e81 = scratch.sum(e76, e80)?;
-        let e82 = scratch.product(c[2][1], c[3][2])?;
-        let e83 = scratch.product(c[2][2], c[3][1])?;
-        let e84 = scratch.diff(e82, e83)?;
-        let e85 = scratch.product(c[0][0], e84)?;
-        let e86 = scratch.product(c[2][0], c[3][2])?;
-        let e87 = scratch.product(c[2][2], c[3][0])?;
-        let e88 = scratch.diff(e86, e87)?;
-        let e89 = scratch.product(c[0][1], e88)?;
-        let e90 = scratch.diff(e85, e89)?;
-        let e91 = scratch.product(c[2][0], c[3][1])?;
-        let e92 = scratch.product(c[2][1], c[3][0])?;
-        let e93 = scratch.diff(e91, e92)?;
-        let e94 = scratch.product(c[0][2], e93)?;
-        let e95 = scratch.sum(e90, e94)?;
-        let e96 = scratch.product(c[2][1], c[4][2])?;
-        let e97 = scratch.product(c[2][2], c[4][1])?;
-        let e98 = scratch.diff(e96, e97)?;
-        let e99 = scratch.product(c[0][0], e98)?;
-        let e100 = scratch.product(c[2][0], c[4][2])?;
-        let e101 = scratch.product(c[2][2], c[4][0])?;
-        let e102 = scratch.diff(e100, e101)?;
-        let e103 = scratch.product(c[0][1], e102)?;
-        let e104 = scratch.diff(e99, e103)?;
-        let e105 = scratch.product(c[2][0], c[4][1])?;
-        let e106 = scratch.product(c[2][1], c[4][0])?;
-        let e107 = scratch.diff(e105, e106)?;
-        let e108 = scratch.product(c[0][2], e107)?;
-        let e109 = scratch.sum(e104, e108)?;
-        let e110 = scratch.product(c[3][1], c[4][2])?;
-        let e111 = scratch.product(c[3][2], c[4][1])?;
-        let e112 = scratch.diff(e110, e111)?;
-        let e113 = scratch.product(c[0][0], e112)?;
-        let e114 = scratch.product(c[3][0], c[4][2])?;
-        let e115 = scratch.product(c[3][2], c[4][0])?;
-        let e116 = scratch.diff(e114, e115)?;
-        let e117 = scratch.product(c[0][1], e116)?;
-        let e118 = scratch.diff(e113, e117)?;
-        let e119 = scratch.product(c[3][0], c[4][1])?;
-        let e120 = scratch.product(c[3][1], c[4][0])?;
-        let e121 = scratch.diff(e119, e120)?;
-        let e122 = scratch.product(c[0][2], e121)?;
-        let e123 = scratch.sum(e118, e122)?;
-        let e124 = scratch.product(c[1][0], e84)?;
-        let e125 = scratch.product(c[1][1], e88)?;
-        let e126 = scratch.diff(e124, e125)?;
-        let e127 = scratch.product(c[1][2], e93)?;
-        let e128 = scratch.sum(e126, e127)?;
-        let e129 = scratch.product(c[1][0], e98)?;
-        let e130 = scratch.product(c[1][1], e102)?;
-        let e131 = scratch.diff(e129, e130)?;
-        let e132 = scratch.product(c[1][2], e107)?;
-        let e133 = scratch.sum(e131, e132)?;
-        let e134 = scratch.product(c[1][0], e112)?;
-        let e135 = scratch.product(c[1][1], e116)?;
-        let e136 = scratch.diff(e134, e135)?;
-        let e137 = scratch.product(c[1][2], e121)?;
-        let e138 = scratch.sum(e136, e137)?;
-        let e139 = scratch.product(c[2][0], e112)?;
-        let e140 = scratch.product(c[2][1], e116)?;
-        let e141 = scratch.diff(e139, e140)?;
-        let e142 = scratch.product(c[2][2], e121)?;
-        let e143 = scratch.sum(e141, e142)?;
-        let e144 = scratch.push(&[])?;
-        let e145 = scratch.diff(e144, e15)?;
-        let e146 = scratch.product(e145, e143)?;
-        let e147 = scratch.product(e23, e138)?;
-        let e148 = scratch.sum(e146, e147)?;
-        let e149 = scratch.product(e31, e133)?;
-        let e150 = scratch.diff(e148, e149)?;
-        let e151 = scratch.product(e39, e128)?;
-        let e152 = scratch.sum(e150, e151)?;
-        let e153 = scratch.diff(e144, e7)?;
-        let e154 = scratch.product(e153, e143)?;
-        let e155 = scratch.product(e23, e123)?;
-        let e156 = scratch.sum(e154, e155)?;
-        let e157 = scratch.product(e31, e109)?;
-        let e158 = scratch.diff(e156, e157)?;
-        let e159 = scratch.product(e39, e95)?;
-        let e160 = scratch.sum(e158, e159)?;
-        let e161 = scratch.product(e153, e138)?;
-        let e162 = scratch.product(e15, e123)?;
-        let e163 = scratch.sum(e161, e162)?;
-        let e164 = scratch.product(e31, e81)?;
-        let e165 = scratch.diff(e163, e164)?;
-        let e166 = scratch.product(e39, e67)?;
-        let e167 = scratch.sum(e165, e166)?;
-        let e168 = scratch.product(e153, e133)?;
-        let e169 = scratch.product(e15, e109)?;
-        let e170 = scratch.sum(e168, e169)?;
-        let e171 = scratch.product(e23, e81)?;
-        let e172 = scratch.diff(e170, e171)?;
-        let e173 = scratch.product(e39, e53)?;
-        let e174 = scratch.sum(e172, e173)?;
-        let e175 = scratch.product(e153, e128)?;
-        let e176 = scratch.product(e15, e95)?;
-        let e177 = scratch.sum(e175, e176)?;
-        let e178 = scratch.product(e23, e67)?;
-        let e179 = scratch.diff(e177, e178)?;
-        let e180 = scratch.product(e31, e53)?;
-        let e181 = scratch.sum(e179, e180)?;
-        let e182 = scratch.diff(e152, e160)?;
-        let e183 = scratch.sum(e182, e167)?;
-        let e184 = scratch.diff(e183, e174)?;
-        let e185 = scratch.sum(e184, e181)?;
-        Ok(scratch.sign(e185))
-    }
-    // Every coordinate read must be short enough and within the range; the
-    // arena is reset to its mark whatever the evaluation returns.
-    if !p.iter().all(|q| q.w == Weight::One) {
-        return Ok(None);
-    }
-    let c = p.map(|q| [q.x, q.y, q.z]);
-    let coordinates = [
-        c[0][0], c[0][1], c[0][2], c[1][0], c[1][1], c[1][2], c[2][0], c[2][1], c[2][2], c[3][0],
-        c[3][1], c[3][2], c[4][0], c[4][1], c[4][2],
-    ];
-    if !coordinates
-        .into_iter()
-        .all(|s| span_in_range(scratch.get(s), SPANS_UNTRANSLATED_RANGE))
-    {
-        return Ok(None);
-    }
-    let mark = scratch.mark();
-    let sign = evaluate(scratch, c);
-    scratch.reset(mark);
-    sign.map(Some)
-}
-
 /// The exact sign of the predicate for points given by their coordinates as big
 /// integers: its main form evaluated with the big-integer operations of
 /// `scratch`, which are exact whatever the size of the values, so this stage
@@ -661,10 +436,10 @@ pub fn big_integers_in(
 /// The sign of the predicate for explicit points, from the first stage that
 /// decides.
 ///
-/// Runs [`filter`] with `e = 0.0`, then [`expansions_translated_in`], then
-/// [`expansions_untranslated_in`]. The stages that take an arena run on the
-/// exact coordinates of the points written to `scratch`, which is left as it
-/// was. `Ok(None)` means that no stage can decide.
+/// Runs [`filter`] with `e = 0.0`, then [`expansions_translated_in`]. The
+/// stages that take an arena run on the exact coordinates of the points written
+/// to `scratch`, which is left as it was. `Ok(None)` means that no stage can
+/// decide.
 ///
 /// # Errors
 ///
@@ -701,9 +476,6 @@ fn staged_in_arena(
         };
         let q = [&q0, &q1, &q2, &q3, &q4];
         if let Some(sign) = expansions_translated_in(scratch, q)? {
-            return Ok(Some(sign));
-        }
-        if let Some(sign) = expansions_untranslated_in(scratch, q)? {
             return Ok(Some(sign));
         }
         Ok(None)
@@ -756,10 +528,9 @@ pub fn filter_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
 }
 
 /// The exact stages of [`staged`], after its filter:
-/// [`expansions_translated_in`], then [`expansions_untranslated_in`]. The
-/// stages that take an arena run on the exact coordinates of the points written
-/// to `scratch`, which is left as it was. `Ok(None)` means that no stage can
-/// decide.
+/// [`expansions_translated_in`]. The stages that take an arena run on the exact
+/// coordinates of the points written to `scratch`, which is left as it was.
+/// `Ok(None)` means that no stage can decide.
 ///
 /// # Errors
 ///
@@ -809,14 +580,13 @@ pub fn exact_stages_explicit_in(
 }
 
 /// The exact sign of the predicate for points of any type:
-/// [`expansions_translated_in`], then [`expansions_untranslated_in`], on the
-/// exact coordinates of the points written to `scratch`, then, when they do not
-/// decide, [`big_integers_in`] on the coordinates of the points as big integers
-/// written to `scratch`, which always decides. The stages over spans are
-/// skipped when a point cannot give its exact coordinates as expansions, as
-/// when its inputs are outside the range of its exact arithmetic
-/// ([`ExactError::OutOfRange`]). Each attempt starts from the mark of `scratch`
-/// on entry, to which it is reset whatever they return.
+/// [`expansions_translated_in`], on the exact coordinates of the points written
+/// to `scratch`, then, when it does not decide, [`big_integers_in`] on the
+/// coordinates of the points as big integers written to `scratch`, which always
+/// decides. The stage over spans is skipped when a point cannot give its exact
+/// coordinates as expansions, as when its inputs are outside the range of its
+/// exact arithmetic ([`ExactError::OutOfRange`]). Each attempt starts from the
+/// mark of `scratch` on entry, to which it is reset whatever they return.
 ///
 /// # Errors
 ///
@@ -856,10 +626,7 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
             return Ok(None);
         };
         let q = [&q0, &q1, &q2, &q3, &q4];
-        if let Some(sign) = expansions_translated_in(scratch, q)? {
-            return Ok(Some(sign));
-        }
-        expansions_untranslated_in(scratch, q)
+        expansions_translated_in(scratch, q)
     }
     fn big<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
         scratch: &mut Scratch<'_>,

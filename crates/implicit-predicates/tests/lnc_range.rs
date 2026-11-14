@@ -2,7 +2,7 @@
 //! before the stage on big integers: `t` zero or at least `2^-k` for some
 //! `0 <= k <= 317`, and every nonzero coordinate of `p` and `q` of a
 //! magnitude between `2^(k - 84)` and `2^233`, with every nonzero coordinate
-//! of the explicit points between `2^-188` and `2^235`. Inside it the exact
+//! of the explicit points between `2^-188` and `2^234`. Inside it the exact
 //! coordinates of the point are computed and every component lies in the
 //! range of the exact stage over spans, so a stage on expansions decides,
 //! also when only an exact stage can decide; outside it a call can need
@@ -21,10 +21,10 @@ use implicit_predicates_test_support::{config, leaf};
 use proptest::prelude::*;
 
 /// The least and the greatest magnitude of a nonzero component that the
-/// exact stage over spans accepts, `2^-188` and `2^235`.
+/// exact stage over spans accepts, `2^-188` and `2^234`.
 fn spans_range() -> (f64, f64) {
-    let range = stages::SPANS_UNTRANSLATED_RANGE;
-    assert_eq!(range, (2f64.powi(-188), 2f64.powi(235)));
+    let range = stages::SPANS_TRANSLATED_RANGE;
+    assert_eq!(range, (2f64.powi(-188), 2f64.powi(234)));
     range
 }
 
@@ -134,7 +134,7 @@ proptest! {
     #[test]
     fn inputs_meeting_the_condition_are_decided(
         (p, q, t) in condition(),
-        others in [point(-188, 235), point(-188, 235)],
+        others in [point(-188, 234), point(-188, 234)],
     ) {
         check_condition(p, q, t, others);
     }
@@ -143,7 +143,7 @@ proptest! {
 #[test]
 fn inputs_at_the_edges_of_the_condition_are_decided() {
     let top = 2f64.powi(233);
-    let others = [[1.0, -0.75, 3.0], [2f64.powi(-188), 0.0, 2f64.powi(235)]];
+    let others = [[1.0, -0.75, 3.0], [2f64.powi(-188), 0.0, 2f64.powi(234)]];
     for k in [0, 1, 53, 54, 84, 140, 317] {
         let low = 2f64.powi(k - 84);
         let ts = [0.0, 1.0, 2f64.powi(-k), 1f64.next_down().max(2f64.powi(-k))];

@@ -49,21 +49,13 @@ pub const DIFFERENCES_RANGE: (f64, f64) = (2.5489470578119236e-57, 8.83423532389
 /// every nonzero coordinate has a magnitude in `min..=max`.
 pub const TRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 4.417117661945961e71);
 
-/// `(min, max)`, `(2^-188, 2^239)`: [`expansions_untranslated`] decides when
-/// every nonzero coordinate has a magnitude in `min..=max`.
-pub const UNTRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 8.834235323891922e71);
-
-/// The most components of a coordinate that [`expansions_translated_in`] and
-/// [`expansions_untranslated_in`] accept.
+/// The most components of a coordinate that [`expansions_translated_in`]
+/// accepts.
 pub const MAX_COORD_COMPONENTS: usize = 16;
 
 /// `(min, max)`, `(2^-188, 2^234)`: [`expansions_translated_in`] decides when
 /// every nonzero component of every coordinate has a magnitude in `min..=max`.
 pub const SPANS_TRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 2.7606985387162255e70);
-
-/// `(min, max)`, `(2^-188, 2^235)`: [`expansions_untranslated_in`] decides when
-/// every nonzero component of every coordinate has a magnitude in `min..=max`.
-pub const SPANS_UNTRANSLATED_RANGE: (f64, f64) = (2.5489470578119236e-57, 5.521397077432451e70);
 
 /// The `f64` slots of the arena, one 64-bit word each, that suffice for
 /// [`big_integers_in`] on explicit points, their coordinates included: writing
@@ -310,132 +302,6 @@ pub fn expansions_translated(p: [&[f64; 3]; 4]) -> Option<Sign> {
     Some(expansion::sign(&e22[..l22]))
 }
 
-/// The exact sign of the predicate: its form for exact evaluation, marked
-/// `#[exact]` in the definition, evaluated with expansions on the coordinates.
-///
-/// `None` means that this stage cannot decide: some nonzero coordinate has a
-/// magnitude outside [`UNTRANSLATED_RANGE`] or is not finite.
-#[cold]
-#[inline(never)]
-pub fn expansions_untranslated(p: [&[f64; 3]; 4]) -> Option<Sign> {
-    // Stack: 568 f64 (4544 bytes) of expansions.
-    let coordinates = [
-        p[0][0], p[0][1], p[0][2], p[1][0], p[1][1], p[1][2], p[2][0], p[2][1], p[2][2], p[3][0],
-        p[3][1], p[3][2],
-    ];
-    if !coordinates
-        .into_iter()
-        .all(|x| in_range(x, UNTRANSLATED_RANGE))
-    {
-        return None;
-    }
-    let mut e3 = [0.0; 2];
-    let l3 = expansion::from_two_product(p[2][1], p[3][2], &mut e3);
-    let mut e6 = [0.0; 2];
-    let l6 = expansion::from_two_product(p[2][2], p[3][1], &mut e6);
-    let mut e7 = [0.0; 4];
-    let l7 = expansion::diff(&e3[..l3], &e6[..l6], &mut e7);
-    let mut e8 = [0.0; 8];
-    let l8 = expansion::scale(&e7[..l7], p[1][0], &mut e8);
-    let mut e11 = [0.0; 2];
-    let l11 = expansion::from_two_product(p[2][0], p[3][2], &mut e11);
-    let mut e13 = [0.0; 2];
-    let l13 = expansion::from_two_product(p[2][2], p[3][0], &mut e13);
-    let mut e14 = [0.0; 4];
-    let l14 = expansion::diff(&e11[..l11], &e13[..l13], &mut e14);
-    let mut e15 = [0.0; 8];
-    let l15 = expansion::scale(&e14[..l14], p[1][1], &mut e15);
-    let mut e16 = [0.0; 16];
-    let l16 = expansion::diff(&e8[..l8], &e15[..l15], &mut e16);
-    let mut e18 = [0.0; 2];
-    let l18 = expansion::from_two_product(p[2][0], p[3][1], &mut e18);
-    let mut e19 = [0.0; 2];
-    let l19 = expansion::from_two_product(p[2][1], p[3][0], &mut e19);
-    let mut e20 = [0.0; 4];
-    let l20 = expansion::diff(&e18[..l18], &e19[..l19], &mut e20);
-    let mut e21 = [0.0; 8];
-    let l21 = expansion::scale(&e20[..l20], p[1][2], &mut e21);
-    let mut e22 = [0.0; 24];
-    let l22 = expansion::sum(&e16[..l16], &e21[..l21], &mut e22);
-    let mut e24 = [0.0; 8];
-    let l24 = expansion::scale(&e7[..l7], p[0][0], &mut e24);
-    let mut e26 = [0.0; 8];
-    let l26 = expansion::scale(&e14[..l14], p[0][1], &mut e26);
-    let mut e27 = [0.0; 16];
-    let l27 = expansion::diff(&e24[..l24], &e26[..l26], &mut e27);
-    let mut e29 = [0.0; 8];
-    let l29 = expansion::scale(&e20[..l20], p[0][2], &mut e29);
-    let mut e30 = [0.0; 24];
-    let l30 = expansion::sum(&e27[..l27], &e29[..l29], &mut e30);
-    let mut e31 = [0.0; 2];
-    let l31 = expansion::from_two_product(p[1][1], p[3][2], &mut e31);
-    let mut e32 = [0.0; 2];
-    let l32 = expansion::from_two_product(p[1][2], p[3][1], &mut e32);
-    let mut e33 = [0.0; 4];
-    let l33 = expansion::diff(&e31[..l31], &e32[..l32], &mut e33);
-    let mut e34 = [0.0; 8];
-    let l34 = expansion::scale(&e33[..l33], p[0][0], &mut e34);
-    let mut e35 = [0.0; 2];
-    let l35 = expansion::from_two_product(p[1][0], p[3][2], &mut e35);
-    let mut e36 = [0.0; 2];
-    let l36 = expansion::from_two_product(p[1][2], p[3][0], &mut e36);
-    let mut e37 = [0.0; 4];
-    let l37 = expansion::diff(&e35[..l35], &e36[..l36], &mut e37);
-    let mut e38 = [0.0; 8];
-    let l38 = expansion::scale(&e37[..l37], p[0][1], &mut e38);
-    let mut e39 = [0.0; 16];
-    let l39 = expansion::diff(&e34[..l34], &e38[..l38], &mut e39);
-    let mut e40 = [0.0; 2];
-    let l40 = expansion::from_two_product(p[1][0], p[3][1], &mut e40);
-    let mut e41 = [0.0; 2];
-    let l41 = expansion::from_two_product(p[1][1], p[3][0], &mut e41);
-    let mut e42 = [0.0; 4];
-    let l42 = expansion::diff(&e40[..l40], &e41[..l41], &mut e42);
-    let mut e43 = [0.0; 8];
-    let l43 = expansion::scale(&e42[..l42], p[0][2], &mut e43);
-    let mut e44 = [0.0; 24];
-    let l44 = expansion::sum(&e39[..l39], &e43[..l43], &mut e44);
-    let mut e45 = [0.0; 2];
-    let l45 = expansion::from_two_product(p[1][1], p[2][2], &mut e45);
-    let mut e46 = [0.0; 2];
-    let l46 = expansion::from_two_product(p[1][2], p[2][1], &mut e46);
-    let mut e47 = [0.0; 4];
-    let l47 = expansion::diff(&e45[..l45], &e46[..l46], &mut e47);
-    let mut e48 = [0.0; 8];
-    let l48 = expansion::scale(&e47[..l47], p[0][0], &mut e48);
-    let mut e49 = [0.0; 2];
-    let l49 = expansion::from_two_product(p[1][0], p[2][2], &mut e49);
-    let mut e50 = [0.0; 2];
-    let l50 = expansion::from_two_product(p[1][2], p[2][0], &mut e50);
-    let mut e51 = [0.0; 4];
-    let l51 = expansion::diff(&e49[..l49], &e50[..l50], &mut e51);
-    let mut e52 = [0.0; 8];
-    let l52 = expansion::scale(&e51[..l51], p[0][1], &mut e52);
-    let mut e53 = [0.0; 16];
-    let l53 = expansion::diff(&e48[..l48], &e52[..l52], &mut e53);
-    let mut e54 = [0.0; 2];
-    let l54 = expansion::from_two_product(p[1][0], p[2][1], &mut e54);
-    let mut e55 = [0.0; 2];
-    let l55 = expansion::from_two_product(p[1][1], p[2][0], &mut e55);
-    let mut e56 = [0.0; 4];
-    let l56 = expansion::diff(&e54[..l54], &e55[..l55], &mut e56);
-    let mut e57 = [0.0; 8];
-    let l57 = expansion::scale(&e56[..l56], p[0][2], &mut e57);
-    let mut e58 = [0.0; 24];
-    let l58 = expansion::sum(&e53[..l53], &e57[..l57], &mut e58);
-    let mut e60 = [0.0; 24];
-    e60[..l22].copy_from_slice(&e22[..l22]);
-    expansion::negate(&mut e60[..l22]);
-    let l60 = l22;
-    let mut e61 = [0.0; 48];
-    let l61 = expansion::sum(&e60[..l60], &e30[..l30], &mut e61);
-    let mut e62 = [0.0; 72];
-    let l62 = expansion::diff(&e61[..l61], &e44[..l44], &mut e62);
-    let mut e63 = [0.0; 96];
-    let l63 = expansion::sum(&e62[..l62], &e58[..l58], &mut e63);
-    Some(expansion::sign(&e63[..l63]))
-}
-
 /// The exact sign of the predicate for points given by their exact coordinates:
 /// its main form evaluated with expansions in `scratch`, each difference of
 /// coordinates computed exactly.
@@ -509,108 +375,6 @@ pub fn expansions_translated_in(
     sign.map(Some)
 }
 
-/// The exact sign of the predicate for points given by their exact coordinates:
-/// its form for exact evaluation, marked `#[exact]` in the definition,
-/// evaluated with expansions in `scratch` on the coordinates.
-///
-/// `Ok(None)` means that this stage cannot decide: some point has a weight
-/// other than [`Weight::One`], or some coordinate has more than
-/// [`MAX_COORD_COMPONENTS`] components or a nonzero component of magnitude
-/// outside [`SPANS_UNTRANSLATED_RANGE`] or not finite.
-///
-/// Requirement: every coordinate is a valid expansion of `scratch`: nonzero
-/// components of strictly increasing magnitude that do not overlap, as
-/// [`Point::exact`](implicit_predicates_core::Point::exact) writes them. This
-/// is not checked, and the result is unspecified otherwise.
-///
-/// The arena is left as it was, on success and on error.
-///
-/// # Errors
-///
-/// [`ScratchExhausted`] if `scratch` runs out of room.
-#[cold]
-#[inline(never)]
-pub fn expansions_untranslated_in(
-    scratch: &mut Scratch<'_>,
-    p: [&ExactCoords; 4],
-) -> Result<Option<Sign>, ScratchExhausted> {
-    fn evaluate(scratch: &mut Scratch<'_>, c: [[Span; 3]; 4]) -> Result<Sign, ScratchExhausted> {
-        let e3 = scratch.product(c[2][1], c[3][2])?;
-        let e6 = scratch.product(c[2][2], c[3][1])?;
-        let e7 = scratch.diff(e3, e6)?;
-        let e8 = scratch.product(c[1][0], e7)?;
-        let e11 = scratch.product(c[2][0], c[3][2])?;
-        let e13 = scratch.product(c[2][2], c[3][0])?;
-        let e14 = scratch.diff(e11, e13)?;
-        let e15 = scratch.product(c[1][1], e14)?;
-        let e16 = scratch.diff(e8, e15)?;
-        let e18 = scratch.product(c[2][0], c[3][1])?;
-        let e19 = scratch.product(c[2][1], c[3][0])?;
-        let e20 = scratch.diff(e18, e19)?;
-        let e21 = scratch.product(c[1][2], e20)?;
-        let e22 = scratch.sum(e16, e21)?;
-        let e24 = scratch.product(c[0][0], e7)?;
-        let e26 = scratch.product(c[0][1], e14)?;
-        let e27 = scratch.diff(e24, e26)?;
-        let e29 = scratch.product(c[0][2], e20)?;
-        let e30 = scratch.sum(e27, e29)?;
-        let e31 = scratch.product(c[1][1], c[3][2])?;
-        let e32 = scratch.product(c[1][2], c[3][1])?;
-        let e33 = scratch.diff(e31, e32)?;
-        let e34 = scratch.product(c[0][0], e33)?;
-        let e35 = scratch.product(c[1][0], c[3][2])?;
-        let e36 = scratch.product(c[1][2], c[3][0])?;
-        let e37 = scratch.diff(e35, e36)?;
-        let e38 = scratch.product(c[0][1], e37)?;
-        let e39 = scratch.diff(e34, e38)?;
-        let e40 = scratch.product(c[1][0], c[3][1])?;
-        let e41 = scratch.product(c[1][1], c[3][0])?;
-        let e42 = scratch.diff(e40, e41)?;
-        let e43 = scratch.product(c[0][2], e42)?;
-        let e44 = scratch.sum(e39, e43)?;
-        let e45 = scratch.product(c[1][1], c[2][2])?;
-        let e46 = scratch.product(c[1][2], c[2][1])?;
-        let e47 = scratch.diff(e45, e46)?;
-        let e48 = scratch.product(c[0][0], e47)?;
-        let e49 = scratch.product(c[1][0], c[2][2])?;
-        let e50 = scratch.product(c[1][2], c[2][0])?;
-        let e51 = scratch.diff(e49, e50)?;
-        let e52 = scratch.product(c[0][1], e51)?;
-        let e53 = scratch.diff(e48, e52)?;
-        let e54 = scratch.product(c[1][0], c[2][1])?;
-        let e55 = scratch.product(c[1][1], c[2][0])?;
-        let e56 = scratch.diff(e54, e55)?;
-        let e57 = scratch.product(c[0][2], e56)?;
-        let e58 = scratch.sum(e53, e57)?;
-        let e59 = scratch.push(&[])?;
-        let e60 = scratch.diff(e59, e22)?;
-        let e61 = scratch.sum(e60, e30)?;
-        let e62 = scratch.diff(e61, e44)?;
-        let e63 = scratch.sum(e62, e58)?;
-        Ok(scratch.sign(e63))
-    }
-    // Every coordinate read must be short enough and within the range; the
-    // arena is reset to its mark whatever the evaluation returns.
-    if !p.iter().all(|q| q.w == Weight::One) {
-        return Ok(None);
-    }
-    let c = p.map(|q| [q.x, q.y, q.z]);
-    let coordinates = [
-        c[0][0], c[0][1], c[0][2], c[1][0], c[1][1], c[1][2], c[2][0], c[2][1], c[2][2], c[3][0],
-        c[3][1], c[3][2],
-    ];
-    if !coordinates
-        .into_iter()
-        .all(|s| span_in_range(scratch.get(s), SPANS_UNTRANSLATED_RANGE))
-    {
-        return Ok(None);
-    }
-    let mark = scratch.mark();
-    let sign = evaluate(scratch, c);
-    scratch.reset(mark);
-    sign.map(Some)
-}
-
 /// The exact sign of the predicate for points given by their coordinates as big
 /// integers: its main form evaluated with the big-integer operations of
 /// `scratch`, which are exact whatever the size of the values, so this stage
@@ -668,14 +432,12 @@ pub fn big_integers_in(
 /// decides.
 ///
 /// Runs [`filter`] with `e = [0.0; 3]`, then [`exact_differences`], then
-/// [`expansions_translated`], then [`expansions_untranslated`]. `None` means
-/// that no stage can decide.
+/// [`expansions_translated`]. `None` means that no stage can decide.
 #[inline]
 pub fn staged(p: [&[f64; 3]; 4]) -> Option<Sign> {
     filter(p, [0.0; 3])
         .or_else(|| exact_differences(p))
         .or_else(|| expansions_translated(p))
-        .or_else(|| expansions_untranslated(p))
 }
 
 /// [`filter`] on the approximations of points of any type, with the uncertainty
@@ -702,14 +464,11 @@ pub fn filter_points<P0: Point, P1: Point, P2: Point, P3: Point>(
 }
 
 /// The exact stages of [`staged`], after its filter: [`exact_differences`],
-/// then [`expansions_translated`], then [`expansions_untranslated`]. `None`
-/// means that no stage can decide.
+/// then [`expansions_translated`]. `None` means that no stage can decide.
 #[cold]
 #[inline(never)]
 pub fn exact_stages(p: [&[f64; 3]; 4]) -> Option<Sign> {
-    exact_differences(p)
-        .or_else(|| expansions_translated(p))
-        .or_else(|| expansions_untranslated(p))
+    exact_differences(p).or_else(|| expansions_translated(p))
 }
 
 /// The exact sign of the predicate for explicit points: [`exact_stages`], which
@@ -747,14 +506,13 @@ pub fn exact_stages_explicit_in(
 }
 
 /// The exact sign of the predicate for points of any type:
-/// [`expansions_translated_in`], then [`expansions_untranslated_in`], on the
-/// exact coordinates of the points written to `scratch`, then, when they do not
-/// decide, [`big_integers_in`] on the coordinates of the points as big integers
-/// written to `scratch`, which always decides. The stages over spans are
-/// skipped when a point cannot give its exact coordinates as expansions, as
-/// when its inputs are outside the range of its exact arithmetic
-/// ([`ExactError::OutOfRange`]). Each attempt starts from the mark of `scratch`
-/// on entry, to which it is reset whatever they return.
+/// [`expansions_translated_in`], on the exact coordinates of the points written
+/// to `scratch`, then, when it does not decide, [`big_integers_in`] on the
+/// coordinates of the points as big integers written to `scratch`, which always
+/// decides. The stage over spans is skipped when a point cannot give its exact
+/// coordinates as expansions, as when its inputs are outside the range of its
+/// exact arithmetic ([`ExactError::OutOfRange`]). Each attempt starts from the
+/// mark of `scratch` on entry, to which it is reset whatever they return.
 ///
 /// # Errors
 ///
@@ -791,10 +549,7 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point>(
             return Ok(None);
         };
         let q = [&q0, &q1, &q2, &q3];
-        if let Some(sign) = expansions_translated_in(scratch, q)? {
-            return Ok(Some(sign));
-        }
-        expansions_untranslated_in(scratch, q)
+        expansions_translated_in(scratch, q)
     }
     fn big<P0: Point, P1: Point, P2: Point, P3: Point>(
         scratch: &mut Scratch<'_>,

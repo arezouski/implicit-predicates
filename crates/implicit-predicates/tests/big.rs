@@ -11,11 +11,13 @@ mod common;
 use common::args::{Arg, Args, Call, Orient3d, Orient3dIn, any_points, exact_sign, with_concrete};
 use common::generated::{exact, exact_at};
 use common::odd_points::{Long, NoCoordinates, Weighted, WeightedOutOfRange};
-use common::{CHAIN, Points, first_deciding, pow2};
+use common::{CHAIN, Points, first_deciding, pow2, sign_of};
 use implicit_predicates::stages::orient3d::{self as stages, BIG_INTEGERS_EXPLICIT_ARENA};
 use implicit_predicates::{
-    AnyPoint, BigCoords, ExactCoords, Lnc, Point, Scratch, Sign, orient3d, orient3d_in,
+    AnyPoint, BigCoords, ExactCoords, Lnc, Point, Scratch, ScratchExhausted, Sign, orient3d,
+    orient3d_in,
 };
+use implicit_predicates_core::eft;
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{config, extreme_value, leaf, lnc_parameter};
 use proptest::prelude::*;
@@ -326,6 +328,33 @@ fn near_plane(v: f64, ax: f64, bx: f64, dx: f64) -> Points {
     ]
 }
 
+/// Explicit points near a plane, with a coordinate in `(2^238, 2^239]`,
+/// above `TRANSLATED_RANGE`, and a difference that is not exact in `f64`:
+/// no stage on the stack decides, so the stage on big integers does, in the
+/// arena.
+#[test]
+fn coordinates_above_the_translated_range_go_to_the_big_integers() {
+    assert_eq!(stages::TRANSLATED_RANGE.1, pow2(238));
+    let v = 1.5 * pow2(238);
+    let p = near_plane(v, v, 0.0, 1.0);
+    // `a.x - d.x` is not exact.
+    assert_ne!(eft::two_diff(p[0][0], p[3][0]).1, 0.0);
+    let [a, b, c, d] = &p;
+    assert_eq!(stages::staged([a, b, c, d]), None);
+    assert_eq!(stages::exact_differences([a, b, c, d]), None);
+    let [ea, eb, ec, ed] = p.map(|q| q.map(Dyadic::from_f64));
+    let expected = sign_of(implicit_predicates_corpus::exact::orient3d(
+        &ea, &eb, &ec, &ed,
+    ));
+    assert_ne!(expected, Sign::Zero);
+    assert_eq!(orient3d(a, b, c, d), expected);
+    let mut buf = [0.0];
+    assert_eq!(
+        orient3d_in(&mut Scratch::borrowed(&mut buf), a, b, c, d),
+        Err(ScratchExhausted)
+    );
+}
+
 /// Each range of the stages for explicit points, with an input that has a
 /// coordinate or a difference at an end of it and the same input with that
 /// value one step outside, and the stage of `CHAIN` that decides each: the
@@ -333,21 +362,19 @@ fn near_plane(v: f64, ax: f64, bx: f64, dx: f64) -> Points {
 /// outside every range.
 #[test]
 fn each_range_hands_over_to_the_next_stage() {
-    let (min, _) = stages::DIFFERENCES_RANGE;
-    for range in [stages::TRANSLATED_RANGE, stages::UNTRANSLATED_RANGE] {
-        assert_eq!(range.0, min, "every range has the same lower end");
-    }
-    let [d, t, u] = [
-        stages::DIFFERENCES_RANGE.1,
-        stages::TRANSLATED_RANGE.1,
-        stages::UNTRANSLATED_RANGE.1,
-    ];
-    assert!(t < u && u == d, "{t:e} {u:e} {d:e}");
+    let (min, d) = stages::DIFFERENCES_RANGE;
+    let t = stages::TRANSLATED_RANGE.1;
+    assert_eq!(
+        stages::TRANSLATED_RANGE.0,
+        min,
+        "both ranges have the same lower end"
+    );
+    assert!(t < d, "{t:e} {d:e}");
     let up = f64::next_up;
     let below = min.next_down();
     // An inexact difference, so that `exact_differences` declines.
     let inexact = pow2(-60);
-    let cases: [(&str, Points, &str); 12] = [
+    let cases: [(&str, Points, &str); 8] = [
         // `a.x - d.x` is the upper end of `DIFFERENCES_RANGE`.
         (
             "DIFFERENCES_RANGE.1",
@@ -378,7 +405,7 @@ fn each_range_hands_over_to_the_next_stage() {
         (
             "above TRANSLATED_RANGE",
             near_plane(t, up(t), 0.0, 1.0),
-            "expansions_untranslated",
+            "big_integers",
         ),
         (
             "TRANSLATED_RANGE.0",
@@ -388,28 +415,6 @@ fn each_range_hands_over_to_the_next_stage() {
         (
             "below TRANSLATED_RANGE",
             near_plane(1.0, 1.0, below, inexact),
-            "big_integers",
-        ),
-        (
-            "UNTRANSLATED_RANGE.1",
-            near_plane(u, u, 0.0, 1.0),
-            "expansions_untranslated",
-        ),
-        (
-            "above UNTRANSLATED_RANGE",
-            near_plane(u, up(u), 0.0, 1.0),
-            "big_integers",
-        ),
-        // `a.x` above `TRANSLATED_RANGE`, so that the lower end is that of
-        // the untranslated stage.
-        (
-            "UNTRANSLATED_RANGE.0",
-            near_plane(u, u, min, 1.0),
-            "expansions_untranslated",
-        ),
-        (
-            "below UNTRANSLATED_RANGE",
-            near_plane(u, u, below, 1.0),
             "big_integers",
         ),
     ];
@@ -438,9 +443,6 @@ fn first_deciding_over_spans(p: &[AnyPoint; 4]) -> (&'static str, Sign) {
         if let Some(sign) = stages::expansions_translated_in(&mut scratch, q).unwrap() {
             return ("expansions_translated_in", sign);
         }
-        if let Some(sign) = stages::expansions_untranslated_in(&mut scratch, q).unwrap() {
-            return ("expansions_untranslated_in", sign);
-        }
     }
     let q: Vec<BigCoords> = p
         .iter()
@@ -458,11 +460,9 @@ fn first_deciding_over_spans(p: &[AnyPoint; 4]) -> (&'static str, Sign) {
 #[test]
 fn each_range_over_spans_hands_over_to_the_next_stage() {
     let (min, t) = stages::SPANS_TRANSLATED_RANGE;
-    let (umin, u) = stages::SPANS_UNTRANSLATED_RANGE;
-    assert!(min == umin && t < u, "{min:e} {umin:e} {t:e} {u:e}");
     let up = f64::next_up;
     let below = min.next_down();
-    let cases: [(&str, Points, &str); 8] = [
+    let cases: [(&str, Points, &str); 4] = [
         (
             "SPANS_TRANSLATED_RANGE.1",
             near_plane(t, t, 0.0, 0.0),
@@ -471,7 +471,7 @@ fn each_range_over_spans_hands_over_to_the_next_stage() {
         (
             "above SPANS_TRANSLATED_RANGE",
             near_plane(t, up(t), 0.0, 0.0),
-            "expansions_untranslated_in",
+            "big_integers",
         ),
         (
             "SPANS_TRANSLATED_RANGE.0",
@@ -481,26 +481,6 @@ fn each_range_over_spans_hands_over_to_the_next_stage() {
         (
             "below SPANS_TRANSLATED_RANGE",
             near_plane(1.0, 1.0, below, 0.0),
-            "big_integers",
-        ),
-        (
-            "SPANS_UNTRANSLATED_RANGE.1",
-            near_plane(u, u, 0.0, 0.0),
-            "expansions_untranslated_in",
-        ),
-        (
-            "above SPANS_UNTRANSLATED_RANGE",
-            near_plane(u, up(u), 0.0, 0.0),
-            "big_integers",
-        ),
-        (
-            "SPANS_UNTRANSLATED_RANGE.0",
-            near_plane(u, u, min, 0.0),
-            "expansions_untranslated_in",
-        ),
-        (
-            "below SPANS_UNTRANSLATED_RANGE",
-            near_plane(u, u, below, 0.0),
             "big_integers",
         ),
     ];
@@ -557,17 +537,14 @@ fn seventeen_components_go_to_the_big_integers() {
             2 * expected_big_calls,
             "{n} components"
         );
-        // The stages over spans alone: they decide on 16 components, not on
+        // The stage over spans alone: it decides on 16 components, not on
         // 17.
         let q = [a, b, c].map(|x| x.exact(&mut scratch).unwrap());
         let r = long.exact(&mut scratch).unwrap();
         let q = [&q[0], &q[1], &q[2], &r];
-        let spans = [
-            stages::expansions_translated_in(&mut scratch, q).unwrap(),
-            stages::expansions_untranslated_in(&mut scratch, q).unwrap(),
-        ];
+        let spans = stages::expansions_translated_in(&mut scratch, q).unwrap();
         let decided = if n == 16 { Some(expected) } else { None };
-        assert_eq!(spans, [decided; 2], "{n} components");
+        assert_eq!(spans, decided, "{n} components");
     }
 }
 

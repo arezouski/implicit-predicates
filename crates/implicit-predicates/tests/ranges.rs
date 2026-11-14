@@ -6,13 +6,13 @@
 //! here with leaves at the ends of its range, at their inward neighbours and
 //! in near-cancellation, so these tests also check that the ranges derived
 //! for the stages keep every product in that domain: no assertion may fire.
-//! The leaves are the coordinates for the two expansion forms, and the
+//! The leaves are the coordinates for `expansions_translated`, and the
 //! computed differences for `exact_differences`.
 
 mod common;
 
 use common::generated::exact;
-use common::{Points, Stage, refs};
+use common::{Points, refs};
 use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{config, leaf, sample};
@@ -88,22 +88,6 @@ fn outside((min, max): (f64, f64)) -> impl Strategy<Value = f64> {
         .prop_map(|(x, negative)| if negative { -x } else { x })
 }
 
-/// The stages with leaves on coordinates, with their ranges.
-fn coordinate_stages() -> [(&'static str, Stage, (f64, f64)); 2] {
-    [
-        (
-            "expansions_translated",
-            stages::expansions_translated,
-            stages::TRANSLATED_RANGE,
-        ),
-        (
-            "expansions_untranslated",
-            stages::expansions_untranslated,
-            stages::UNTRANSLATED_RANGE,
-        ),
-    ]
-}
-
 proptest! {
     #![proptest_config(config())]
 
@@ -117,26 +101,23 @@ proptest! {
             points(stages::TRANSLATED_RANGE),
             nearly_coplanar(stages::TRANSLATED_RANGE),
         ],
-        untranslated in prop_oneof![
-            points(stages::UNTRANSLATED_RANGE),
-            nearly_coplanar(stages::UNTRANSLATED_RANGE),
-        ],
     ) {
         let p = at_origin(differences);
         prop_assert_eq!(stages::exact_differences(refs(&p)), Some(exact(&p)), "{:?}", p);
-        let [(_, t, _), (_, u, _)] = coordinate_stages();
-        prop_assert_eq!(t(refs(&translated)), Some(exact(&translated)), "{:?}", translated);
-        prop_assert_eq!(u(refs(&untranslated)), Some(exact(&untranslated)), "{:?}", untranslated);
+        prop_assert_eq!(
+            stages::expansions_translated(refs(&translated)),
+            Some(exact(&translated)),
+            "{:?}",
+            translated
+        );
     }
 
     #[test]
     fn leaves_just_outside_the_range_do_not_decide(
         differences in points(stages::DIFFERENCES_RANGE),
         translated in points(stages::TRANSLATED_RANGE),
-        untranslated in points(stages::UNTRANSLATED_RANGE),
         out_d in outside(stages::DIFFERENCES_RANGE),
         out_t in outside(stages::TRANSLATED_RANGE),
-        out_u in outside(stages::UNTRANSLATED_RANGE),
         point in 0usize..3,
         axis in 0usize..3,
     ) {
@@ -151,15 +132,10 @@ proptest! {
         p[3][axis] = -max;
         prop_assert_eq!(stages::exact_differences(refs(&p)), None, "{:?}", p);
         // One coordinate just outside the range, at any of the four points.
-        for ((name, stage, _), (base, out)) in coordinate_stages()
-            .into_iter()
-            .zip([(translated, out_t), (untranslated, out_u)])
-        {
-            for which in 0..4 {
-                let mut p = base;
-                p[which][axis] = out;
-                prop_assert_eq!(stage(refs(&p)), None, "{} on {:?}", name, p);
-            }
+        for which in 0..4 {
+            let mut p = translated;
+            p[which][axis] = out_t;
+            prop_assert_eq!(stages::expansions_translated(refs(&p)), None, "{:?}", p);
         }
     }
 }

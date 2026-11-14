@@ -1,14 +1,15 @@
 //! Fixed cases of `orient3d` with implicit points, so that what they check
 //! does not depend on the seed of the random tests: the error of every
 //! point, in every position and on every axis, enters the filter, even when
-//! the other points are explicit; and the untranslated stage over spans
-//! decides near the top of its range.
+//! the other points are explicit; and coordinates just above the range of
+//! the stage over spans go to the stage on big integers.
 
 #![cfg(feature = "std")]
 
 mod common;
 
 use common::args::{Arg, Args, decidable, decided_on_expansions, every_stage, exact_sign};
+use implicit_predicates::stages::orient3d as stages;
 use implicit_predicates::{Lnc, Scratch, Sign, orient3d, orient3d_in};
 
 /// Checks every stage on `args` against the exact sign, that the chain
@@ -146,9 +147,9 @@ fn regressions_of_lost_errors() {
 }
 
 #[test]
-fn the_untranslated_stage_over_spans_decides_near_the_top_of_its_range() {
-    // Coordinates above the range of the translated stage over spans,
-    // `2^234`, and within that of the untranslated one, `2^235`.
+fn coordinates_above_the_range_over_spans_go_to_the_big_integers() {
+    // Coordinates above the range of the stage over spans, `2^234`.
+    assert_eq!(stages::SPANS_TRANSLATED_RANGE.1, 2f64.powi(234));
     let s = 1.5 * 2f64.powi(234);
     let (a, b, c) = ([s, 0.0, 0.0], [0.0, s, 0.0], [0.0, 0.0, s]);
     let m = Lnc::new(a, b, 0.3).unwrap();
@@ -172,13 +173,13 @@ fn the_untranslated_stage_over_spans_decides_near_the_top_of_its_range() {
         ],
     ] {
         check(&args);
-        // The untranslated stage over spans decides, not the translated
-        // one, nor the stage on big integers after them.
+        // The stage over spans declines, so the stage on big integers
+        // after it decides.
         let results = every_stage(&args);
         let result = |name: &str| results.iter().find(|(n, _)| *n == name).unwrap().1;
         assert_eq!(result("expansions_translated_in"), None, "{args:?}");
         assert_eq!(
-            result("expansions_untranslated_in"),
+            result("exact_stages_in"),
             Some(exact_sign(&args)),
             "{args:?}"
         );

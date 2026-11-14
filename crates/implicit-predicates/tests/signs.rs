@@ -125,32 +125,24 @@ proptest! {
     #[test]
     fn the_stages_on_the_stack_decide_only_in_their_documented_range(families in families()) {
         for (family, p) in families {
-            // The stages on the stack end with the two expansion stages,
-            // which decide exactly when every coordinate is zero or has a
-            // magnitude in their range; outside both only the filter and
-            // the exact differences can decide, and otherwise the stage on
-            // big integers does.
-            let translated = all_in_range(&p, stages::TRANSLATED_RANGE);
-            let inside = all_in_range(&p, stages::UNTRANSLATED_RANGE);
+            // The stages on the stack end with the expansion stage, which
+            // decides exactly when every coordinate is zero or has a
+            // magnitude in its range; outside it only the filter and the
+            // exact differences can decide, and otherwise the stage on big
+            // integers does.
+            let inside = all_in_range(&p, stages::TRANSLATED_RANGE);
             let earlier = stages::filter(refs(&p), [0.0; 3])
                 .or_else(|| stages::exact_differences(refs(&p)));
             let result = stages::staged(refs(&p));
             prop_assert_eq!(
                 result.is_some(),
-                earlier.is_some() || translated || inside,
+                earlier.is_some() || inside,
                 "{} {:?}",
                 family,
                 p
             );
             prop_assert_eq!(
                 stages::expansions_translated(refs(&p)).is_some(),
-                translated,
-                "{} {:?}",
-                family,
-                p
-            );
-            prop_assert_eq!(
-                stages::expansions_untranslated(refs(&p)).is_some(),
                 inside,
                 "{} {:?}",
                 family,
@@ -293,12 +285,4 @@ proptest! {
             }
         }
     }
-}
-
-/// The documented range of `orient3d` is the range of the untranslated
-/// stage because it contains the range of the translated one.
-#[test]
-fn the_untranslated_range_contains_the_translated_range() {
-    let (t, u) = (stages::TRANSLATED_RANGE, stages::UNTRANSLATED_RANGE);
-    assert!(u.0 <= t.0 && t.1 <= u.1, "{t:?} {u:?}");
 }

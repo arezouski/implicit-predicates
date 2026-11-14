@@ -5,8 +5,8 @@
 //! points with the uncertainty of their errors; then, when every point is
 //! explicit, `exact_stages_explicit_in`, the exact stages of the chain for
 //! explicit points and then the stage on big integers; otherwise
-//! `exact_stages_in`, the stages over spans on the exact coordinates of the
-//! points, the translated form first, and then the stage on big integers.
+//! `exact_stages_in`, the stage over spans on the exact coordinates of the
+//! points, and then the stage on big integers.
 //! The stage on big integers always decides, so the chain decides every
 //! input; a point without exact coordinates as big integers, which the
 //! contract allows only for inputs that are not finite, or with a weight
@@ -363,15 +363,20 @@ fn write_exact_stages_explicit_in(out: &mut String, chain: &GenericChain) {
 /// on big integers on their coordinates as big integers.
 fn write_exact_stages_in(out: &mut String, s: &Signature, spans: &[&str]) {
     let names: Vec<String> = spans.iter().map(|name| format!("[`{name}`]")).collect();
+    let (they, the_stages) = if spans.len() == 1 {
+        ("it does", "The stage over spans is")
+    } else {
+        ("they do", "The stages over spans are")
+    };
     comment(
         out,
         "///",
         0,
         &format!(
             "The exact sign of the predicate for points of any type: {}, on the exact \
-             coordinates of the points written to `scratch`, then, when they do not \
+             coordinates of the points written to `scratch`, then, when {they} not \
              decide, [`{BIG_STAGE}`] on the coordinates of the points as big integers \
-             written to `scratch`, which always decides. The stages over spans are \
+             written to `scratch`, which always decides. {the_stages} \
              skipped when a point cannot give its exact coordinates as expansions, as when \
              its inputs are outside the range of its exact arithmetic \
              ([`ExactError::OutOfRange`]). Each attempt starts from the mark \

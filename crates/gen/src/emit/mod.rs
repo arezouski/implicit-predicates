@@ -44,8 +44,8 @@ use crate::error::Error;
 use crate::parse::{Predicate, parse};
 use crate::polynomial::checked_polynomial;
 use crate::range::{
-    Leaves, MAX_COORD_COMPONENTS, big_explicit_arena, exact_plan_differences, exact_plan_raw,
-    exact_plan_spans_translated, exact_plan_spans_untranslated,
+    Leaves, MAX_COORD_COMPONENTS, big_explicit_arena, exact_plan_differences,
+    exact_plan_spans_translated,
 };
 use chain::ChainStage;
 use exact::{write_in_range, write_product};
@@ -89,22 +89,22 @@ pub struct Generated {
 /// filter and the ranges of its exact stages, and the functions `filter`
 /// (with one size and one uncertainty per axis when every term of the main
 /// form has the same degree in each axis, see [`crate::filter_form`]),
-/// `exact_differences`, `expansions_translated`, `expansions_untranslated`
-/// (only when the predicate has an `#[exact]` form) on stack buffers, the
-/// same two expansion forms over arena spans, `expansions_translated_in` and
-/// `expansions_untranslated_in`, which take the exact coordinates of any
-/// point type, and `staged`, which runs the filter and then the exact stages
-/// in the order: differences that are exact, the translated expansion form,
-/// then the `#[exact]` form if one is given. The order is the same for every
-/// predicate for now. A stage on the stack is emitted only when its
-/// temporaries take at most 4,096 `f64`; when one does not fit, `staged`
-/// takes an arena and runs the stage over spans of the same form in its
-/// place, on the exact coordinates of the explicit points. For points of
+/// `exact_differences` and `expansions_translated` on stack buffers, the
+/// expansion form over arena spans, `expansions_translated_in`, which takes
+/// the exact coordinates of any point type, and `staged`, which runs the
+/// filter and then the exact stages in the order: differences that are
+/// exact, then the translated expansion form. The order is the same for
+/// every predicate for now. No stage evaluates the `#[exact]` form: it is
+/// only checked to be the same polynomial as the main form. A stage on the
+/// stack is emitted only when its temporaries take at most 4,096 `f64`;
+/// when one does not fit, `staged` takes an arena and runs the stage over
+/// spans of the same form in its place, on the exact coordinates of the
+/// explicit points. For points of
 /// any type that implements `Point`, `staged_in` runs `filter_points`, the
 /// filter with the uncertainty of the errors of the points, then
 /// `exact_stages`, the exact stages of `staged`, when every point is
-/// explicit, and otherwise `exact_stages_in`, the stages over spans on the
-/// exact coordinates of the points, the translated form first.
+/// explicit, and otherwise `exact_stages_in`, the stage over spans on the
+/// exact coordinates of the points.
 /// `big_integers_in` evaluates the main form exactly with the big-integer
 /// operations of an arena, on the coordinates of the points as big integers,
 /// and `BIG_INTEGERS_EXPLICIT_ARENA` is a number of `f64` slots of the arena
@@ -221,34 +221,13 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
     let translated = stack(Leaves::Two);
     let spans =
         exact_plan_spans_translated(&graph, MAX_COORD_COMPONENTS, file, position, min, max)?;
-    let (untranslated, spans_untranslated) = match &predicate.exact {
-        Some(exact) => {
-            let position = predicate.exact_position.unwrap_or(position);
-            let stack = exact_plan_raw(exact, file, position, min, max)
-                .ok()
-                .filter(|plan| fits_on_stack(plan.total))
-                .map(|plan| (Program::raw(exact, &plan.lengths), plan.range));
-            let spans = exact_plan_spans_untranslated(
-                exact,
-                MAX_COORD_COMPONENTS,
-                file,
-                position,
-                min,
-                max,
-            )?;
-            (stack, Some((exact, spans.range)))
-        }
-        None => (None, None),
-    };
     let points = predicate.params.len();
     let big_arena = big_explicit_arena(&graph, points, file, position)?;
     let forms = Forms {
         filter,
         differences,
         translated,
-        untranslated,
         spans_translated: (&graph, spans.range),
-        spans_untranslated,
     };
     let mut out = String::new();
     write_header(&mut out, predicate, notice, &forms);
@@ -268,11 +247,7 @@ fn generate_one(predicate: &Predicate, file: &str, notice: &str) -> Result<Gener
     big::write_big_stage(&mut out, &graph, points);
     let explicit_stages = chain_stages(&forms);
     chain::write_chain(&mut out, points, &explicit_stages, explicit);
-    let spans: &[&str] = if forms.spans_untranslated.is_some() {
-        &["expansions_translated_in", "expansions_untranslated_in"]
-    } else {
-        &["expansions_translated_in"]
-    };
+    let spans: &[&str] = &["expansions_translated_in"];
     generic::write_generic_chain(
         &mut out,
         &generic::GenericChain {
@@ -388,12 +363,6 @@ fn chain_stages(forms: &Forms) -> Vec<ChainStage> {
         Some(_) => ChainStage::Stack("expansions_translated"),
         None => ChainStage::Spans("expansions_translated_in"),
     });
-    if forms.spans_untranslated.is_some() {
-        stages.push(match forms.untranslated {
-            Some(_) => ChainStage::Stack("expansions_untranslated"),
-            None => ChainStage::Spans("expansions_untranslated_in"),
-        });
-    }
     stages
 }
 

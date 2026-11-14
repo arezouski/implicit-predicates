@@ -3,12 +3,11 @@
 
 use implicit_predicates_gen::{
     Error, ExactPlan, Leaves, MAX_COORD_COMPONENTS, difference_graph, exact_plan_differences,
-    exact_plan_raw, exact_plan_spans_translated, exact_plan_spans_untranslated, parse,
+    exact_plan_spans_translated, parse,
 };
 
 const ORIENT3D: &str = include_str!("fixtures/orient3d.pred");
 const INSPHERE: &str = include_str!("fixtures/insphere.pred");
-const INSPHERE_RAW: &str = include_str!("fixtures/insphere_raw.pred");
 const DIFFERENCE: &str = "fn p(a: Point3, b: Point3) -> Sign { a.x - b.x }";
 
 /// The product domain of the arithmetic core, `[2^-480, 2^480]`; the
@@ -25,22 +24,8 @@ fn try_translated(source: &str, components: usize) -> Result<ExactPlan, Error> {
     exact_plan_spans_translated(&g, components, "t.pred", p.position, min, max)
 }
 
-/// The plan over spans of the untranslated form: the `#[exact]` form if the
-/// file has one, the main form otherwise.
-fn try_untranslated(source: &str, components: usize) -> Result<ExactPlan, Error> {
-    let p = parse(source, "t.pred").unwrap().remove(0);
-    let position = p.exact_position.unwrap_or(p.position);
-    let g = p.exact.unwrap_or(p.main);
-    let (min, max) = domain();
-    exact_plan_spans_untranslated(&g, components, "t.pred", position, min, max)
-}
-
 fn translated(source: &str) -> ExactPlan {
     try_translated(source, MAX_COORD_COMPONENTS).unwrap()
-}
-
-fn untranslated(source: &str) -> ExactPlan {
-    try_untranslated(source, MAX_COORD_COMPONENTS).unwrap()
 }
 
 /// The range as the exponents of its two powers of two, which must be
@@ -65,11 +50,8 @@ fn coordinates_have_at_most_16_components() {
 fn the_ends_of_every_range_are_powers_of_two() {
     for plan in [
         translated(ORIENT3D),
-        untranslated(ORIENT3D),
         translated(INSPHERE),
-        untranslated(INSPHERE_RAW),
         translated(DIFFERENCE),
-        untranslated(DIFFERENCE),
     ] {
         let (min, max) = exponents(&plan);
         assert!(min <= max, "{plan:?}");
@@ -85,20 +67,17 @@ fn the_ends_of_every_range_are_powers_of_two() {
 /// - orient3d, translated: a 2x2 minor is an operand, at most
 ///   `2 (32 M)^2 = 2^11 M^2 <= 2^480`, so `M <= 2^234`; its grid
 ///   `2 (m - 52) >= -480` gives `m >= -188`.
-/// - orient3d, untranslated: the 2x2 minors of the raw coordinates,
-///   `2 (16 M)^2 = 2^9 M^2 <= 2^480`, so `M <= 2^235`.
 /// - in-sphere, translated: a 3x3 minor, `3 * 32 M * 2^11 M^2 = 3 * 2^16
 ///   M^3 <= 2^480`, so `M <= 2^154`; its grid `3 (m - 52) >= -480` gives
 ///   `m >= -108`.
 #[test]
 fn every_form_has_the_derived_range() {
     assert_eq!(exponents(&translated(ORIENT3D)), (-188, 234));
-    assert_eq!(exponents(&untranslated(ORIENT3D)), (-188, 235));
     assert_eq!(exponents(&translated(INSPHERE)), (-108, 154));
 }
 
 #[test]
-fn with_one_component_the_range_is_that_of_the_stack_forms() {
+fn with_one_component_the_range_is_that_of_the_stack_form() {
     // One component per coordinate is the stack evaluation, up to the
     // operation counts, which only enter a factor close to one.
     let (min, max) = domain();
@@ -107,13 +86,6 @@ fn with_one_component_the_range_is_that_of_the_stack_forms() {
         let g = difference_graph(&p.main, "t.pred", p.position).unwrap();
         let two = exact_plan_differences(&g, Leaves::Two, "t.pred", p.position, min, max).unwrap();
         assert_eq!(try_translated(source, 1).unwrap().range, two.range);
-    }
-    for source in [ORIENT3D, INSPHERE_RAW] {
-        let p = parse(source, "t.pred").unwrap().remove(0);
-        let position = p.exact_position.unwrap_or(p.position);
-        let g = p.exact.unwrap_or(p.main);
-        let raw = exact_plan_raw(&g, "t.pred", position, min, max).unwrap();
-        assert_eq!(try_untranslated(source, 1).unwrap().range, raw.range);
     }
 }
 
@@ -126,14 +98,6 @@ fn the_range_over_spans_lies_within_the_range_over_one_component() {
         let two = exact_plan_differences(&g, Leaves::Two, "t.pred", p.position, min, max).unwrap();
         let spans = translated(source);
         assert!(two.range.min <= spans.range.min && spans.range.max <= two.range.max);
-    }
-    for source in [ORIENT3D, INSPHERE_RAW] {
-        let p = parse(source, "t.pred").unwrap().remove(0);
-        let position = p.exact_position.unwrap_or(p.position);
-        let g = p.exact.unwrap_or(p.main);
-        let raw = exact_plan_raw(&g, "t.pred", position, min, max).unwrap();
-        let spans = untranslated(source);
-        assert!(raw.range.min <= spans.range.min && spans.range.max <= raw.range.max);
     }
 }
 
@@ -155,9 +119,8 @@ fn more_components_never_widen_the_range() {
 #[test]
 fn a_degree_one_predicate_has_the_full_domain_as_range() {
     let (min, max) = domain();
-    for plan in [translated(DIFFERENCE), untranslated(DIFFERENCE)] {
-        assert_eq!((plan.range.min, plan.range.max), (min, max));
-    }
+    let plan = translated(DIFFERENCE);
+    assert_eq!((plan.range.min, plan.range.max), (min, max));
 }
 
 /// Asserts that a definition on one line is rejected at the name of the
@@ -189,11 +152,11 @@ fn a_degree_without_a_range_over_spans_is_an_error() {
     );
     rejected(try_translated(source, MAX_COORD_COMPONENTS), "degree 17");
     // Twenty-one factors have no range for any number of components.
-    let raw_product = vec!["a.x"; 21].join(" * ");
-    let source = format!("fn p(a: Point3, b: Point3) -> Sign {{ {raw_product} - b.x }}");
-    rejected(try_untranslated(&source, 1), "no input range");
+    let product = vec!["(a.x - b.x)"; 21].join(" * ");
+    let source = format!("fn p(a: Point3, b: Point3) -> Sign {{ {product} }}");
+    rejected(try_translated(&source, 1), "no input range");
     rejected(
-        try_untranslated(&source, MAX_COORD_COMPONENTS),
+        try_translated(&source, MAX_COORD_COMPONENTS),
         "no input range",
     );
 }
@@ -211,10 +174,6 @@ fn a_definition_too_large_is_an_error_not_a_hang() {
         try_translated(&source, MAX_COORD_COMPONENTS),
         "no input range",
     );
-    rejected(
-        try_untranslated(&source, MAX_COORD_COMPONENTS),
-        "no input range",
-    );
 }
 
 #[test]
@@ -229,7 +188,4 @@ fn the_lengths_are_those_of_the_derived_range() {
     assert_eq!(exponents(&plan), (-428, 474));
     assert_eq!(plan.lengths, [32, 1919]);
     assert_eq!(plan.total, 1951);
-    // The untranslated leaves are the coordinates themselves.
-    let plan = untranslated("fn p(a: Point3, b: Point3) -> Sign { a.x * b.y }");
-    assert_eq!(plan.lengths, [16, 16, 512]);
 }

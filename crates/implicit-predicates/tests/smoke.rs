@@ -9,11 +9,10 @@ use implicit_predicates::{Sign, orient3d};
 type Stage = fn([&[f64; 3]; 4]) -> Option<Sign>;
 
 /// Every stage of the chain, with its name; the filter for explicit points.
-const STAGES: [(&str, Stage); 5] = [
+const STAGES: [(&str, Stage); 4] = [
     ("filter", |p| stages::filter(p, [0.0; 3])),
     ("exact_differences", stages::exact_differences),
     ("expansions_translated", stages::expansions_translated),
-    ("expansions_untranslated", stages::expansions_untranslated),
     ("staged", stages::staged),
 ];
 
@@ -124,17 +123,15 @@ fn non_finite_input_is_none_in_every_stage_and_a_panic_in_orient3d() {
 
 #[test]
 fn the_last_stage_on_the_stack_decides_at_the_ends_of_its_range() {
-    // The stage on the stack with the widest range decides every nonzero
-    // magnitude in [2^-188, 2^239], and the chain agrees with it there.
-    assert_eq!(
-        stages::UNTRANSLATED_RANGE,
-        (2f64.powi(-188), 2f64.powi(239))
-    );
-    let (min, max) = stages::UNTRANSLATED_RANGE;
+    // The stage on the stack that bounds the coordinates themselves decides
+    // every nonzero magnitude in [2^-188, 2^238], so a call with such
+    // coordinates does not allocate, and the chain agrees with it there.
+    assert_eq!(stages::TRANSLATED_RANGE, (2f64.powi(-188), 2f64.powi(238)));
+    let (min, max) = stages::TRANSLATED_RANGE;
     let a = [min, 0.0, 0.0];
     let b = [0.0, max, 0.0];
     let c = [0.0, 0.0, -min];
     let d = [max, max, max];
-    let sign = stages::expansions_untranslated([&a, &b, &c, &d]).expect("a sign");
+    let sign = stages::expansions_translated([&a, &b, &c, &d]).expect("a sign");
     assert_eq!(orient3d(&a, &b, &c, &d), sign);
 }

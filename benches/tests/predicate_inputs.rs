@@ -216,9 +216,6 @@ fn the_stages_of_orient3d_decide_the_sets_they_are_benchmarked_on() {
         assert!(all(
             decided(name, |p| stages::expansions_translated(p).is_some())
         ));
-        assert!(all(
-            decided(name, |p| stages::expansions_untranslated(p).is_some())
-        ));
     }
     assert!(all(
         decided("degenerate", |p| stages::exact_differences(p).is_some())
@@ -324,7 +321,7 @@ fn orient3d_matches_the_exact_sign_on_points_of_any_type() {
 }
 
 #[test]
-fn exact_sets_need_the_exact_stages_and_every_form_decides_them() {
+fn exact_sets_need_the_exact_stages_and_every_stage_decides_them() {
     let mut sets = exact_sets();
     assert_eq!(sets.len(), MAX_IMPLICIT);
     for (k, set) in sets.iter_mut().enumerate() {
@@ -340,10 +337,8 @@ fn exact_sets_need_the_exact_stages_and_every_form_decides_them() {
             let q = coords.each_ref();
             let s = &mut set.scratch;
             let translated = stages::expansions_translated_in(s, q).expect("room");
-            let untranslated = stages::expansions_untranslated_in(s, q).expect("room");
             let chain = stages::exact_stages_in(s, a, b, c, d).expect("room");
             assert_eq!(translated.map(i8::from), exact, "{case:?}");
-            assert_eq!(untranslated.map(i8::from), exact, "{case:?}");
             assert_eq!(Some(i8::from(chain)), exact, "{case:?}");
             let big = big_integers_stage(s, case);
             assert_eq!(Some(i8::from(big)), exact, "{case:?}");
@@ -519,7 +514,6 @@ fn insphere_exact_sets_are_in_their_group_and_have_the_exact_sign_at_every_stage
             let q = coords.each_ref();
             let s = &mut set.scratch;
             let translated = insphere::expansions_translated_in(s, q).expect("room");
-            let untranslated = insphere::expansions_untranslated_in(s, q).expect("room");
             match set.group {
                 InSphereGroup::Spans => {
                     let decision = decision.unwrap_or_else(|why| panic!("{name}: {why:?}"));
@@ -527,12 +521,10 @@ fn insphere_exact_sets_are_in_their_group_and_have_the_exact_sign_at_every_stage
                     assert_ne!(decision.stage, BIG_INTEGERS, "{name}: {case:?}");
                     assert_eq!(Some(decision.sign), sign, "{name}: {case:?}");
                     assert_eq!(translated, sign, "{name}: {case:?}");
-                    assert_eq!(untranslated, sign, "{name}: {case:?}");
                 }
                 InSphereGroup::OutOfRange => {
                     assert_eq!(decision, Err(Why::ComponentOutOfRange), "{name}: {case:?}");
                     assert_eq!(translated, None, "{name}: {case:?}");
-                    assert_eq!(untranslated, None, "{name}: {case:?}");
                 }
             }
             let chain = insphere::exact_stages_in(s, a, b, c, d, e).expect("room");

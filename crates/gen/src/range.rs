@@ -16,11 +16,10 @@ mod spans;
 use crate::differences::DiffGraph;
 use crate::dyadic::Dyadic;
 use crate::error::Error;
-use crate::graph::Graph;
 use crate::parse::Position;
 pub(crate) use big::big_explicit_arena;
 use shape::{MAX_LENGTH, Shape};
-pub use spans::{MAX_COORD_COMPONENTS, exact_plan_spans_translated, exact_plan_spans_untranslated};
+pub use spans::{MAX_COORD_COMPONENTS, exact_plan_spans_translated};
 
 /// The exponent of the overflow limit of the arithmetic core: every
 /// component and scalar operand of its expansion functions has magnitude
@@ -30,10 +29,9 @@ pub(crate) const OVERFLOW_EXPONENT: i64 = 1020;
 /// The magnitudes of leaves for which an exact stage is valid: every
 /// nonzero leaf `x` must satisfy `min <= |x| <= max`. Both are powers of two.
 ///
-/// A leaf is an input coordinate for the raw form, the computed difference
-/// for a difference form with [`Leaves::One`], and each of the two
-/// coordinates that are subtracted for a difference form with
-/// [`Leaves::Two`].
+/// A leaf is the computed difference for a difference form with
+/// [`Leaves::One`], and each of the two coordinates that are subtracted for
+/// a difference form with [`Leaves::Two`].
 ///
 /// # Why the range is sufficient
 ///
@@ -67,9 +65,9 @@ pub(crate) const OVERFLOW_EXPONENT: i64 = 1020;
 /// way, is at most `(1 + 3u)^T S <= (1 + 6uT) S`, where `T <= 2^51` is the
 /// number of transformations the node depends on, counted with multiplicity
 /// (see the operation counts below), and `S` follows the structure: `M` for
-/// a coordinate or a computed difference, `2M` for the two components of a
-/// difference of coordinates, `|n|` for a constant `n`, the sum of the
-/// operands' `S` for a sum or difference, their product for a product.
+/// a computed difference, `2M` for the two components of a difference of
+/// coordinates, the sum of the operands' `S` for a sum or difference, their
+/// product for a product.
 ///
 /// **Rule.** The range is the widest pair of powers of two within
 /// `[operand_min, operand_max]` such that, for every operand of every
@@ -102,7 +100,7 @@ pub struct ExactPlan {
     pub range: ExactRange,
     /// The worst-case length of the expansion of each node, in the order of
     /// the graph. For a stage on the stack: 1 or 2 for a leaf (see
-    /// [`Leaves`]), 1 for a nonzero constant and 0 for zero, `l_x + l_y` for
+    /// [`Leaves`]), `l_x + l_y` for
     /// a sum or difference, `2 l_x l_y` for a product and `l_x` for a
     /// negation. For a stage over spans, whose coordinates are expansions
     /// of up to [`MAX_COORD_COMPONENTS`] components, the lengths that its
@@ -123,36 +121,6 @@ pub enum Leaves {
     Two,
 }
 
-/// Derives the exact stage of the raw form, whose leaves are the input
-/// coordinates, for the product domain `[operand_min, operand_max]`.
-///
-/// See [`ExactRange`] for the rule and why it is sound.
-///
-/// # Errors
-///
-/// Returns an error, at `position` (the name of the form) in `file`, when no
-/// range satisfies the rule, when a constant is not exact in `f64`, or when
-/// the evaluation is too large: a temporary longer than `2^32` components,
-/// temporaries longer than that in all, or a node that depends on more than
-/// `2^51` error-free transformations.
-///
-/// # Panics
-///
-/// Panics if `operand_min` and `operand_max` are not normal powers of two
-/// with `operand_min <= operand_max`.
-pub fn exact_plan_raw(
-    graph: &Graph,
-    file: &str,
-    position: Position,
-    operand_min: f64,
-    operand_max: f64,
-) -> Result<ExactPlan, Error> {
-    let (low, high) = domain(operand_min, operand_max);
-    Shape::raw(graph)
-        .and_then(|shape| plan(&shape, low, high))
-        .map_err(|message| Error::at(file, position, message))
-}
-
 /// Derives the exact stage of a difference form whose leaves have the given
 /// number of components, for the product domain `[operand_min, operand_max]`.
 ///
@@ -160,11 +128,16 @@ pub fn exact_plan_raw(
 ///
 /// # Errors
 ///
-/// As [`exact_plan_raw`], except that a difference form has no constants.
+/// Returns an error, at `position` (the name of the form) in `file`, when no
+/// range satisfies the rule, or when the evaluation is too large: a
+/// temporary longer than `2^32` components, temporaries longer than that in
+/// all, or a node that depends on more than `2^51` error-free
+/// transformations.
 ///
 /// # Panics
 ///
-/// As [`exact_plan_raw`].
+/// Panics if `operand_min` and `operand_max` are not normal powers of two
+/// with `operand_min <= operand_max`.
 pub fn exact_plan_differences(
     graph: &DiffGraph,
     leaves: Leaves,

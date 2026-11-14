@@ -210,10 +210,8 @@ pub fn every_stage(args: &Args) -> Vec<(&'static str, Option<Sign>)> {
         let used = scratch.used();
         let q = [&q[0], &q[1], &q[2], &q[3]];
         let translated = stages::expansions_translated_in(&mut scratch, q).unwrap();
-        let untranslated = stages::expansions_untranslated_in(&mut scratch, q).unwrap();
         assert_eq!(scratch.used(), used);
         results.push(("expansions_translated_in", translated));
-        results.push(("expansions_untranslated_in", untranslated));
     }
     results.extend(
         [
@@ -239,13 +237,7 @@ pub fn every_stage(args: &Args) -> Vec<(&'static str, Option<Sign>)> {
 /// spans.
 pub fn decided_on_expansions(results: &[(&str, Option<Sign>)]) -> bool {
     results.iter().any(|(name, result)| {
-        [
-            "filter_points",
-            "exact_stages",
-            "expansions_translated_in",
-            "expansions_untranslated_in",
-        ]
-        .contains(name)
+        ["filter_points", "exact_stages", "expansions_translated_in"].contains(name)
             && result.is_some()
     })
 }
@@ -259,7 +251,7 @@ pub fn all_explicit(args: &Args) -> bool {
 /// point has exact coordinates (its inputs are finite and in the range of
 /// its own exact arithmetic) of weight one, with at most
 /// `MAX_COORD_COMPONENTS` components each, every one zero or of a magnitude
-/// in `SPANS_UNTRANSLATED_RANGE`.
+/// in `SPANS_TRANSLATED_RANGE`.
 pub fn spans_decidable(args: &Args) -> bool {
     let mut buf = vec![0.0; 1 << 12];
     let mut scratch = Scratch::borrowed(&mut buf);
@@ -270,7 +262,7 @@ pub fn spans_decidable(args: &Args) -> bool {
                     let e = scratch.get(s);
                     e.len() <= stages::MAX_COORD_COMPONENTS
                         && e.iter()
-                            .all(|&x| super::in_range(x, stages::SPANS_UNTRANSLATED_RANGE))
+                            .all(|&x| super::in_range(x, stages::SPANS_TRANSLATED_RANGE))
                 })
         }
         Err(_) => false,
@@ -279,14 +271,14 @@ pub fn spans_decidable(args: &Args) -> bool {
 
 /// Whether the chain decides on `args` without the stage on big integers:
 /// for four explicit points, every coordinate is zero or of a magnitude in
-/// `UNTRANSLATED_RANGE`, which rules out values that are not finite;
+/// `TRANSLATED_RANGE`, which rules out values that are not finite;
 /// otherwise [`spans_decidable`].
 pub fn decidable(args: &Args) -> bool {
     if all_explicit(args) {
         args.iter().all(|a| {
             a.inputs()
                 .iter()
-                .all(|&x| super::in_range(x, stages::UNTRANSLATED_RANGE))
+                .all(|&x| super::in_range(x, stages::TRANSLATED_RANGE))
         })
     } else {
         spans_decidable(args)

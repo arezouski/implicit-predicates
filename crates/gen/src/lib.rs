@@ -24,8 +24,10 @@
 //! body holds `let` bindings and a final expression built from `+`, `-` (binary
 //! and unary), `*`, parentheses, integer literals, the coordinates `p.x`,
 //! `p.y`, `p.z` of a parameter and the names of earlier bindings. A second
-//! function with the same name and parameters, marked `#[exact]`, gives the
-//! form used for exact evaluation. Comments cost nothing; doc comments
+//! function with the same name and parameters, marked `#[exact]`, may give
+//! the same polynomial in another form, such as on the raw coordinates:
+//! [`generate`] only checks that it is the same polynomial as the main form,
+//! and no emitted stage evaluates it. Comments cost nothing; doc comments
 //! (`///`, `//!`, `/** */`, `/*! */`) are rejected, and so are predicate
 //! names that cannot name a module, such as keywords.
 //!
@@ -83,13 +85,12 @@
 //! uncertainty per axis, with the same `epsilon`, one `kappa` per axis that
 //! add up to the global `kappa`, and the same range for each axis.
 //!
-//! [`exact_plan_raw`] and [`exact_plan_differences`] derive, for each exact
-//! stage, the range of input magnitudes for which every exact product of the
+//! [`exact_plan_differences`] derives, for each exact stage on the stack,
+//! the range of input magnitudes for which every exact product of the
 //! arithmetic core stays in its domain and no value overflows, and the
 //! worst-case length of every temporary; [`generate`] sizes the stack
 //! buffers of the emitted stages from them. [`exact_plan_spans_translated`]
-//! and [`exact_plan_spans_untranslated`] derive the same for the stages over
-//! arena spans, whose leaves are expansions of up to
+//! derives the same for the stage over arena spans, whose leaves are expansions of up to
 //! [`MAX_COORD_COMPONENTS`] components: the range bounds every nonzero
 //! component, so it does not depend on the type of the points.
 
@@ -123,6 +124,6 @@ pub use point::{
 };
 pub use polynomial::{Polynomial, canonical, canonical_of_differences, check_same_polynomial};
 pub use range::{
-    ExactPlan, ExactRange, Leaves, MAX_COORD_COMPONENTS, exact_plan_differences, exact_plan_raw,
-    exact_plan_spans_translated, exact_plan_spans_untranslated,
+    ExactPlan, ExactRange, Leaves, MAX_COORD_COMPONENTS, exact_plan_differences,
+    exact_plan_spans_translated,
 };

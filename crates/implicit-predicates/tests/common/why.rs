@@ -10,16 +10,16 @@ use implicit_predicates_core::{eft, expansion};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Why {
     /// Explicit points of `orient3d` with a coordinate outside its
-    /// `UNTRANSLATED_RANGE`, the range of its stages on the stack.
+    /// `TRANSLATED_RANGE`, the range of its stages on the stack.
     CoordinateOutOfRange,
     /// `Point::exact` failed with `ExactError::OutOfRange`.
     ExactOutOfRange,
     /// An exact coordinate has more than `MAX_COORD_COMPONENTS` components.
     TooManyComponents,
     /// A component of an exact coordinate is outside
-    /// `SPANS_UNTRANSLATED_RANGE`. For a predicate without stages on the
-    /// stack, such as `insphere`, explicit points go through the stages
-    /// over spans too, and each of their coordinates is one component.
+    /// `SPANS_TRANSLATED_RANGE`. For a predicate without stages on the
+    /// stack, such as `insphere`, explicit points go through the stage over
+    /// spans too, and each of their coordinates is one component.
     ComponentOutOfRange,
     /// None of the above: every input is inside the documented ranges, so
     /// some stage on expansions should have decided. The call is decided,

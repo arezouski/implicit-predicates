@@ -151,14 +151,7 @@ fn the_chain_for_points_of_any_type_takes_the_exact_stages_of_staged_for_explici
         exact.starts_with("pub fn exact_stages(p: [&[f64; 3]; 4]) -> Option<Sign> {"),
         "{exact}"
     );
-    let order = positions(
-        exact,
-        &[
-            "exact_differences(p)",
-            "expansions_translated(p)",
-            "expansions_untranslated(p)",
-        ],
-    );
+    let order = positions(exact, &["exact_differences(p)", "expansions_translated(p)"]);
     assert!(order.is_sorted(), "{exact}");
     // In-sphere has no stage on the stack: its chain for explicit points
     // takes the arena.
@@ -193,8 +186,7 @@ fn the_stages_over_spans_run_on_the_exact_coordinates_in_order_and_reset_the_are
             "let (Some(q0), Some(q1), Some(q2), Some(q3)) = (q0, q1, q2, q3) else {\n\
              return Ok(None);\n};",
             "let q = [&q0, &q1, &q2, &q3];",
-            "if let Some(sign) = expansions_translated_in(scratch, q)? {",
-            "expansions_untranslated_in(scratch, q)\n}",
+            "expansions_translated_in(scratch, q)\n}",
             "let mark = scratch.mark();",
             "let decided = spans(scratch, p0, p1, p2, p3);",
             "scratch.reset(mark);",
@@ -216,14 +208,13 @@ fn the_stages_over_spans_run_on_the_exact_coordinates_in_order_and_reset_the_are
         ),
         "{exact}"
     );
-    // Without an exact form, only the translated form.
+    // In-sphere runs the same stage over spans.
     let i = generated(INSPHERE, "predicates/insphere.pred");
     let spans = function(&i.stages, "exact_stages_in");
     assert!(
         spans.contains("expansions_translated_in(scratch, q)\n}"),
         "{spans}"
     );
-    assert!(!spans.contains("untranslated"), "{spans}");
 }
 
 #[test]

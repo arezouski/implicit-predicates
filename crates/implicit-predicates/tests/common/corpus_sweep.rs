@@ -327,22 +327,20 @@ fn lines(f: impl FnOnce(&mut dyn FnMut(String))) -> String {
 /// The stages a call of `orient3d` can be attributed to, in the order of
 /// the chain: the filter giving a sign, the filter giving `Zero` (some axis
 /// is flat, so the value is exactly zero), the exact stages for explicit
-/// points, the exact stages over arena spans, and the stage on big integers,
+/// points, the exact stage over arena spans, and the stage on big integers,
 /// which decides every call that the others do not.
-pub const COLUMNS: [&str; 8] = [
+pub const COLUMNS: [&str; 6] = [
     "filter",
     "certain zero",
     "exact_differences",
     "expansions_translated",
-    "expansions_untranslated",
     "expansions_translated_in",
-    "expansions_untranslated_in",
     "big_integers",
 ];
 
 const CERTAIN_ZERO: usize = 1;
-const FIRST_SPANS_STAGE: usize = 5;
-const BIG_INTEGERS: usize = 7;
+const SPANS_STAGE: usize = 4;
+const BIG_INTEGERS: usize = 5;
 
 /// The first stage that decides a call, as an index in [`COLUMNS`], with
 /// its sign; or [`BIG_INTEGERS`] and the reason why no stage on expansions
@@ -363,9 +361,9 @@ fn attribute(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Result<Sig
             .skip(1)
             .find_map(|(i, (_, stage))| stage(refs(&q)).map(|sign| (i + 1, Ok(sign))))
             .unwrap_or_else(|| {
-                // `expansions_untranslated` decides whenever every coordinate
+                // `expansions_translated` decides whenever every coordinate
                 // is in its range.
-                let why = if all_in_range(&q, stages::UNTRANSLATED_RANGE) {
+                let why = if all_in_range(&q, stages::TRANSLATED_RANGE) {
                     Why::Unexplained
                 } else {
                     Why::CoordinateOutOfRange
@@ -395,10 +393,7 @@ fn attribute_spans(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Resu
     let r = [&q[0], &q[1], &q[2], &q[3]];
     let exhausted = |e| panic!("a growable arena is exhausted: {e:?}");
     if let Some(sign) = stages::expansions_translated_in(scratch, r).unwrap_or_else(exhausted) {
-        return (FIRST_SPANS_STAGE, Ok(sign));
-    }
-    if let Some(sign) = stages::expansions_untranslated_in(scratch, r).unwrap_or_else(exhausted) {
-        return (FIRST_SPANS_STAGE + 1, Ok(sign));
+        return (SPANS_STAGE, Ok(sign));
     }
     let spans = q.iter().flat_map(|c| [c.x, c.y, c.z]);
     let why = if spans
@@ -408,7 +403,7 @@ fn attribute_spans(scratch: &mut Scratch<'_>, p: &[AnyPoint; 4]) -> (usize, Resu
         Why::TooManyComponents
     } else if spans
         .flat_map(|s| scratch.get(s))
-        .any(|&x| !in_range(x, stages::SPANS_UNTRANSLATED_RANGE))
+        .any(|&x| !in_range(x, stages::SPANS_TRANSLATED_RANGE))
     {
         Why::ComponentOutOfRange
     } else {
@@ -608,7 +603,7 @@ impl Tally {
 
 /// The stages a call of `insphere` can be attributed to: those of its
 /// chain, in its order.
-pub const INSPHERE_COLUMNS: [&str; 4] = insphere_chain::CHAIN;
+pub const INSPHERE_COLUMNS: [&str; 3] = insphere_chain::CHAIN;
 
 /// What a sweep of the `insphere` calls found, by number of implicit points
 /// (0 to 5).

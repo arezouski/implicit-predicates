@@ -123,12 +123,10 @@ pub(super) fn interpret_stage(code: &str) -> Graph {
     let scalar = |g: &mut Symbolic, scalars: &BTreeMap<usize, NodeId>, text: &str| {
         if let Some((point, axis)) = coordinate(text, "p") {
             g.coordinate(point, axis)
-        } else if let Some(n) = numbered(text, 'v') {
-            scalars[&n]
         } else {
-            let value: f64 = text.parse().unwrap_or_else(|_| panic!("{text}"));
-            assert_eq!(value.fract(), 0.0, "{text}");
-            g.push(Node::Int(value as i64))
+            // The stages evaluate the main form, which has no constants.
+            let n = numbered(text, 'v').unwrap_or_else(|| panic!("not a scalar: {text}"));
+            scalars[&n]
         }
     };
     // `&e{n}[..l{n}]`, which must name the same node twice.
@@ -301,17 +299,10 @@ pub(super) fn interpret_span_stage(code: &str) -> Graph {
             .and_then(|t| t.strip_suffix("?;"))
             .and_then(|t| t.split_once(" = scratch."))
             .unwrap_or_else(|| panic!("not an operation of the arena: {line}"));
-        let value = if let Some(constant) = call
-            .strip_prefix("push(&[")
-            .and_then(|t| t.strip_suffix("])"))
-        {
-            if constant.is_empty() {
-                g.push(Node::Int(0))
-            } else {
-                let c: f64 = constant.parse().unwrap_or_else(|_| panic!("{line}"));
-                assert_eq!(c.fract(), 0.0, "{line}");
-                g.push(Node::Int(c as i64))
-            }
+        // The main form has no constants: the only push is the empty
+        // expansion that a negation subtracts from.
+        let value = if call == "push(&[])" {
+            g.push(Node::Int(0))
         } else {
             let (op, arguments) = call
                 .strip_suffix(')')

@@ -8,8 +8,8 @@
 
 use std::fmt::Write;
 
+use super::comment;
 use super::program::{Program, Scalar, Step};
-use super::{comment, literal};
 
 /// What the range check of a stage reads.
 pub(crate) enum Check {
@@ -204,7 +204,6 @@ fn scalar(x: Scalar) -> String {
     match x {
         Scalar::Coordinate { point, axis } => format!("p[{point}][{axis}]"),
         Scalar::Local(node) => format!("v{node}"),
-        Scalar::Constant(c) => literal(c),
     }
 }
 

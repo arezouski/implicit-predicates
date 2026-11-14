@@ -1,5 +1,5 @@
-//! The stages of `orient3d` over arena spans, against the exact sign and
-//! the stages on the stack: on explicit points, on coordinates of many
+//! The stage of `orient3d` over arena spans, against the exact sign and the
+//! stage on the stack: on explicit points, on coordinates of many
 //! components, at the ends of their ranges, with too many components, a
 //! weight other than one or an arena too small.
 
@@ -32,21 +32,17 @@ fn any_family() -> impl Strategy<Value = Points> {
 }
 
 /// The ends of the ranges of the stages on the stack, of the filter and of
-/// the stages over spans.
+/// the stage over spans.
 fn span_edges() -> Vec<f64> {
-    let (t, u) = (
-        stages::SPANS_TRANSLATED_RANGE,
-        stages::SPANS_UNTRANSLATED_RANGE,
-    );
+    let t = stages::SPANS_TRANSLATED_RANGE;
     let mut edges = edges();
-    edges.extend([t.0, t.1, u.0, u.1]);
+    edges.extend([t.0, t.1]);
     edges
 }
 
-/// The stages over spans, on the exact coordinates of `p` written to a
-/// fresh arena: their results and the top of the arena after each call,
-/// which must be where it was.
-fn over_spans(p: &Points) -> (Option<Sign>, Option<Sign>) {
+/// The stage over spans, on the exact coordinates of `p` written to a fresh
+/// arena; the top of the arena after the call must be where it was.
+fn over_spans(p: &Points) -> Option<Sign> {
     let mut buf = vec![0.0; 1 << 16];
     let mut scratch = Scratch::borrowed(&mut buf);
     let q = p.map(|point| point.exact(&mut scratch).unwrap());
@@ -54,9 +50,7 @@ fn over_spans(p: &Points) -> (Option<Sign>, Option<Sign>) {
     let q = [&q[0], &q[1], &q[2], &q[3]];
     let translated = stages::expansions_translated_in(&mut scratch, q).unwrap();
     assert_eq!(scratch.used(), used);
-    let untranslated = stages::expansions_untranslated_in(&mut scratch, q).unwrap();
-    assert_eq!(scratch.used(), used);
-    (translated, untranslated)
+    translated
 }
 
 /// Writes each coordinate, given as an expansion, to `scratch`.
@@ -82,20 +76,17 @@ fn exact_of_expansions(p: &[[Vec<f64>; 3]; 4]) -> Sign {
     }
 }
 
-/// Both stages over spans at points whose coordinates are expansions.
-fn spans_of_expansions(p: &[[Vec<f64>; 3]; 4]) -> (Option<Sign>, Option<Sign>) {
+/// The stage over spans at points whose coordinates are expansions.
+fn spans_of_expansions(p: &[[Vec<f64>; 3]; 4]) -> Option<Sign> {
     let mut buf = vec![0.0; 1 << 20];
     let mut scratch = Scratch::borrowed(&mut buf);
     let q = write_points(&mut scratch, p);
     let q = [&q[0], &q[1], &q[2], &q[3]];
-    (
-        stages::expansions_translated_in(&mut scratch, q).unwrap(),
-        stages::expansions_untranslated_in(&mut scratch, q).unwrap(),
-    )
+    stages::expansions_translated_in(&mut scratch, q).unwrap()
 }
 
 /// Four points whose coordinates are expansions of up to 16 components,
-/// every one of them within both ranges over spans: the leaves they are
+/// every one of them within the range over spans: the leaves they are
 /// summed from have magnitudes in `2^-136..=2^136` and up to 53 bits, so
 /// every component is a multiple of `2^-188` and below `2^141`.
 fn expansion_points() -> impl Strategy<Value = [[Vec<f64>; 3]; 4]> {
@@ -104,8 +95,7 @@ fn expansion_points() -> impl Strategy<Value = [[Vec<f64>; 3]; 4]> {
     points
 }
 
-/// An expansion of 16 components that spans the range over spans of the
-/// translated form, with the signs of `signs`: from `2^234`, its top, down
+/// An expansion of 16 components that spans the range over spans, with the signs of `signs`: from `2^234`, its top, down
 /// to `2^-158` every 28 binades, then `(1 + 2^-52) 2^-188`, at its bottom,
 /// whose last bit is `2^-240`.
 fn spanning(signs: u16) -> Vec<f64> {
@@ -124,27 +114,19 @@ proptest! {
     #![proptest_config(config())]
 
     #[test]
-    fn the_stages_over_spans_agree_with_the_oracle_and_the_stack(p in any_family()) {
+    fn the_stage_over_spans_agrees_with_the_oracle_and_the_stack(p in any_family()) {
         prop_assume!(all_finite(&p));
         let expected = exact(&p);
-        let (translated, untranslated) = over_spans(&p);
-        for (name, sign) in [("translated", translated), ("untranslated", untranslated)] {
-            if let Some(sign) = sign {
-                prop_assert_eq!(sign, expected, "{} on {:?}", name, p);
-            }
+        let translated = over_spans(&p);
+        if let Some(sign) = translated {
+            prop_assert_eq!(sign, expected, "{:?}", p);
         }
         if let (Some(t), Some(s)) = (translated, stages::expansions_translated(refs(&p))) {
             prop_assert_eq!(t, s, "{:?}", p);
         }
-        if let (Some(u), Some(s)) = (untranslated, stages::expansions_untranslated(refs(&p))) {
-            prop_assert_eq!(u, s, "{:?}", p);
-        }
-        // Within its range each decides.
+        // Within its range it decides.
         if all_in_range(&p, stages::SPANS_TRANSLATED_RANGE) {
             prop_assert_eq!(translated, Some(expected), "{:?}", p);
-        }
-        if all_in_range(&p, stages::SPANS_UNTRANSLATED_RANGE) {
-            prop_assert_eq!(untranslated, Some(expected), "{:?}", p);
         }
     }
 
@@ -154,7 +136,7 @@ proptest! {
         let components = p.iter().flatten().flatten();
         prop_assert!(components.clone().all(|&c| (range.0..=range.1).contains(&c.abs())));
         let expected = exact_of_expansions(&p);
-        prop_assert_eq!(spans_of_expansions(&p), (Some(expected), Some(expected)), "{:?}", p);
+        prop_assert_eq!(spans_of_expansions(&p), Some(expected), "{:?}", p);
     }
 
     #[test]
@@ -171,40 +153,29 @@ proptest! {
             })
         });
         let expected = exact_of_expansions(&p);
-        prop_assert_eq!(spans_of_expansions(&p), (Some(expected), Some(expected)), "{:?}", p);
+        prop_assert_eq!(spans_of_expansions(&p), Some(expected), "{:?}", p);
     }
 }
 
 #[test]
-fn the_ranges_over_spans_lie_within_the_ranges_over_one_component() {
-    let inside = |inner: (f64, f64), outer: (f64, f64)| outer.0 <= inner.0 && inner.1 <= outer.1;
-    assert!(inside(
-        stages::SPANS_TRANSLATED_RANGE,
-        stages::TRANSLATED_RANGE
-    ));
-    assert!(inside(
-        stages::SPANS_UNTRANSLATED_RANGE,
-        stages::UNTRANSLATED_RANGE
-    ));
+fn the_range_over_spans_lies_within_the_range_over_one_component() {
+    let (inner, outer) = (stages::SPANS_TRANSLATED_RANGE, stages::TRANSLATED_RANGE);
+    assert!(outer.0 <= inner.0 && inner.1 <= outer.1);
     assert_eq!(stages::SPANS_TRANSLATED_RANGE, (pow2(-188), pow2(234)));
-    assert_eq!(stages::SPANS_UNTRANSLATED_RANGE, (pow2(-188), pow2(235)));
     assert_eq!(stages::MAX_COORD_COMPONENTS, 16);
 }
 
 #[test]
 fn a_component_outside_the_range_is_declined() {
-    let (t, u) = (
-        stages::SPANS_TRANSLATED_RANGE,
-        stages::SPANS_UNTRANSLATED_RANGE,
-    );
+    let t = stages::SPANS_TRANSLATED_RANGE;
     let base = [
         [1.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],
         [0.0, 0.0, 1.0],
         [0.5, 0.5, 0.5],
     ];
-    assert_eq!(over_spans(&base), (Some(exact(&base)), Some(exact(&base))));
-    // Just inside and just outside each end of each range, as the second
+    assert_eq!(over_spans(&base), Some(exact(&base)));
+    // Just inside and just outside each end of the range, as the second
     // component of a coordinate whose first is 1 (or, at the top, alone).
     let at = |value: f64| {
         let p = [
@@ -224,12 +195,12 @@ fn a_component_outside_the_range_is_declined() {
         ];
         spans_of_expansions(&p)
     };
-    assert!(matches!(at(t.1), (Some(_), Some(_))));
-    assert!(matches!(at(t.1.next_up()), (None, Some(_))));
-    assert!(matches!(at(-u.1.next_up()), (None, None)));
-    assert!(matches!(small(t.0), (Some(_), Some(_))));
-    assert!(matches!(small(t.0.next_down()), (None, _)));
-    assert!(matches!(small(-u.0.next_down()), (_, None)));
+    assert!(at(t.1).is_some());
+    assert_eq!(at(t.1.next_up()), None);
+    assert_eq!(at(-t.1.next_up()), None);
+    assert!(small(t.0).is_some());
+    assert_eq!(small(t.0.next_down()), None);
+    assert_eq!(small(-t.0.next_down()), None);
 }
 
 // Without debug assertions only: with them, the arena itself refuses to
@@ -272,11 +243,6 @@ fn a_zero_component_is_declined() {
                 Ok(None),
                 "{coordinate:?}"
             );
-            assert_eq!(
-                stages::expansions_untranslated_in(&mut scratch, q),
-                Ok(None),
-                "{coordinate:?}"
-            );
             assert_eq!(scratch.used(), used);
         }
     }
@@ -296,8 +262,8 @@ fn a_coordinate_of_17_components_is_declined() {
     };
     let p16 = points(16);
     let expected = exact_of_expansions(&p16);
-    assert_eq!(spans_of_expansions(&p16), (Some(expected), Some(expected)));
-    assert_eq!(spans_of_expansions(&points(17)), (None, None));
+    assert_eq!(spans_of_expansions(&p16), Some(expected));
+    assert_eq!(spans_of_expansions(&points(17)), None);
 }
 
 #[test]
@@ -314,10 +280,6 @@ fn a_weight_other_than_one_is_declined() {
     q[2].w = Weight::Expansion(scratch.push(&[2.0]).unwrap());
     let q = [&q[0], &q[1], &q[2], &q[3]];
     assert_eq!(stages::expansions_translated_in(&mut scratch, q), Ok(None));
-    assert_eq!(
-        stages::expansions_untranslated_in(&mut scratch, q),
-        Ok(None)
-    );
 }
 
 #[test]
@@ -337,25 +299,15 @@ fn an_arena_too_small_is_an_error_that_leaves_it_as_it_was() {
         let q = p.map(|point| point.exact(&mut scratch).unwrap());
         let used = scratch.used();
         let q = [&q[0], &q[1], &q[2], &q[3]];
-        let results = [
-            stages::expansions_translated_in(&mut scratch, q),
-            stages::expansions_untranslated_in(&mut scratch, q),
-        ];
+        let result = stages::expansions_translated_in(&mut scratch, q);
         assert_eq!(scratch.used(), used, "{spare}");
-        match results {
-            [Ok(t), Ok(u)] => {
-                assert_eq!((t, u), (Some(exact(&p)), Some(exact(&p))));
+        match result {
+            Ok(t) => {
+                assert_eq!(t, Some(exact(&p)));
                 needed = Some(spare);
                 break;
             }
-            [t, u] => {
-                assert!([t, u].contains(&Err(ScratchExhausted)), "{spare}");
-                assert!(
-                    [t, u]
-                        .iter()
-                        .all(|r| r.is_err() || *r == Ok(Some(exact(&p))))
-                );
-            }
+            Err(e) => assert_eq!(e, ScratchExhausted, "{spare}"),
         }
     }
     assert!(needed.is_some_and(|spare| spare > 0), "{needed:?}");
