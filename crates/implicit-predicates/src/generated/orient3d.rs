@@ -765,7 +765,8 @@ pub fn exact_stages_explicit_in(
 /// If the exact coordinates of a point have a weight other than
 /// [`Weight::One`], which the predicates do not support, or a point cannot give
 /// its exact coordinates as big integers, which by the contract of
-/// [`Point::exact_big`] happens only when an input is not finite.
+/// [`Point::exact_big`] happens only when an input is not finite or the
+/// coordinates have a weight other than one.
 #[cold]
 #[inline(never)]
 pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point>(

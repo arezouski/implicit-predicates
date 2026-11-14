@@ -206,7 +206,7 @@ For each predicate the generator writes one module with:
   every input, and fail only when the arena runs out of room. They panic on
   a point whose exact coordinates have a weight other than one, and on a
   point that cannot give its coordinates as big integers because an input
-  is not finite;
+  is not finite or its weight is other than one;
 - `big_integers_in`, the main form evaluated exactly with the big-integer
   operations of an arena, on the coordinates of the points as big
   integers; it always decides, and fails only when the arena runs out of

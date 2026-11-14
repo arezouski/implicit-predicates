@@ -47,7 +47,9 @@ use crate::scratch::{Scratch, ScratchExhausted, Span};
 /// - [`exact_big`](Self::exact_big) gives the same coordinates as
 ///   [`exact`](Self::exact), `x_k / w`, whenever `exact` succeeds, and the
 ///   same answer on every call; it fails with [`ExactError::OutOfRange`]
-///   only when an input of the point is not finite;
+///   only when an input of the point is not finite, and with
+///   [`ExactError::Weighted`] when the exact coordinates have a weight
+///   other than one;
 /// - [`exact_big`](Self::exact_big) leaves the arena below the top it had
 ///   when it was called as it was: it writes only above that top and never
 ///   resets the arena to a mark taken before the call. After an error the
