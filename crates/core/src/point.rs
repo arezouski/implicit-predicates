@@ -115,7 +115,9 @@ pub trait Point {
     ///
     /// - [`ExactError::Exhausted`] if `scratch` runs out of room;
     /// - [`ExactError::OutOfRange`] only if an input of the point is not
-    ///   finite.
+    ///   finite;
+    /// - [`ExactError::Weighted`] if the exact coordinates of the point have
+    ///   a weight other than one.
     ///
     /// The method writes only above the top the arena had before the call
     /// and never resets below it; after an error, `scratch` may hold partial
@@ -191,6 +193,9 @@ pub enum ExactError {
     /// The inputs of the point lie outside the range of the exact
     /// arithmetic.
     OutOfRange,
+    /// The exact coordinates of the point have a weight other than one,
+    /// which big-integer coordinates cannot carry.
+    Weighted,
 }
 
 impl From<ScratchExhausted> for ExactError {
@@ -206,6 +211,9 @@ impl fmt::Display for ExactError {
             ExactError::OutOfRange => {
                 f.write_str("point outside the range of the exact arithmetic")
             }
+            ExactError::Weighted => f.write_str(
+                "point with a weight other than one, which big-integer coordinates cannot carry",
+            ),
         }
     }
 }
@@ -214,7 +222,7 @@ impl core::error::Error for ExactError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             ExactError::Exhausted(e) => Some(e),
-            ExactError::OutOfRange => None,
+            ExactError::OutOfRange | ExactError::Weighted => None,
         }
     }
 }

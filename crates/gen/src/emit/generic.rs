@@ -162,7 +162,8 @@ fn write_helpers(out: &mut String) {
         "The exact coordinates of the point `p` as big integers, written to `scratch`.\n\n\
          # Panics\n\n\
          If `p` cannot give them for any reason other than the room of the arena: by \
-         the contract of [`Point::exact_big`], only when an input is not finite.",
+         the contract of [`Point::exact_big`], only when an input is not finite or \
+         the coordinates have a weight other than one.",
     );
     writeln!(
         out,
@@ -171,6 +172,7 @@ fn write_helpers(out: &mut String) {
          match p.exact_big(scratch) {{\n\
          Ok(c) => Ok(c),\n\
          Err(ExactError::Exhausted(e)) => Err(e),\n\
+         Err(ExactError::Weighted) => no_exact_coordinates(\n\"{WEIGHT_PANIC}\",\n),\n\
          Err(_) => no_exact_coordinates(\n\"{NOT_FINITE_PANIC}\",\n),\n\
          }}\n\
          }}\n"

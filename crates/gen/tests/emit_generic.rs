@@ -316,17 +316,31 @@ fn the_stages_for_points_of_any_type_end_with_the_stage_on_big_integers() {
         assert!(
             exact_big.contains(
                 "Ok(c) => Ok(c),\nErr(ExactError::Exhausted(e)) => Err(e),\n\
+             Err(ExactError::Weighted) => no_exact_coordinates(\n\
+             \"implicit-predicates: a point has a weight other than one, which the predicates do \
+             not support\",\n),\n\
              Err(_) => no_exact_coordinates(\n\
              \"implicit-predicates: a point has no exact coordinates: an input is not finite\",\n),"
             ),
             "{file}: {exact_big}"
         );
-        for message in [
-            "\"implicit-predicates: a point has a weight other than one, which the predicates do \
-             not support\"",
-            "\"implicit-predicates: a point has no exact coordinates: an input is not finite\"",
+        // The weight is reported by `exact` and by `exact_big`.
+        for (message, count) in [
+            (
+                "\"implicit-predicates: a point has a weight other than one, which the predicates \
+                 do not support\"",
+                2,
+            ),
+            (
+                "\"implicit-predicates: a point has no exact coordinates: an input is not finite\"",
+                1,
+            ),
         ] {
-            assert_eq!(g.stages.matches(message).count(), 1, "{file}: {message}");
+            assert_eq!(
+                g.stages.matches(message).count(),
+                count,
+                "{file}: {message}"
+            );
         }
         assert!(
             g.stages.contains(

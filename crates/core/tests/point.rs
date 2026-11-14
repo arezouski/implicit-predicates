@@ -82,6 +82,12 @@ fn exact_errors_convert_and_describe_themselves() {
         "point outside the range of the exact arithmetic"
     );
     assert!(ExactError::OutOfRange.source().is_none());
+    assert_eq!(
+        ExactError::Weighted.to_string(),
+        "point with a weight other than one, which big-integer coordinates cannot carry"
+    );
+    assert!(ExactError::Weighted.source().is_none());
+    assert_ne!(ExactError::Weighted, ExactError::OutOfRange);
 }
 
 #[test]

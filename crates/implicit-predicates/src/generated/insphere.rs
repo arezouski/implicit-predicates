@@ -959,11 +959,15 @@ fn exact(
 /// # Panics
 ///
 /// If `p` cannot give them for any reason other than the room of the arena: by
-/// the contract of [`Point::exact_big`], only when an input is not finite.
+/// the contract of [`Point::exact_big`], only when an input is not finite or
+/// the coordinates have a weight other than one.
 fn exact_big(scratch: &mut Scratch<'_>, p: &impl Point) -> Result<BigCoords, ScratchExhausted> {
     match p.exact_big(scratch) {
         Ok(c) => Ok(c),
         Err(ExactError::Exhausted(e)) => Err(e),
+        Err(ExactError::Weighted) => no_exact_coordinates(
+            "implicit-predicates: a point has a weight other than one, which the predicates do not support",
+        ),
         Err(_) => no_exact_coordinates(
             "implicit-predicates: a point has no exact coordinates: an input is not finite",
         ),

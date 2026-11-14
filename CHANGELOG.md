@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ExactError::Weighted`, in `implicit-predicates-core`: the exact
+  coordinates of a point have a weight other than one, which the big-integer
+  coordinates of `Point::exact_big` cannot carry. `Point::exact_big` must
+  return it for such a point, and the predicates turn it into the panic
+  about the weight.
 - `Big`, in `implicit-predicates-core`: exact integers of arbitrary size
   stored in a `Scratch` arena, built from `f64` values with
   `Scratch::big_from_f64`, with exact `big_add`, `big_sub` and `big_mul`.

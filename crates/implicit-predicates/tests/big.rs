@@ -10,7 +10,7 @@ mod common;
 
 use common::args::{Arg, Args, Call, Orient3d, Orient3dIn, any_points, exact_sign, with_concrete};
 use common::generated::{exact, exact_at};
-use common::odd_points::{Long, NoCoordinates, Weighted};
+use common::odd_points::{Long, NoCoordinates, Weighted, WeightedOutOfRange};
 use common::{CHAIN, Points, first_deciding, pow2};
 use implicit_predicates::stages::orient3d::{self as stages, BIG_INTEGERS_EXPLICIT_ARENA};
 use implicit_predicates::{
@@ -80,6 +80,31 @@ fn a_point_with_a_weight_panics_with_an_arena() {
     let [a, b, c] = PLANE;
     let mut buf = vec![0.0; 1 << 12];
     let _ = orient3d_in(&mut Scratch::borrowed(&mut buf), &a, &b, &c, &Weighted);
+}
+
+#[test]
+#[should_panic(
+    expected = "implicit-predicates: a point has a weight other than one, which the predicates do not support"
+)]
+fn a_point_with_a_weight_that_only_the_big_integers_see_panics() {
+    let [a, b, c] = PLANE;
+    orient3d(&a, &b, &c, &WeightedOutOfRange);
+}
+
+#[test]
+#[should_panic(
+    expected = "implicit-predicates: a point has a weight other than one, which the predicates do not support"
+)]
+fn a_point_with_a_weight_that_only_the_big_integers_see_panics_with_an_arena() {
+    let [a, b, c] = PLANE;
+    let mut buf = vec![0.0; 1 << 12];
+    let _ = orient3d_in(
+        &mut Scratch::borrowed(&mut buf),
+        &a,
+        &b,
+        &c,
+        &WeightedOutOfRange,
+    );
 }
 
 #[test]

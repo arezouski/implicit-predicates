@@ -34,8 +34,36 @@ impl Point for Weighted {
         })
     }
 
-    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
-        [0.0; 3].exact_big(scratch)
+    fn exact_big(&self, _: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        Err(ExactError::Weighted)
+    }
+}
+
+/// A point at the origin whose exact coordinates are outside the range of
+/// the expansions and have a weight other than one, so that only the stage
+/// on big integers can see the weight, with an infinite error so that the
+/// filter never decides.
+pub struct WeightedOutOfRange;
+
+impl Point for WeightedOutOfRange {
+    fn approx(&self) -> &[f64; 3] {
+        &[0.0; 3]
+    }
+
+    fn err(&self) -> &[f64; 3] {
+        &[f64::INFINITY; 3]
+    }
+
+    fn is_explicit(&self) -> bool {
+        false
+    }
+
+    fn exact(&self, _: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        Err(ExactError::OutOfRange)
+    }
+
+    fn exact_big(&self, _: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        Err(ExactError::Weighted)
     }
 }
 
