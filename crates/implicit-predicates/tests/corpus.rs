@@ -206,9 +206,10 @@ fn the_sweep_of_insphere_fails_without_the_factor_of_the_reference() {
 /// The two ways of cross-checking the `insphere` calls give the same table
 /// and the same number of mismatches on the samples, also without the
 /// factor of the reference, where every call with a nonzero recorded sign
-/// is one. Only the descriptions of the mismatches and of the examples of
-/// the calls decided on big integers differ: those of `ChainOnly` have no
-/// stage alone.
+/// is one. Only the descriptions of the mismatches differ, and, in the
+/// examples of the calls decided on big integers, what the stages gave
+/// alone, which `ChainOnly` does not run: the examples, with their decision,
+/// must be the same.
 #[test]
 fn both_cross_checks_of_insphere_give_the_same_table_on_the_samples() {
     for factor in [REFERENCE_INSPHERE_FACTOR, 1] {
@@ -225,7 +226,7 @@ fn both_cross_checks_of_insphere_give_the_same_table_on_the_samples() {
             t.report("samples")
                 .lines()
                 .filter(|line| !described.iter().any(|m| line.trim() == m))
-                .filter(|line| !line.contains(" example: "))
+                .map(without_stages_alone)
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -237,6 +238,15 @@ fn both_cross_checks_of_insphere_give_the_same_table_on_the_samples() {
             every.mismatches.count > 0,
             factor != REFERENCE_INSPHERE_FACTOR
         );
+    }
+}
+
+/// `line` without what the stages gave alone, `alone: ...` up to the
+/// points, in a described call.
+fn without_stages_alone(line: &str) -> String {
+    match (line.find(" alone: "), line.find(", points ")) {
+        (Some(start), Some(end)) if start < end => format!("{}{}", &line[..start], &line[end..]),
+        _ => line.to_string(),
     }
 }
 

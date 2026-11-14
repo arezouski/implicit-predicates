@@ -200,14 +200,20 @@ const DEGREE_18: &str = "fn p(a: Point3, b: Point3) -> Sign { let x = a.x - b.x;
 #[test]
 fn big_integers_alone_start_at_degree_5() {
     assert_eq!(BIG_INTEGERS_ONLY_DEGREE, 5);
-    // The README quotes it.
+    // The README quotes it twice; the CHANGELOG, outside the package, is
+    // checked in `emitted_code.rs`.
     let readme = include_str!("../README.md")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    let quoted =
-        format!("total degree {BIG_INTEGERS_ONLY_DEGREE} or more (`BIG_INTEGERS_ONLY_DEGREE`)");
-    assert!(readme.contains(&quoted), "{quoted}");
+    for quoted in [
+        format!("total degree {BIG_INTEGERS_ONLY_DEGREE} or more (`BIG_INTEGERS_ONLY_DEGREE`)"),
+        format!("for a main form of total degree {BIG_INTEGERS_ONLY_DEGREE} or more, none"),
+    ] {
+        assert!(readme.contains(&quoted), "{quoted}");
+    }
+    assert_eq!(readme.matches(" degree 5 ").count(), 2, "an untied mention");
+
     let degree = |source: &str| {
         let p = parse(source, "t.pred").unwrap().remove(0);
         let diff = difference_graph(&p.main, "t.pred", p.position).unwrap();

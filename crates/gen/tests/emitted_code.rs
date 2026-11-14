@@ -10,7 +10,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use implicit_predicates_gen::{Polynomial, canonical, generate, generate_points, parse};
+use implicit_predicates_gen::{
+    BIG_INTEGERS_ONLY_DEGREE, Polynomial, canonical, generate, generate_points, parse,
+};
 
 /// How the tests say to regenerate the code.
 const REGENERATE: &str = "run the tests.";
@@ -272,6 +274,65 @@ fn a_predicate_of_degree_18_decides_every_call_on_big_integers() {
     compile_and_run("emitted-degree-18", &modules, DEGREE_18_TEST);
 }
 
+/// The test of the predicate of degree 5 `(a.x - b.x)^2 (a.y - b.y)^2
+/// (a.z - b.z)`, of odd degree, so that it takes the three signs: its chain
+/// against the product written by hand on exact dyadic numbers.
+const DEGREE_5_TEST: &str = r#"use implicit_predicates::{Lnc, Scratch, Sign};
+use implicit_predicates_oracle::Dyadic;
+
+/// The sign of `(a.x - b.x)^2 (a.y - b.y)^2 (a.z - b.z)` at the exact points.
+fn oracle(a: &[Dyadic; 3], b: &[Dyadic; 3]) -> Sign {
+    let d: Vec<Dyadic> = (0..3).map(|k| &a[k] - &b[k]).collect();
+    let value = &(&(&(&d[0] * &d[1]) * &d[0]) * &d[1]) * &d[2];
+    Sign::from(value.sign().cmp(&0))
+}
+
+fn exact(p: [f64; 3]) -> [Dyadic; 3] {
+    p.map(Dyadic::from_f64)
+}
+
+const VALUES: [f64; 7] = [0.0, 1.0, -3.0, 1e-300, 1e300, -5e-324, 0.1];
+
+#[test]
+fn the_chain_has_the_sign_of_the_oracle() {
+    let mut buffer = vec![0.0; 1 << 16];
+    let mut scratch = Scratch::borrowed(&mut buffer);
+    let mut signs = [0; 3];
+    let mut declined = 0;
+    for &x in &VALUES {
+        for &y in &VALUES {
+            for &z in &VALUES {
+                let (a, b) = ([x, y, z], [0.1, -0.1, 0.1]);
+                let expected = oracle(&exact(a), &exact(b));
+                signs[(i8::from(expected) + 1) as usize] += 1;
+                let staged = stages::staged([&a, &b]);
+                assert!(staged.is_none_or(|s| s == expected), "{a:?}");
+                if staged.is_none() {
+                    declined += 1;
+                }
+                assert_eq!(stages::staged_in(&mut scratch, &a, &b), Ok(expected), "{a:?}");
+                assert_eq!(stages::exact_stages_explicit_in(&mut scratch, [&a, &b]), Ok(expected));
+                let (la, lb) = (Lnc::new_unchecked(a, a, 0.5), Lnc::new_unchecked(b, b, 0.25));
+                assert_eq!(stages::staged_in(&mut scratch, &la, &lb), Ok(expected), "{a:?}");
+                assert_eq!(stages::exact_stages_in(&mut scratch, &la, &lb), Ok(expected));
+                assert_eq!(scratch.used(), 0);
+            }
+        }
+    }
+    assert!(signs.iter().all(|&n| n > 0), "{signs:?}");
+    assert!(declined > 0, "the filter decides every call");
+}
+"#;
+
+#[test]
+fn a_predicate_of_degree_5_takes_every_sign_on_big_integers() {
+    let source = "fn p(a: Point3, b: Point3) -> Sign { \
+                  (a.x - b.x) * (a.y - b.y) * (a.x - b.x) * (a.y - b.y) * (a.z - b.z) }";
+    let modules = predicate_modules(source);
+    assert!(!modules[0].1.contains("expansions"), "{}", modules[0].1);
+    compile_and_run("emitted-degree-5", &modules, DEGREE_5_TEST);
+}
+
 /// The in-circle predicate of the projections of four points on the plane
 /// `z = 0`, of degree 4: its exact differences fit on the stack, and its
 /// translated expansions do not, so that the stage over spans takes their
@@ -280,8 +341,11 @@ const INCIRCLE: &str = include_str!("fixtures/incircle.pred");
 
 /// The test of [`INCIRCLE`]: its chain against the determinant written by
 /// hand on exact dyadic numbers, on points of a circle and near one, moved
-/// so that their differences are not exact in `f64`.
-const INCIRCLE_TEST: &str = r#"use implicit_predicates::{Lnc, Scratch, Sign};
+/// so that their differences are not exact in `f64`; on points of the circle
+/// scaled by a power of two, which must be zero; and on points outside the
+/// range of the stage over spans, which the chain hands over to the stage on
+/// big integers.
+const INCIRCLE_TEST: &str = r#"use implicit_predicates::{Lnc, Point, Scratch, Sign};
 use implicit_predicates_oracle::Dyadic;
 
 /// The sign of the in-circle determinant of the projections of `p`: the
@@ -349,6 +413,89 @@ fn the_chain_has_the_sign_of_the_oracle() {
     });
     assert!(decided > 0);
 }
+
+const CIRCLE: [[f64; 2]; 6] = [[5.0, 0.0], [3.0, 4.0], [0.0, 5.0], [-4.0, 3.0], [-3.0, -4.0], [4.0, -3.0]];
+
+/// Four points of `CIRCLE`, without the point `skip`, scaled by `scale`,
+/// moved by `offset` and with the `x` of the last one moved by `nudge`
+/// units in the last place.
+fn on_circle(scale: f64, offset: f64, skip: usize, nudge: i32) -> [[f64; 3]; 4] {
+    let mut p = [[0.0f64; 3]; 4];
+    let points = (0..6).filter(|&i| i != skip).take(4);
+    for (slot, i) in p.iter_mut().zip(points) {
+        let [x, y] = CIRCLE[i];
+        *slot = [x * scale + offset, y * scale - offset, 0.5];
+    }
+    for _ in 0..nudge.unsigned_abs() {
+        p[3][0] = if nudge > 0 { p[3][0].next_up() } else { p[3][0].next_down() };
+    }
+    p
+}
+
+#[test]
+fn exactly_concyclic_points_are_zero() {
+    // Integer points of a circle scaled by a power of two, not moved: the
+    // determinant is zero, whatever form computes it.
+    let mut buffer = vec![0.0; 1 << 16];
+    let mut scratch = Scratch::borrowed(&mut buffer);
+    for exponent in [0, -30, 40, 242, -200] {
+        let scale = 2f64.powi(exponent);
+        for skip in 0..6 {
+            let p = on_circle(scale, 0.0, skip, 0);
+            assert_eq!(oracle(exact(&p)), Sign::Zero, "{p:?}");
+            let [a, b, c, d] = &p;
+            assert_eq!(stages::staged_in(&mut scratch, a, b, c, d), Ok(Sign::Zero), "{p:?}");
+            let [a, b, c, d] = p.map(|q| Lnc::new_unchecked(q, q, 0.625));
+            assert_eq!(stages::staged_in(&mut scratch, &a, &b, &c, &d), Ok(Sign::Zero), "{p:?}");
+        }
+    }
+}
+
+#[test]
+fn outside_the_range_over_spans_the_chain_falls_to_the_big_integers() {
+    // Above the top of `SPANS_TRANSLATED_RANGE` and `DIFFERENCES_RANGE`, and
+    // below their bottom, with offsets that make the differences inexact:
+    // the filter declines points this close to a circle, the stages on
+    // expansions decline the magnitudes, and the stage on big integers
+    // decides.
+    let (min, max) = stages::SPANS_TRANSLATED_RANGE;
+    let mut buffer = vec![0.0; 1 << 16];
+    let mut scratch = Scratch::borrowed(&mut buffer);
+    let (mut explicit, mut implicit) = (0, 0);
+    let mut signs = [0; 3];
+    for scale in [max * 256.0, min / 4096.0] {
+        for offset in [0.0, scale / 3.0, scale * 0.1] {
+            for skip in 0..6 {
+                for nudge in [0, 1, -1] {
+                    let p = on_circle(scale, offset, skip, nudge);
+                    let expected = oracle(exact(&p));
+                    let r = p.each_ref();
+                    if stages::staged(&mut scratch, r) == Ok(None) {
+                        assert_eq!(stages::exact_stages_explicit_in(&mut scratch, r), Ok(expected), "{p:?}");
+                        let [a, b, c, d] = &p;
+                        assert_eq!(stages::staged_in(&mut scratch, a, b, c, d), Ok(expected), "{p:?}");
+                        explicit += 1;
+                        signs[(i8::from(expected) + 1) as usize] += 1;
+                    }
+                    let l = p.map(|q| Lnc::new_unchecked(q, q, 0.625));
+                    let mark = scratch.mark();
+                    let q = l.each_ref().map(|x| x.exact(&mut scratch).unwrap());
+                    let declined = stages::expansions_translated_in(&mut scratch, q.each_ref()) == Ok(None);
+                    scratch.reset(mark);
+                    if declined && stages::filter_points(&l[0], &l[1], &l[2], &l[3]).is_none() {
+                        let [a, b, c, d] = &l;
+                        assert_eq!(stages::exact_stages_in(&mut scratch, a, b, c, d), Ok(expected), "{p:?}");
+                        assert_eq!(stages::staged_in(&mut scratch, a, b, c, d), Ok(expected), "{p:?}");
+                        implicit += 1;
+                    }
+                    assert_eq!(scratch.used(), 0);
+                }
+            }
+        }
+    }
+    assert!(explicit > 0 && implicit > 0, "{explicit} {implicit}");
+    assert!(signs.iter().all(|&n| n > 0), "{signs:?}");
+}
 "#;
 
 #[test]
@@ -399,4 +546,15 @@ fn point_types_with_parameters_named_like_local_names_compile() {
          }\n\
          }\n",
     );
+}
+
+#[test]
+fn the_changelog_quotes_the_degree_of_big_integers_alone() {
+    // The CHANGELOG is not in the package of the generator, so this file,
+    // which reads the workspace, checks it.
+    let text = fs::read_to_string(workspace().join("CHANGELOG.md")).unwrap();
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let quoted =
+        format!("a total degree of {BIG_INTEGERS_ONLY_DEGREE} or more (`BIG_INTEGERS_ONLY_DEGREE`");
+    assert!(text.contains(&quoted), "{quoted}");
 }
