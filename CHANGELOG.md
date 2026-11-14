@@ -22,11 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contract.
 - `Generated::warnings`, in `implicit-predicates-gen`: what the user of the
   generated code should know and the code cannot enforce. The command-line
-  tool prints them to standard error. There are two for now: no input at
+  tool prints them to standard error. There are three for now: no input at
   the edge of the error bound of a filter was found, so the table of edge
-  cases of its checks is empty; and a point type has an exact coordinate
-  that can have more than 16 components: the stages on expansions decline it,
-  and the stage on big integers, which is slower, decides it.
+  cases of its checks is empty; a point type has an exact coordinate that
+  can have more than 16 components: the stages on expansions decline it,
+  and the stage on big integers, which is slower, decides it; and the error
+  bound by parts of a filter was not derived, so its predicate has no
+  `filter_axes`.
 - `parts_bound`, in `implicit-predicates-gen`: the error bound by parts of
   the floating-point filter, with one size per axis for a form that is not
   multihomogeneous, such as the in-sphere determinant. It gives a
@@ -39,13 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   multihomogeneous, such as the in-sphere determinant: `filter_axes`, with
   the error bound by parts, one size and one uncertainty per axis, and its
   constants `AXES_EPSILON`, `AXES_KAPPA`, `AXES_D_MIN` and `AXES_D_MAX`;
-  `filter_axes_points`, the same on points of any type; and, in the checks,
-  `axes_edge_cases` and `check_axes_edge_cases`. It runs right after
-  `filter`, only when `filter` declines, and before every exact stage: in
-  `staged`, and at the start of `exact_stages` (or of
+  and `filter_axes_points`, the same on points of any type. It runs right
+  after `filter`, only when `filter` declines, and before every exact stage:
+  in `staged`, and at the start of `exact_stages` (or of
   `exact_stages_explicit_in`, when there is no `exact_stages`) and of
   `exact_stages_in`. When the bound by parts is not derived, the test is not
   emitted and `Generated::warnings` says why.
+- In the checks generated for a predicate with `filter_axes`,
+  `axes_edge_cases`, pairs of inputs on either side of its bound by parts,
+  each pair with its uncertainty: on grids with one scale for every axis,
+  and on grids with one axis far shorter or longer than the others, with no
+  uncertainty and with one on one axis or on all of them; and
+  `check_axes_edge_cases`, which takes the uncertainty as a second argument
+  of the stage, checks the sign at a sample of corners of the boxes of the
+  errors, requires the stage to decline the first input of each pair with
+  an uncertainty when the uncertainty is doubled (`2 e`) and to decide the
+  second when it is halved (`e / 2`), and returns its counts with no
+  uncertainty and with one.
 - `Polynomial::is_affine_in_each_coordinate`.
 - `Dyadic::from_words`, in `implicit-predicates-oracle`: builds a number
   from its sign, the 64-bit words of its magnitude and a binary exponent.
@@ -82,30 +94,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `ExactError` and `Weight`, in `implicit-predicates-core`,
   and `PointError` are `#[non_exhaustive]`: a `match` on them needs an arm
   for the variants that may be added.
-- The exact stages over arena spans decline a coordinate with a zero
+- The exact stage over arena spans declines a coordinate with a zero
   component, which no valid expansion has, instead of evaluating it.
 - A predicate whose exact stages on the stack would be too large to plan is
-  generated with the stages over arena spans alone, instead of being
+  generated with the stage over arena spans alone, instead of being
   rejected.
-- The generated `axes_edge_cases` give each pair its uncertainty, and
-  include pairs on grids with one axis far shorter or longer than the
-  others, with no uncertainty and with one on each axis or on all of them;
-  `check_axes_edge_cases` takes the uncertainty as a second argument of the
-  stage, checks the sign at a sample of corners of the boxes of the errors,
-  requires the stage to decline each pair with an uncertainty below the
-  bound when the uncertainty is doubled and to decide it above the bound
-  when it is halved, and returns its counts with no uncertainty and with
-  one.
 - The generated `check_uncertainty_edge_cases` says that the sign at the
   corners of the boxes of the errors is the sign in the whole boxes only
   for a predicate that is affine in each coordinate; for any other it says
   that the corners do not show it.
-- The exact stages evaluate the main form only. The chain for explicit
-  points is the filter, the exact differences, the expansions on the
-  differences and the stage on big integers; for points of any type it is
-  the filter, the expansions on the differences over arena spans and the
-  stage on big integers. A call that the expansions on the differences
-  decline goes to the stage on big integers.
+- The exact stages evaluate the main form only. For a predicate of degree
+  4 or less, the chain for explicit points is the filter, the exact
+  differences, the expansions on the differences and the stage on big
+  integers; for points of any type it is the filter, the expansions on the
+  differences over arena spans and the stage on big integers; in both,
+  `filter_axes` follows the filter when the predicate has it. A call that
+  the expansions on the differences decline goes to the stage on big
+  integers.
 - So no call of `orient3d` on explicit points whose nonzero coordinates
   have magnitudes in `2^-188..=2^238` allocates, instead of
   `2^-188..=2^239`: with a coordinate above `2^238`, such a call goes to the
@@ -115,20 +120,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exact stage is derived from it. So `generate` no longer rejects an
   `#[exact]` form for what such a plan required of it, such as a constant
   that is not exact in `f64`.
-- A predicate whose main form has a total degree of 5 or more
+- **Breaking:** a predicate whose main form has a total degree of 5 or more
   (`BIG_INTEGERS_ONLY_DEGREE`, new in `implicit-predicates-gen`) uses the
   stage on big integers as its only exact stage: its chain is the filter
-  and the stage on big integers, for points of any type. The generator
-  plans no stage on expansions for it and emits none: no
-  `exact_differences`, `expansions_translated` or `expansions_translated_in`,
-  no `exact_stages`, no `DIFFERENCES_RANGE`, `TRANSLATED_RANGE`,
+  (with `filter_axes`, when the predicate has one) and the stage on big
+  integers, for points of any type. The generator plans no stage on
+  expansions for it and emits none: no `exact_differences`,
+  `expansions_translated` or `expansions_translated_in`, no
+  `exact_stages`, no `DIFFERENCES_RANGE`, `TRANSLATED_RANGE`,
   `SPANS_TRANSLATED_RANGE` or `MAX_COORD_COMPONENTS`, and no helpers that
-  only they use. Its `staged` is the filter alone and takes no arena, and
-  `exact_stages_explicit_in` and `exact_stages_in` go straight to
-  `big_integers_in`; the chain never calls `Point::exact`, only
-  `Point::exact_big`. A definition of such a degree that the plan of the
-  stage over spans rejected, such as one with a product operand of degree
-  17, is now generated. Predicates of degree 4 or less keep their chain.
+  only they use. Its `staged` is the filter alone (`filter`, then
+  `filter_axes` when it has one) and takes no arena, and
+  `exact_stages_explicit_in` and `exact_stages_in` run `filter_axes` or
+  `filter_axes_points`, when it has them, and then `big_integers_in`; the
+  chain never calls `Point::exact`, only `Point::exact_big`. Anyone who
+  regenerates such a predicate loses those emitted items, and its `staged`
+  no longer takes an arena. A definition of such a degree that the plan of
+  the stage over spans rejected, such as one with a product operand of
+  degree 17, is now generated. Predicates of degree 4 or less keep their
+  chain.
 
 ### Removed
 

@@ -323,7 +323,7 @@ fn write_exact_stages(out: &mut String, chain: &GenericChain) {
         "///",
         0,
         &format!(
-            "{what}. The stages that take an arena run on the exact coordinates of the \
+            "{what}. The stage that takes an arena runs on the exact coordinates of the \
              points written to `scratch`, which is left as it was. `Ok(None)` means that \
              no stage can decide.\n\n\
              # Errors\n\n\

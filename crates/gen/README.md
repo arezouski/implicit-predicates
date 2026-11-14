@@ -223,24 +223,30 @@ For each predicate the generator writes one module with:
   `exact_stages` or `expansions_translated_in`: its `staged` is the filter
   alone (with `filter_axes`, if it has one), without an arena, and its
   `exact_stages_explicit_in` and `exact_stages_in` below run
-  `big_integers_in` alone after `filter_axes`, so its chain never asks a
-  point for its exact coordinates as expansions;
+  `big_integers_in` alone, after `filter_axes` or `filter_axes_points` when
+  it has them, so its chain never asks a point for its exact coordinates
+  as expansions;
 - for points of any type: `filter_points`, the filter on the approximations
   of the points with the uncertainty of their errors (zero when every point
   is explicit); `filter_axes_points`, the same for `filter_axes`, with the
   uncertainty per axis; `exact_stages`, the stages of `staged` after
-  `filter`;
-  `exact_stages_in`, `expansions_translated_in`, the expansion form over
-  spans of an arena, on the exact coordinates of the points, followed by
-  `big_integers_in`;
-  `exact_stages_explicit_in`, `exact_stages` followed by `big_integers_in`
-  for points that are all explicit; and `staged_in`, which runs
-  `filter_points`, then `exact_stages_explicit_in` when every point is
-  explicit and `exact_stages_in` otherwise. When there is `filter_axes`,
-  `exact_stages` (or `exact_stages_explicit_in`, when there is no
-  `exact_stages`) starts with it and `exact_stages_in` with
-  `filter_axes_points`, so that the uncertainty per axis is computed only
-  when `filter` declines. `staged_in` and
+  `filter`; `expansions_translated_in`, the expansion form over spans of an
+  arena, on the exact coordinates of the points; `exact_stages_in`, which
+  runs `expansions_translated_in`, when the predicate has it, and then
+  `big_integers_in`; `exact_stages_explicit_in`, which runs `exact_stages`,
+  when the predicate has it, and then `big_integers_in`, for points that
+  are all explicit; and `staged_in`, which runs `filter_points`, then
+  `exact_stages_explicit_in` when every point is explicit and
+  `exact_stages_in` otherwise. When there is `filter_axes`, `exact_stages`
+  (or `exact_stages_explicit_in`, when there is no `exact_stages`) starts
+  with it and `exact_stages_in` with `filter_axes_points`, so that the
+  uncertainty per axis is computed only when `filter` declines. So, for a
+  main form of a lower degree than `BIG_INTEGERS_ONLY_DEGREE`, the chain of
+  `staged_in` is `filter_points`, `filter_axes_points` if there is one,
+  `expansions_translated_in` and `big_integers_in`, and on explicit points
+  it is `filter`, `filter_axes` if there is one, the stages of
+  `exact_stages` and `big_integers_in`; for the others, it is the two tests
+  of the filter, or the first alone, and `big_integers_in`. `staged_in` and
   `exact_stages_in` return `Result<Sign, ScratchExhausted>`: they decide
   every input, and fail only when the arena runs out of room. They panic on
   a point whose exact coordinates have a weight other than one, and on a

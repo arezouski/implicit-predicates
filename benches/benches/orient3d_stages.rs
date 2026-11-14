@@ -11,10 +11,10 @@
 //! the recorded calls that the filter does not decide, by number of
 //! implicit points. `expansions_translated_in` is measured on exact
 //! coordinates computed beforehand; `exact_stages_in` computes them, then
-//! runs the stages in the order of the chain. `big_integers_in` is measured with the cost of
-//! `exact_big` for the four points, which writes their coordinates to the
-//! arena: on the explicit `near_degenerate` and `degenerate` sets and on the
-//! same recorded calls as the stages over spans.
+//! runs the stages in the order of the chain. `big_integers_in` is measured
+//! with the cost of `exact_big` for the four points, which writes their
+//! coordinates to the arena: on the explicit `near_degenerate` and
+//! `degenerate` sets and on the same recorded calls as the stage over spans.
 //!
 //! As in the `predicates` benchmark, each measurement is one pass over a
 //! whole set, every stage is called through a function pointer, and the

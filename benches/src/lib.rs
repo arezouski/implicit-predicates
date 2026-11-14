@@ -14,18 +14,23 @@
 //!   an unprotected `f64` determinant, over random, nearly degenerate,
 //!   exactly degenerate and recorded inputs, then `orient3d` on points of
 //!   type `AnyPoint`: the same explicit sets and the recorded calls with
-//!   implicit points. Adding a contender is adding a row to the table in
-//!   that file;
+//!   implicit points, and last the whole chain of `insphere` on the
+//!   recorded calls with implicit points (group `insphere_implicit`).
+//!   Adding a contender is adding a row to the table in that file;
 //! - `orient3d_stages`: each stage of the generated `orient3d` alone, the
-//!   filter on the random set and the exact stages on the nearly degenerate
-//!   and exactly degenerate sets; the filter of points of any type on the
-//!   recorded calls with implicit points, and the exact stages over arena
-//!   spans on those of them that the filter does not decide;
+//!   filter on the random set and the exact stages, the stage on big
+//!   integers included, on the nearly degenerate and exactly degenerate
+//!   sets; the filter of points of any type on the recorded calls with
+//!   implicit points, and the exact stage over arena spans and the stage on
+//!   big integers on those of them that the filter does not decide; and the
+//!   whole predicate on explicit calls out of the range of the stages on
+//!   the stack;
 //! - `insphere_stages`: each stage of the generated `insphere` alone, the
 //!   filter on the random and nearly degenerate sets and on the recorded
-//!   calls with implicit points, and the exact stages on the recorded calls
-//!   that the filter does not decide, separately for those that a stage over
-//!   spans decides and those that go to the stage on big integers.
+//!   calls with implicit points, and, on the recorded calls that the filter
+//!   does not decide, the second test of the filter, `filter_axes`, and the
+//!   stage on big integers, the only exact stage of `insphere`, alone and
+//!   as `exact_stages_in` runs them.
 //!
 //! This library holds the deterministic input builders and the seeds they
 //! use, and the determinant routine, shared by the benchmarks and by the

@@ -105,9 +105,11 @@ pub struct Generated {
 /// spans of the same form in its place, on the exact coordinates of the
 /// explicit points. For points of any type that implements `Point`,
 /// `staged_in` runs `filter_points`, the filter with the uncertainty of the
-/// errors of the points, then `exact_stages`, the exact stages of `staged`,
-/// when every point is explicit, and otherwise `exact_stages_in`, the stage
-/// over spans on the exact coordinates of the points.
+/// errors of the points, then `exact_stages_explicit_in`, which runs
+/// `exact_stages`, the exact stages of `staged`, and then the stage on big
+/// integers, when every point is explicit, and otherwise `exact_stages_in`,
+/// the stage over spans on the exact coordinates of the points and then the
+/// stage on big integers.
 ///
 /// When the main form is not multihomogeneous, its filter has a second
 /// test, `filter_axes(p, e: [f64; 3])`, with the error bound by parts of

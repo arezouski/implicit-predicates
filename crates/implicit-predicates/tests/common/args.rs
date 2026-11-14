@@ -175,7 +175,7 @@ pub fn with_concrete5<F: Call5>(args: &[Arg; 5], raw: bool, f: &mut F) -> F::Out
 
 /// Every way of running the chain or one of its stages on `args`, by name:
 /// the filter on the points, the stages on the stack (when every point is
-/// explicit), the stages over spans on their exact coordinates (when every
+/// explicit), the stage over spans on their exact coordinates (when every
 /// point has them), `exact_stages_in`, `staged_in`,
 /// `orient3d` and `orient3d_in` on `AnyPoint`s and on the concrete types.
 /// The stages that always decide give `Some`, so that every result has one
@@ -233,7 +233,7 @@ pub fn every_stage(args: &Args) -> Vec<(&'static str, Option<Sign>)> {
 }
 
 /// Whether a stage before the one on big integers decides, in the results
-/// of [`every_stage`]: the filter, the stages on the stack or a stage over
+/// of [`every_stage`]: the filter, the stages on the stack or the stage over
 /// spans.
 pub fn decided_on_expansions(results: &[(&str, Option<Sign>)]) -> bool {
     results.iter().any(|(name, result)| {

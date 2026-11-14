@@ -118,7 +118,8 @@ use generated::orient3d as orient3d_stages;
 ///   integers, which needs the exact coordinates, panics. So does a point
 ///   of your own type whose [`Point::exact_big`] fails for any reason other
 ///   than the room of the arena, which its contract allows only for inputs
-///   that are not finite.
+///   that are not finite or for coordinates with a weight other than one,
+///   the case below.
 /// - If the exact coordinates of a point have a weight other than
 ///   [`Weight::One`]: the predicates do not support weights yet, and none of
 ///   the point types of this crate has one. With a point of your own type
