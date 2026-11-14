@@ -13,11 +13,11 @@ use implicit_predicates_benches::predicates::{
     CORPUS_DIR, INSPHERE_MAX_IMPLICIT, ImplicitInput, InSphereGroup, InSphereImplicitInput,
     InSphereInput, InputSet, MAX_IMPLICIT, Orient3dInput, SET_SIZE, any_explicit_sets,
     big_integers_stage, exact_sets, geometry_insphere_sign, geometry_orient3d_sign,
-    implicit_predicates_orient3d_any_sign, implicit_predicates_orient3d_sign,
-    implicit_recorded_signs, implicit_set_name, implicit_sets, insphere_any_explicit_sets,
-    insphere_big_integers_stage, insphere_exact_sets, insphere_implicit_sets, insphere_set_name,
-    insphere_sets, naive_insphere, naive_orient3d, orient3d_sets, out_of_range_sets,
-    robust_insphere_sign, robust_orient3d_sign,
+    implicit_predicates_insphere_any_sign, implicit_predicates_orient3d_any_sign,
+    implicit_predicates_orient3d_sign, implicit_recorded_signs, implicit_set_name, implicit_sets,
+    insphere_any_explicit_sets, insphere_big_integers_stage, insphere_exact_sets,
+    insphere_implicit_sets, insphere_set_name, insphere_sets, naive_insphere, naive_orient3d,
+    orient3d_sets, out_of_range_sets, robust_insphere_sign, robust_orient3d_sign,
 };
 use implicit_predicates_corpus::exact;
 use implicit_predicates_oracle::Dyadic;
@@ -392,6 +392,20 @@ fn out_of_range_sets_are_decided_by_no_stage_on_the_stack_and_have_the_exact_sig
 fn exact_insphere_any(p: &InSphereImplicitInput) -> i8 {
     let [a, b, c, d, e] = p.each_ref().map(exact_point);
     exact::insphere(&a, &b, &c, &d, &e)
+}
+
+#[test]
+fn insphere_implicit_contender_has_the_exact_sign() {
+    for (set, _) in insphere_implicit_sets() {
+        for case in &set.cases {
+            assert_eq!(
+                implicit_predicates_insphere_any_sign(case),
+                exact_insphere_any(case),
+                "{}: {case:?}",
+                set.name
+            );
+        }
+    }
 }
 
 fn insphere_implicit_count(p: &InSphereImplicitInput) -> usize {

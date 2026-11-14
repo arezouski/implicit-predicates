@@ -6,7 +6,9 @@
 //! same explicit sets (group `orient3d_any_explicit`), which shows the cost
 //! of a point type whose kind is known only at run time, and the recorded
 //! calls with implicit points, as a mix and by number of implicit points
-//! (group `orient3d_implicit`).
+//! (group `orient3d_implicit`). Last, the whole chain of `insphere` of
+//! `implicit-predicates` on the recorded calls with implicit points, by the
+//! same mix and number of implicit points (group `insphere_implicit`).
 //!
 //! Each measurement is one pass over a whole set; the throughput in elements
 //! per second is the number of predicate calls per second, so the time per
@@ -20,10 +22,12 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use implicit_predicates_benches::predicates::{
-    ImplicitInput, InSphereInput, InputSet, Orient3dInput, any_explicit_sets,
-    geometry_insphere_sign, geometry_orient3d_sign, implicit_predicates_orient3d_any_sign,
-    implicit_predicates_orient3d_sign, implicit_sets, insphere_sets, naive_insphere_sign,
-    naive_orient3d_sign, orient3d_sets, robust_insphere_sign, robust_orient3d_sign,
+    ImplicitInput, InSphereImplicitInput, InSphereInput, InputSet, Orient3dInput,
+    any_explicit_sets, geometry_insphere_sign, geometry_orient3d_sign,
+    implicit_predicates_insphere_any_sign, implicit_predicates_orient3d_any_sign,
+    implicit_predicates_orient3d_sign, implicit_sets, insphere_implicit_sets, insphere_sets,
+    naive_insphere_sign, naive_orient3d_sign, orient3d_sets, robust_insphere_sign,
+    robust_orient3d_sign,
 };
 
 /// A contender: a name and a function from the points of a call to the sign.
@@ -40,6 +44,10 @@ const ORIENT3D: &[Contender<Orient3dInput>] = &[
 /// The `orient3d` contenders on points of any type.
 const ORIENT3D_ANY: &[Contender<ImplicitInput>] =
     &[("implicit-predicates", implicit_predicates_orient3d_any_sign)];
+
+/// The `insphere` contenders on points of any type.
+const INSPHERE_ANY: &[Contender<InSphereImplicitInput>] =
+    &[("implicit-predicates", implicit_predicates_insphere_any_sign)];
 
 /// The `insphere` contenders.
 const INSPHERE: &[Contender<InSphereInput>] = &[
@@ -77,6 +85,11 @@ fn predicates(c: &mut Criterion) {
         ORIENT3D_ANY,
     );
     run(c, "orient3d_implicit", &implicit_sets(), ORIENT3D_ANY);
+    let insphere_implicit: Vec<_> = insphere_implicit_sets()
+        .into_iter()
+        .map(|(set, _)| set)
+        .collect();
+    run(c, "insphere_implicit", &insphere_implicit, INSPHERE_ANY);
 }
 
 criterion_group!(benches, predicates);
