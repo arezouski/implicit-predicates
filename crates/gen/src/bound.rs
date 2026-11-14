@@ -198,8 +198,17 @@ pub fn filter_bound(
 /// [`filter_bound`], that is at most 55 bits for a leaf, the operand's
 /// for a negation, 55 more than the larger operand's for a sum or
 /// difference, and 55 more than the two operands' together for a product.
-/// The result is the sum over the nodes.
+/// The result is the sum over the nodes of [`node_coefficient_bits`].
 fn coefficient_bits(graph: &DiffGraph) -> u64 {
+    node_coefficient_bits(graph)
+        .iter()
+        .fold(0u64, |total, &b| total.saturating_add(b))
+}
+
+/// For every node of `graph`, an upper bound on the bits of each exact
+/// coefficient of the node, by the estimate of [`coefficient_bits`],
+/// saturated at `u64::MAX`.
+fn node_coefficient_bits(graph: &DiffGraph) -> Vec<u64> {
     let mut bits: Vec<u64> = Vec::with_capacity(graph.nodes.len());
     for node in &graph.nodes {
         bits.push(match *node {
@@ -209,7 +218,7 @@ fn coefficient_bits(graph: &DiffGraph) -> u64 {
             DiffNode::Mul(x, y) => bits[x].saturating_add(bits[y]).saturating_add(55),
         });
     }
-    bits.iter().fold(0u64, |total, &b| total.saturating_add(b))
+    bits
 }
 
 /// Checks, before any coefficient is computed, the two limits that do not
@@ -399,5 +408,10 @@ fn close_above(value: &Dyadic, target: &Dyadic) -> bool {
 mod tests;
 
 mod axis;
+mod parts;
 
 pub use axis::{AxisBound, AxisConstants, FilterForm, filter_form};
+pub use parts::{
+    EpsilonConstant, EpsilonTerm, KappaConstant, KappaTerm, PartsBound, PartsConstants,
+    PartsOutcome, parts_bound,
+};

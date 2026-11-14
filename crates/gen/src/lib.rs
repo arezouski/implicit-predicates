@@ -85,6 +85,14 @@
 //! ([`DiffGraph::axis_degrees`]): an [`AxisBound`] keeps one size and one
 //! uncertainty per axis, with the same `epsilon`, one `kappa` per axis that
 //! add up to the global `kappa`, and the same range for each axis.
+//! [`parts_bound`] derives the bound by parts, which keeps one size per axis
+//! for any form, also one that is a sum of terms of different degrees in
+//! each axis: a [`PartsBound`] has one term of epsilon per degree vector of
+//! the form and one term of kappa per axis and degree vector, whose
+//! coefficients add up to the global `epsilon` and `kappa`, and a range for
+//! the sizes of the axes that the form uses ([`PartsConstants`]). It is not
+//! derived, and [`PartsOutcome::Unavailable`] says why, when the form is too
+//! large for its budget or has no such range.
 //!
 //! [`exact_plan_differences`] derives, for each exact stage on the stack,
 //! the range of input magnitudes for which every exact product of the
@@ -115,7 +123,9 @@ mod polynomial;
 mod range;
 
 pub use bound::{
-    AxisBound, AxisConstants, FilterBound, FilterConstants, FilterForm, filter_bound, filter_form,
+    AxisBound, AxisConstants, EpsilonConstant, EpsilonTerm, FilterBound, FilterConstants,
+    FilterForm, KappaConstant, KappaTerm, PartsBound, PartsConstants, PartsOutcome, filter_bound,
+    filter_form, parts_bound,
 };
 pub use differences::{DiffGraph, DiffNode, difference_graph};
 pub use emit::{BIG_INTEGERS_ONLY_DEGREE, Generated, generate, generate_points};

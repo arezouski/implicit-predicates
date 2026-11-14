@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cases of its checks is empty; and a point type has an exact coordinate
   that can have more than 16 components: the stages on expansions decline it,
   and the stage on big integers, which is slower, decides it.
+- `parts_bound`, in `implicit-predicates-gen`: the error bound by parts of
+  the floating-point filter, with one size per axis for a form that is not
+  multihomogeneous, such as the in-sphere determinant. It gives a
+  `PartsOutcome`: a `PartsBound`, whose terms of epsilon (`EpsilonTerm`) and
+  of kappa (`KappaTerm`) add up to the global bound when every size is the
+  same, with its constants as `f64` (`PartsConstants`, `EpsilonConstant`,
+  `KappaConstant`), or the reason it is not derived. No emitted code uses it
+  yet.
 - `Polynomial::is_affine_in_each_coordinate`.
 - `Dyadic::from_words`, in `implicit-predicates-oracle`: builds a number
   from its sign, the 64-bit words of its magnitude and a binary exponent.
