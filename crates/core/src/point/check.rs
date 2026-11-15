@@ -19,7 +19,8 @@ use crate::sign::Sign;
 ///    finite, which the next check reports;
 /// 3. that [`exact_big`](Point::exact_big) succeeds, which it must for a
 ///    point with finite inputs and a weight of one, and gives each
-///    coordinate in the unique representation of a [`Big`];
+///    coordinate in the unique representation of a [`Big`], with words
+///    below the top of the arena;
 /// 4. that on every axis whose `err` is finite, `approx` lies within `err`
 ///    of the coordinate that `exact_big` gives, compared exactly; an axis
 ///    whose `err` is `+∞` passes whatever its `approx`;
@@ -27,19 +28,28 @@ use crate::sign::Sign;
 ///    no error on any axis, so that, by the previous check, its `approx` is
 ///    exact;
 /// 6. that when [`exact`](Point::exact) succeeds, it gives a weight of
-///    one, every span holds a valid expansion (see
-///    [`expansion`](crate::expansion)), and each coordinate has the value
-///    that `exact_big` gives; `exact` may fail with
+///    one, every span lies below the top of the arena and holds a valid
+///    expansion (see [`expansion`](crate::expansion)), and each coordinate
+///    has the value that `exact_big` gives; `exact` may fail with
 ///    [`ExactError::OutOfRange`] when the coordinates leave the range of
-///    the expansions;
+///    the expansions, and a failure with [`ExactError::Weighted`], which
+///    the contract names only for `exact_big`, is reported as
+///    [`Violation::Weighted`];
 /// 7. that a second call to `approx`, `err`, `is_explicit` and `exact_big`
-///    gives the same values as the first.
+///    gives the same values as the first, again in the unique
+///    representation.
 ///
-/// It returns at the first obligation broken. `check` can only tell whether
-/// the views of the point agree with one another: it cannot know whether
-/// the exact coordinates are those of the point its author meant to
-/// define. Nor does it check that `exact` and `exact_big` write only above
-/// the top of the arena, although it reads the coordinates they write.
+/// After every call to `exact` and `exact_big`, before reading what it
+/// returned, `check` also checks that the call did not leave the top of the
+/// arena below the top it was given ([`Violation::ArenaBelowTop`]).
+///
+/// It returns at the first obligation broken. When the approximation on an
+/// axis is not finite, `check` reports [`Violation::ApproxNotFinite`] even
+/// if `exact_big` then runs out of room, since the violation is known
+/// without it. `check` can only tell whether the views of the point agree
+/// with one another: it cannot know whether the exact coordinates are
+/// those of the point its author meant to define. Nor does it see a point
+/// that lowers the top and then writes back up past where it was.
 ///
 /// `check` writes the exact coordinates in `scratch`, twice as big integers
 /// and once as expansions, and the sums and differences that compare them.
@@ -47,7 +57,10 @@ use crate::sign::Sign;
 /// runs out. With a borrowed buffer, a few times the room that the exact
 /// coordinates of the point need is enough; when it is not, `check` returns
 /// [`CheckError::Exhausted`], which says nothing about the point. Either
-/// way, the arena is left with the top it had on entry.
+/// way, the arena is left with the top it had on entry, except when the
+/// point itself lowered it below that top, which `check` reports as
+/// [`Violation::ArenaBelowTop`]: the top then stays where the point left
+/// it, and what was below the top on entry may have been overwritten.
 ///
 /// # Errors
 ///
@@ -204,6 +217,11 @@ pub enum Violation {
     /// [`Point::is_explicit`] or [`Point::exact_big`] gave different
     /// values.
     Unstable,
+    /// A call to [`Point::exact`] or [`Point::exact_big`] left the top of
+    /// the arena below the top it had when the call began: it reset the
+    /// arena to a mark taken before the call, where a predicate keeps the
+    /// coordinates of the points it read earlier.
+    ArenaBelowTop,
 }
 
 impl From<ScratchExhausted> for CheckError {
@@ -277,6 +295,10 @@ impl fmt::Display for Violation {
             Violation::Unstable => {
                 f.write_str("two calls in a row to the same method gave different values")
             }
+            Violation::ArenaBelowTop => f.write_str(
+                "a call for the exact coordinates left the top of the arena below the top \
+                 it was given",
+            ),
         }
     }
 }
@@ -297,7 +319,7 @@ fn check_above<P: Point + ?Sized>(p: &P, scratch: &mut Scratch<'_>) -> Result<()
     let big = exact_big(p, scratch);
     if let Some(axis) = not_finite {
         return Err(match big {
-            Err(CheckError::Violation(Violation::NotFinite)) => Violation::NotFinite,
+            Err(CheckError::Violation(v @ (Violation::NotFinite | Violation::ArenaBelowTop))) => v,
             _ => Violation::ApproxNotFinite { axis },
         }
         .into());
@@ -319,7 +341,12 @@ fn check_above<P: Point + ?Sized>(p: &P, scratch: &mut Scratch<'_>) -> Result<()
             return Err(Violation::ExplicitWithErr { axis }.into());
         }
     }
-    match p.exact(scratch) {
+    let top = scratch.used();
+    let exact = p.exact(scratch);
+    if scratch.used() < top {
+        return Err(Violation::ArenaBelowTop.into());
+    }
+    match exact {
         Ok(coords) => {
             if coords.w != Weight::One {
                 return Err(Violation::Weighted.into());
@@ -345,11 +372,19 @@ fn check_above<P: Point + ?Sized>(p: &P, scratch: &mut Scratch<'_>) -> Result<()
     if !again(&approx, p.approx()) || !again(&err, p.err()) || explicit != p.is_explicit() {
         return Err(Violation::Unstable.into());
     }
-    let second = match p.exact_big(scratch) {
+    let top = scratch.used();
+    let second = p.exact_big(scratch);
+    if scratch.used() < top {
+        return Err(Violation::ArenaBelowTop.into());
+    }
+    let second = match second {
         Ok(c) => [c.x, c.y, c.z],
         Err(ExactError::Exhausted(_)) => return Err(CheckError::Exhausted),
         Err(_) => return Err(Violation::Unstable.into()),
     };
+    if let Some(axis) = (0..3).find(|&k| !contract::big_is_canonical(scratch, second[k])) {
+        return Err(Violation::NonCanonicalBig { axis }.into());
+    }
     for axis in 0..3 {
         if scratch.big_sub(second[axis], big[axis])?.sign() != Sign::Zero {
             return Err(Violation::Unstable.into());
@@ -359,9 +394,15 @@ fn check_above<P: Point + ?Sized>(p: &P, scratch: &mut Scratch<'_>) -> Result<()
 }
 
 /// The coordinates that [`Point::exact_big`] gives, or the failure of
-/// [`check`] that its error is.
+/// [`check`] that its error is, or [`Violation::ArenaBelowTop`] if it
+/// lowered the top.
 fn exact_big<P: Point + ?Sized>(p: &P, scratch: &mut Scratch<'_>) -> Result<[Big; 3], CheckError> {
-    match p.exact_big(scratch) {
+    let top = scratch.used();
+    let result = p.exact_big(scratch);
+    if scratch.used() < top {
+        return Err(Violation::ArenaBelowTop.into());
+    }
+    match result {
         Ok(c) => Ok([c.x, c.y, c.z]),
         Err(ExactError::Exhausted(_)) => Err(CheckError::Exhausted),
         Err(ExactError::OutOfRange) => Err(Violation::NotFinite.into()),

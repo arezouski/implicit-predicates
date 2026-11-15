@@ -275,3 +275,52 @@ fn a_liar_leaves_the_arena_as_it_found_it() {
         assert_eq!(scratch.get(span), &below, "{lie:?}");
     }
 }
+
+#[test]
+fn a_point_that_lowers_the_top_is_reported() {
+    for lie in [Lie::LowersTopInExact, Lie::LowersTopInSecondBig] {
+        assert_eq!(
+            checked(&Liar::new(lie)),
+            Err(CheckError::Violation(Violation::ArenaBelowTop)),
+            "{lie:?}"
+        );
+    }
+    // Below the top that `check` was given: the top stays where the point
+    // left it.
+    // More components than the coordinates the point writes there.
+    let below: Vec<f64> = (0..16).map(|i| 2f64.powi(60 * i - 400)).collect();
+    let mut scratch = Scratch::growable(16);
+    let mark = scratch.mark();
+    scratch.push(&below).unwrap();
+    assert_eq!(
+        check(&Liar::lowering_to(mark), &mut scratch),
+        Err(CheckError::Violation(Violation::ArenaBelowTop))
+    );
+    assert!(scratch.used() < below.len(), "{}", scratch.used());
+}
+
+#[test]
+fn a_span_or_a_big_integer_above_the_top_is_reported_without_panicking() {
+    for axis in 0..3 {
+        assert_eq!(
+            checked(&Liar::new(Lie::SpanAboveTop(axis))),
+            Err(CheckError::Violation(Violation::InvalidExpansion { axis }))
+        );
+    }
+    assert_eq!(
+        checked(&Liar::new(Lie::BigAboveTop)),
+        Err(CheckError::Violation(Violation::NonCanonicalBig {
+            axis: 0
+        }))
+    );
+}
+
+#[test]
+fn a_second_call_to_exact_big_above_the_top_is_reported() {
+    assert_eq!(
+        checked(&Liar::new(Lie::StaleSecondBig)),
+        Err(CheckError::Violation(Violation::NonCanonicalBig {
+            axis: 0
+        }))
+    );
+}

@@ -63,6 +63,13 @@ impl Scratch<'_> {
     }
 
     /// Panics in debug builds if `s` reaches past the top.
+    /// Whether `s` ends at or below the top, so that reading it does not
+    /// panic. A span that passes may still belong to another arena or have
+    /// been overwritten after a reset.
+    pub(crate) fn holds(&self, s: Span) -> bool {
+        u64::from(s.start) + u64::from(s.len) <= u64::from(self.used)
+    }
+
     pub(super) fn debug_check(&self, s: Span) {
         debug_assert!(
             u64::from(s.start) + u64::from(s.len) <= u64::from(self.used),

@@ -182,8 +182,12 @@ impl Big {
     /// Whether `self` is in its unique representation: zero is empty, not
     /// negative and has exponent zero, and neither the lowest nor the
     /// highest word of a nonzero magnitude is zero. `scratch` is the arena
-    /// that holds the words.
+    /// that holds the words; words that reach past its top, released by a
+    /// reset, are not a representation at all.
     pub(crate) fn is_canonical(self, scratch: &Scratch<'_>) -> bool {
+        if !scratch.holds(self.limbs) {
+            return false;
+        }
         let words = scratch.words(self.limbs);
         match (words.first(), words.last()) {
             (Some(low), Some(high)) => low.to_bits() != 0 && high.to_bits() != 0,

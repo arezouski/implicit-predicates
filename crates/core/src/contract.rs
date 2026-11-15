@@ -19,14 +19,15 @@ pub(crate) fn axis_err_is_valid(e: f64) -> bool {
 }
 
 /// Whether `span` holds a valid expansion of `scratch` (see
-/// [`expansion`]).
+/// [`expansion`]). A span that reaches past the top of `scratch` does not.
 #[must_use]
 pub fn expansion_is_valid(scratch: &Scratch<'_>, span: Span) -> bool {
-    expansion::is_valid(scratch.get(span))
+    scratch.holds(span) && expansion::is_valid(scratch.get(span))
 }
 
 /// Whether `b`, whose words are in `scratch`, is in its unique
-/// representation (see [`bigint`](crate::bigint)).
+/// representation (see [`bigint`](crate::bigint)). A value whose words
+/// reach past the top of `scratch` is not.
 #[must_use]
 pub fn big_is_canonical(scratch: &Scratch<'_>, b: Big) -> bool {
     b.is_canonical(scratch)

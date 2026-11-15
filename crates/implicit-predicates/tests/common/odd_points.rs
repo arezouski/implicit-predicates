@@ -4,7 +4,7 @@
 //! coordinates as expansions, and a point that breaks one obligation of the
 //! contract of `Point` ([`Liar`]).
 
-use implicit_predicates::{BigCoords, ExactCoords, ExactError, Point, Scratch, Span, Weight};
+use implicit_predicates::{BigCoords, ExactCoords, ExactError, Mark, Point, Scratch, Span, Weight};
 use implicit_predicates_oracle::Dyadic;
 
 /// A point at the origin whose exact coordinates have the weight
@@ -241,6 +241,25 @@ pub enum Lie {
     UnstableExplicit,
     /// `exact_big` changes from one call to the next.
     UnstableExactBig,
+    /// The first call to `exact_big` resets the arena to the mark given to
+    /// [`Liar::lowering_to`], below the top it was given, and writes the
+    /// coordinates there.
+    LowersTopInFirstBig,
+    /// `exact` resets the arena to the top that the first call to
+    /// `exact_big` was given, below the top it was given itself, and writes
+    /// the coordinates there.
+    LowersTopInExact,
+    /// The second call to `exact_big` resets the arena to the top that the
+    /// first call was given and writes the coordinates there again.
+    LowersTopInSecondBig,
+    /// `exact` gives, for the axis, a span it released with a reset: above
+    /// the top.
+    SpanAboveTop(usize),
+    /// The first call to `exact_big` releases the coordinates it wrote, so
+    /// that they lie above the top.
+    BigAboveTop,
+    /// The second call to `exact_big` releases the coordinates it wrote.
+    StaleSecondBig,
 }
 
 /// The explicit point [`LIAR_AT`], which keeps the contract of `Point`
@@ -250,6 +269,8 @@ pub struct Liar {
     approx: [[f64; 3]; 2],
     err: [[f64; 3]; 2],
     calls: std::cell::Cell<usize>,
+    big_calls: std::cell::Cell<usize>,
+    mark: std::cell::Cell<Option<Mark>>,
 }
 
 /// The coordinates of every [`Liar`].
@@ -282,7 +303,21 @@ impl Liar {
             approx: [approx, second.0],
             err: [err, second.1],
             calls: std::cell::Cell::new(0),
+            big_calls: std::cell::Cell::new(0),
+            mark: std::cell::Cell::new(None),
         }
+    }
+
+    /// The point that tells [`Lie::LowersTopInFirstBig`], down to `mark`.
+    pub fn lowering_to(mark: Mark) -> Liar {
+        let liar = Liar::new(Lie::LowersTopInFirstBig);
+        liar.mark.set(Some(mark));
+        liar
+    }
+
+    /// The mark saved, or the current top when there is none.
+    fn saved(&self, scratch: &Scratch<'_>) -> Mark {
+        self.mark.get().unwrap_or_else(|| scratch.mark())
     }
 
     /// Counts a call and returns whether it is a later one, for the lies
@@ -341,6 +376,16 @@ impl Point for Liar {
             Lie::ExactMismatch(axis) => {
                 spans[axis] = scratch.push(&[LIAR_AT[axis] * 2.0])?;
             }
+            Lie::LowersTopInExact => {
+                scratch.reset(self.saved(scratch));
+                let coords = LIAR_AT.exact(scratch)?;
+                spans = [coords.x, coords.y, coords.z];
+            }
+            Lie::SpanAboveTop(axis) => {
+                let mark = scratch.mark();
+                spans[axis] = scratch.push(&[LIAR_AT[axis]])?;
+                scratch.reset(mark);
+            }
             _ => {}
         }
         Ok(ExactCoords {
@@ -352,6 +397,22 @@ impl Point for Liar {
     }
 
     fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        let first = self.big_calls.get() == 0;
+        self.big_calls.set(self.big_calls.get() + 1);
+        if first && self.mark.get().is_none() {
+            self.mark.set(Some(scratch.mark()));
+        }
+        match self.lie {
+            Lie::LowersTopInFirstBig if first => scratch.reset(self.saved(scratch)),
+            Lie::LowersTopInSecondBig if !first => scratch.reset(self.saved(scratch)),
+            Lie::BigAboveTop | Lie::StaleSecondBig if first == (self.lie == Lie::BigAboveTop) => {
+                let mark = scratch.mark();
+                let coords = LIAR_AT.exact_big(scratch)?;
+                scratch.reset(mark);
+                return Ok(coords);
+            }
+            _ => {}
+        }
         match self.lie {
             Lie::NotFinite => return Err(ExactError::OutOfRange),
             Lie::WeightedBig => return Err(ExactError::Weighted),
