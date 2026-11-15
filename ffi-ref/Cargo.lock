@@ -242,18 +242,18 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "implicit-predicates-core",
 ]
 
 [[package]]
 name = "implicit-predicates-core"
-version = "0.0.2"
+version = "0.0.3"
 
 [[package]]
 name = "implicit-predicates-corpus"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "implicit-predicates-oracle",
 ]
@@ -272,14 +272,14 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates-oracle"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "num-bigint",
 ]
 
 [[package]]
 name = "implicit-predicates-test-support"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "implicit-predicates-core",
  "implicit-predicates-oracle",
