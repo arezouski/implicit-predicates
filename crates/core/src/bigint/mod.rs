@@ -178,6 +178,31 @@ impl Big {
     }
 }
 
+impl Big {
+    /// Whether `self` is in its unique representation: zero is empty, not
+    /// negative and has exponent zero, and neither the lowest nor the
+    /// highest word of a nonzero magnitude is zero. `scratch` is the arena
+    /// that holds the words.
+    pub(crate) fn is_canonical(self, scratch: &Scratch<'_>) -> bool {
+        let words = scratch.words(self.limbs);
+        match (words.first(), words.last()) {
+            (Some(low), Some(high)) => low.to_bits() != 0 && high.to_bits() != 0,
+            _ => self.exp == 0 && !self.negative,
+        }
+    }
+
+    /// A value with the given fields, which need not be in the unique
+    /// representation: for the tests of the checks of that representation.
+    #[cfg(test)]
+    pub(crate) fn from_parts(limbs: Span, exp: i32, negative: bool) -> Big {
+        Big {
+            limbs,
+            exp,
+            negative,
+        }
+    }
+}
+
 impl Scratch<'_> {
     /// Converts a finite `f64` exactly. The result has at most two words.
     ///

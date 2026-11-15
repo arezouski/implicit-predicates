@@ -17,7 +17,7 @@
 //! - [`point`], [`Point`], the contract every point type implements: an
 //!   approximation of its coordinates, a bound on their error, and its exact
 //!   coordinates as expansions in an arena. `[f64; 3]` implements it as an
-//!   explicit point;
+//!   explicit point, and [`check`] tests that a point keeps it;
 //! - [`bigint`], [`Big`], exact integers of arbitrary size in an arena, built
 //!   from `f64` values, with exact addition, subtraction and multiplication;
 //! - [`filter`], the helpers that turn the errors of the points of a call
@@ -35,6 +35,8 @@
 extern crate alloc;
 
 pub mod bigint;
+#[doc(hidden)]
+pub mod contract;
 pub mod eft;
 pub mod expansion;
 pub mod filter;
@@ -43,6 +45,6 @@ pub mod scratch;
 mod sign;
 
 pub use bigint::Big;
-pub use point::{BigCoords, ExactCoords, ExactError, Point, Weight};
+pub use point::{BigCoords, CheckError, ExactCoords, ExactError, Point, Violation, Weight, check};
 pub use scratch::{Mark, Scratch, ScratchExhausted, Span};
 pub use sign::Sign;

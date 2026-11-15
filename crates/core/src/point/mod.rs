@@ -9,7 +9,12 @@
 //! integers ([`Big`]), with no weight.
 //!
 //! `[f64; 3]` implements the contract as an explicit point: its components
-//! are its exact coordinates, with no error.
+//! are its exact coordinates, with no error. [`check`] tests that a point
+//! keeps the contract.
+
+mod check;
+
+pub use check::{CheckError, Violation, check};
 
 use core::fmt;
 
@@ -56,7 +61,9 @@ use crate::scratch::{Scratch, ScratchExhausted, Span};
 ///   arena may hold partial results above that top.
 ///
 /// A predicate given a point that breaks this contract can return a wrong
-/// sign: predicates do not check it.
+/// sign: predicates do not check it. [`check`] tests a point against every
+/// obligation that the views of the point can show, and is meant for the
+/// tests of a type of your own.
 ///
 /// # Examples
 ///

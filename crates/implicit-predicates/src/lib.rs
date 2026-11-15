@@ -20,7 +20,8 @@
 //! point types are generated from their declarations in the same
 //! way. A type of your own can implement [`Point`] too, but the predicates
 //! rely on its contract without checking it: an implementation that breaks
-//! it makes them return wrong signs. `insphere` and the other kinds of
+//! it makes them return wrong signs. [`check`] tests that a point keeps it.
+//! `insphere` and the other kinds of
 //! implicit points do not exist yet.
 //!
 //! ```
@@ -75,8 +76,8 @@ pub use sos::insphere_sos_in;
 
 pub use generated::points::{AnyPoint, Explicit, Lnc, PointError};
 pub use implicit_predicates_core::{
-    Big, BigCoords, ExactCoords, ExactError, Mark, Point, Scratch, ScratchExhausted, Sign, Span,
-    Weight,
+    Big, BigCoords, CheckError, ExactCoords, ExactError, Mark, Point, Scratch, ScratchExhausted,
+    Sign, Span, Violation, Weight, check,
 };
 
 use generated::insphere as insphere_stages;

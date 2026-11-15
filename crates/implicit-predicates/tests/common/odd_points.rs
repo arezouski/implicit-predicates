@@ -1,7 +1,8 @@
 //! Points of types made for the tests, which no point of this crate can
 //! be: exact coordinates with a weight other than one, no exact coordinates
-//! at all, an exact coordinate with any number of components, and no exact
-//! coordinates as expansions.
+//! at all, an exact coordinate with any number of components, no exact
+//! coordinates as expansions, and a point that breaks one obligation of the
+//! contract of `Point` ([`Liar`]).
 
 use implicit_predicates::{BigCoords, ExactCoords, ExactError, Point, Scratch, Span, Weight};
 use implicit_predicates_oracle::Dyadic;
@@ -207,5 +208,158 @@ impl Point for NoExpansions {
 
     fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
         self.point.exact_big(scratch)
+    }
+}
+
+/// A way for [`Liar`] to break the contract of `Point`, each the
+/// obligation of one variant of `Violation`, on one axis when it has one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Lie {
+    /// `err` on the axis is this value, NaN or negative.
+    InvalidErr(usize, f64),
+    /// `approx` on the axis is infinite, with a finite `err`.
+    ApproxNotFinite(usize),
+    /// `exact_big` fails with `OutOfRange`.
+    NotFinite,
+    /// `exact_big` fails with `Weighted`.
+    WeightedBig,
+    /// `exact` gives a weight other than one, and `exact_big` succeeds.
+    WeightedExpansions,
+    /// `approx` on the axis is further from the coordinate than `err`.
+    ErrTooSmall(usize),
+    /// `is_explicit` is `true` with an error on the axis.
+    ExplicitWithErr(usize),
+    /// `exact` gives a span that is not a valid expansion on the axis.
+    InvalidExpansion(usize),
+    /// `exact` and `exact_big` give different values on the axis.
+    ExactMismatch(usize),
+    /// `approx` changes from one call to the next.
+    UnstableApprox,
+    /// `err` changes from one call to the next.
+    UnstableErr,
+    /// `is_explicit` changes from one call to the next.
+    UnstableExplicit,
+    /// `exact_big` changes from one call to the next.
+    UnstableExactBig,
+}
+
+/// The explicit point [`LIAR_AT`], which keeps the contract of `Point`
+/// except for one lie.
+pub struct Liar {
+    lie: Lie,
+    approx: [[f64; 3]; 2],
+    err: [[f64; 3]; 2],
+    calls: std::cell::Cell<usize>,
+}
+
+/// The coordinates of every [`Liar`].
+pub const LIAR_AT: [f64; 3] = [1.5, -2.0, 0.25];
+
+impl Liar {
+    /// The point that tells `lie`.
+    pub fn new(lie: Lie) -> Liar {
+        let mut approx = LIAR_AT;
+        let mut err = [0.0; 3];
+        match lie {
+            Lie::InvalidErr(axis, e) => err[axis] = e,
+            Lie::ApproxNotFinite(axis) => approx[axis] = f64::INFINITY,
+            // Two units in the last place off, with a bound of one.
+            Lie::ErrTooSmall(axis) => {
+                approx[axis] = LIAR_AT[axis].next_up().next_up();
+                err[axis] = LIAR_AT[axis].next_up() - LIAR_AT[axis];
+            }
+            Lie::ExplicitWithErr(axis) => err[axis] = 2f64.powi(-60),
+            _ => {}
+        }
+        let mut second = (approx, err);
+        match lie {
+            Lie::UnstableApprox => second.0[1] = LIAR_AT[1].next_up(),
+            Lie::UnstableErr => second.1[2] = 1.0,
+            _ => {}
+        }
+        Liar {
+            lie,
+            approx: [approx, second.0],
+            err: [err, second.1],
+            calls: std::cell::Cell::new(0),
+        }
+    }
+
+    /// Counts a call and returns whether it is a later one, for the lies
+    /// that change from one call to the next.
+    fn later(&self) -> usize {
+        let n = self.calls.get();
+        self.calls.set(n + 1);
+        usize::from(n > 0)
+    }
+}
+
+impl Point for Liar {
+    fn approx(&self) -> &[f64; 3] {
+        let i = if self.lie == Lie::UnstableApprox {
+            self.later()
+        } else {
+            0
+        };
+        &self.approx[i]
+    }
+
+    fn err(&self) -> &[f64; 3] {
+        let i = if self.lie == Lie::UnstableErr {
+            self.later()
+        } else {
+            0
+        };
+        &self.err[i]
+    }
+
+    fn is_explicit(&self) -> bool {
+        match self.lie {
+            Lie::ExplicitWithErr(_) => true,
+            Lie::UnstableExplicit => self.later() == 0,
+            _ => false,
+        }
+    }
+
+    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        let coords = LIAR_AT.exact(scratch)?;
+        let mut spans = [coords.x, coords.y, coords.z];
+        let mut w = Weight::One;
+        match self.lie {
+            Lie::WeightedExpansions => w = Weight::Expansion(scratch.push(&[1.0])?),
+            // The span of two components outlives a reset, and two pushes
+            // of one component each write them in decreasing order: 1.5 as
+            // [1.0, 0.5].
+            Lie::InvalidExpansion(axis) => {
+                let mark = scratch.mark();
+                let stale = scratch.push(&[0.5, 1.0])?;
+                scratch.reset(mark);
+                scratch.push(&[1.0])?;
+                scratch.push(&[0.5])?;
+                spans[axis] = stale;
+            }
+            Lie::ExactMismatch(axis) => {
+                spans[axis] = scratch.push(&[LIAR_AT[axis] * 2.0])?;
+            }
+            _ => {}
+        }
+        Ok(ExactCoords {
+            x: spans[0],
+            y: spans[1],
+            z: spans[2],
+            w,
+        })
+    }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        match self.lie {
+            Lie::NotFinite => return Err(ExactError::OutOfRange),
+            Lie::WeightedBig => return Err(ExactError::Weighted),
+            Lie::UnstableExactBig if self.later() > 0 => {
+                return [LIAR_AT[0], LIAR_AT[1], 0.5].exact_big(scratch);
+            }
+            _ => {}
+        }
+        LIAR_AT.exact_big(scratch)
     }
 }
