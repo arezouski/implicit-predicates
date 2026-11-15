@@ -606,6 +606,67 @@ impl Tally {
 /// integers. A certain zero of `filter_axes` is in its column.
 pub const INSPHERE_COLUMNS: [&str; 3] = insphere_chain::CHAIN;
 
+/// The `insphere` calls whose recorded sign is zero, the ties that
+/// `insphere_sos` breaks, with the position of each point in the table of
+/// points of its model as its index.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Ties {
+    /// Stored calls whose recorded sign is zero.
+    pub calls: usize,
+    /// Those whose five points are coplanar: every `orient3d` of four of
+    /// them is zero. No order of the indices breaks such a tie.
+    pub coplanar: usize,
+    /// Those that give a position of the table twice: two equal indices,
+    /// which no order of the indices can tell apart. They are not given to
+    /// `insphere_sos`.
+    pub repeated: usize,
+    /// The others on which `insphere_sos` gives zero.
+    pub sos_zero: usize,
+}
+
+impl Ties {
+    /// Counts the call on the points `p` at the positions `idx`.
+    fn add(&mut self, p: &[AnyPoint; 5], idx: [usize; 5]) {
+        self.calls += 1;
+        let [a, b, c, d, e] = p;
+        let coplanar = [
+            implicit_predicates::orient3d(b, c, d, e),
+            implicit_predicates::orient3d(a, c, d, e),
+            implicit_predicates::orient3d(a, b, d, e),
+            implicit_predicates::orient3d(a, b, c, e),
+            implicit_predicates::orient3d(a, b, c, d),
+        ]
+        .iter()
+        .all(|&s| s == Sign::Zero);
+        self.coplanar += usize::from(coplanar);
+        let repeated = (0..5).any(|i| (i + 1..5).any(|j| idx[i] == idx[j]));
+        self.repeated += usize::from(repeated);
+        if !repeated {
+            let sign = implicit_predicates::insphere_sos(a, b, c, d, e, idx);
+            self.sos_zero += usize::from(sign == Sign::Zero);
+        }
+    }
+
+    fn merge(&mut self, other: &Ties) {
+        self.calls += other.calls;
+        self.coplanar += other.coplanar;
+        self.repeated += other.repeated;
+        self.sos_zero += other.sos_zero;
+    }
+
+    fn counts(&self) -> [usize; 4] {
+        [self.calls, self.coplanar, self.repeated, self.sos_zero]
+    }
+
+    fn report(&self, line: &mut impl FnMut(String)) {
+        line(format!(
+            "calls with a recorded sign of zero: {}, of which {} have five coplanar points \
+             and {} repeat a point of the model; insphere_sos gives zero on {} of the others",
+            self.calls, self.coplanar, self.repeated, self.sos_zero
+        ));
+    }
+}
+
 /// What a sweep of the `insphere` calls found, by number of implicit points
 /// (0 to 5).
 ///
@@ -641,6 +702,8 @@ pub struct InSphereTally {
     /// `orient3d(a, b, c, d)` on their first four points: negative, zero,
     /// positive. The sign of `insphere` is read against it.
     pub orientation: [(usize, f64); 3],
+    /// The calls whose recorded sign is zero, the ties of `insphere`.
+    pub ties: Ties,
     /// The arena of `staged_in`, one per number of implicit points, and the
     /// one used to attribute calls and run the stages alone.
     arenas: [Scratch<'static>; 6],
@@ -689,6 +752,7 @@ impl InSphereTally {
             points: PointCounts::default(),
             high_water: [0; 6],
             orientation: [(0, 0.0); 3],
+            ties: Ties::default(),
             arenas: std::array::from_fn(|_| Scratch::growable(1 << 14)),
             scratch: Scratch::growable(1 << 14),
             factor,
@@ -717,6 +781,10 @@ impl Sweep for InSphereTally {
                 checked.1 += 1;
             }
             self.check_call(corpus, index, call.sign, weight, implicit, &p);
+            if call.sign == 0 {
+                let idx: [usize; 5] = std::array::from_fn(|k| call.points()[k] as usize);
+                self.ties.add(&p, idx);
+            }
         }
         for (high, arena) in self.high_water.iter_mut().zip(&self.arenas) {
             *high = (*high).max(arena.high_water());
@@ -725,6 +793,7 @@ impl Sweep for InSphereTally {
     }
 
     fn merge(&mut self, other: &InSphereTally) {
+        self.ties.merge(&other.ties);
         for (bucket, added) in self.buckets.iter_mut().zip(&other.buckets) {
             bucket.add(added);
         }
@@ -757,6 +826,7 @@ impl Sweep for InSphereTally {
         counts.extend([self.explicit_past_filter.0, self.explicit_past_filters.0]);
         counts.extend(self.high_water);
         counts.extend(self.orientation.map(|(n, _)| n));
+        counts.extend(self.ties.counts());
         for reasons in [&self.big_integers, &self.big_integers_explicit] {
             counts.extend(reasons.sorted().iter().map(|&(_, n, _)| n));
         }
@@ -928,6 +998,7 @@ impl InSphereTally {
                     100.0 * weight / explicit_weight
                 ));
             }
+            self.ties.report(&mut line);
             self.mismatches.report(&mut line);
             self.big_integers.report(
                 &mut line,

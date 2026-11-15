@@ -14,7 +14,10 @@
 //! decides goes to the stage on big integers, and is reported with the
 //! reason (see `common::corpus_sweep::Why`); on the samples there must be
 //! none, for either predicate. On the generated corpus, the stage on big integers
-//! alone must also give the recorded sign of every call.
+//! alone must also give the recorded sign of every call. Every `insphere`
+//! call whose recorded sign is zero is also given to `insphere_sos`, with
+//! the position of each point in the table of points of its model as its
+//! index, which must break the tie.
 //!
 //! The versioned samples are checked by default. The generated corpus is
 //! large and not versioned; its sweep is ignored, and is meant to be run in
@@ -81,6 +84,19 @@ fn assert_no_mismatch(name: &str, tally: &impl Sweep) {
     );
 }
 
+/// Fails unless the sweep met ties of `insphere` and `insphere_sos` broke
+/// every one of them, but for those that give a position of the table of
+/// points twice, which it skips. The calls with five coplanar points, which
+/// no order breaks, would be among those it did not break.
+fn assert_ties_broken(name: &str, tally: &InSphereTally) {
+    let ties = &tally.ties;
+    assert!(
+        ties.calls > 0,
+        "{name}: no insphere call with a recorded zero"
+    );
+    assert_eq!(ties.sos_zero, 0, "{name}: ties not broken: {ties:?}");
+}
+
 /// The paths of the versioned samples.
 fn samples() -> impl Iterator<Item = PathBuf> {
     SAMPLES
@@ -142,6 +158,7 @@ fn insphere_matches_the_recorded_sign_on_the_samples() {
     println!("{}", tally.report("insphere: samples"));
     assert_merging_is_adding::<InSphereTally>(&tally);
     assert_no_mismatch("insphere: samples", &tally);
+    assert_ties_broken("insphere: samples", &tally);
     let mut alone = BigAlone::default();
     for path in samples() {
         alone.add_insphere_corpus(&read(&path));
@@ -455,6 +472,7 @@ fn orient3d_and_insphere_match_the_recorded_sign_on_the_generated_corpus() {
         assert_complete(name, &orient3d_completeness(both), *least);
         let insphere = format!("insphere: {name}");
         assert_no_mismatch(&insphere, &both.insphere);
+        assert_ties_broken(&insphere, &both.insphere);
         assert_complete(&insphere, &insphere_completeness(both), *least_insphere);
     }
 }
@@ -540,6 +558,7 @@ fn orient3d_and_insphere_match_the_recorded_sign_on_the_full_corpus() {
     );
     assert_no_mismatch(name, &both.orient3d);
     assert_no_mismatch(&insphere, &both.insphere);
+    assert_ties_broken(&insphere, &both.insphere);
     // The sample of the generated corpus is part of this one.
     assert!(files.len() >= 117, "only {} files", files.len());
     assert_complete(name, &orient3d_completeness(&both), ORIENT3D_NOSI);

@@ -67,6 +67,11 @@
 #[cfg(feature = "std")]
 mod arena;
 mod generated;
+mod sos;
+
+#[cfg(feature = "std")]
+pub use sos::insphere_sos;
+pub use sos::insphere_sos_in;
 
 pub use generated::points::{AnyPoint, Explicit, Lnc, PointError};
 pub use implicit_predicates_core::{
