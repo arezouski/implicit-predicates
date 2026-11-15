@@ -16,8 +16,6 @@ workspace = true
 [dependencies]
 num-bigint = "0.5"
 
-[dev-dependencies]
-
 # `fork` and `timeout` pull in crates that do not build for wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest = "1"

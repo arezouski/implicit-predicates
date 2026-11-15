@@ -108,6 +108,12 @@ jobs:
           for target in orient3d insphere insphere_sos point_check; do
             cargo fuzz run "$target" -- -max_total_time=300
           done
+      - name: Upload the crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
 
   msrv:
     runs-on: ubuntu-latest
@@ -135,7 +141,10 @@ jobs:
   wasm:
     # The tests that compare against the exact reference, on wasm32 under
     # wasmtime: this runs the guards for a 32-bit `usize`. The directory is
-    # preopened so that the versioned corpus samples can be read.
+    # preopened so that the versioned corpus samples can be read. Panics
+    # abort on wasm32, so the `#[should_panic]` tests are reported as
+    # ignored there.
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
       CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir ${{ github.workspace }}
@@ -144,8 +153,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
-      - run: curl https://wasmtime.dev/install.sh -sSf | bash -s -- --version v50.0.1
-      - run: echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+      - name: Install wasmtime
+        run: |
+          version=v50.0.1
+          name="wasmtime-$version-x86_64-linux"
+          mkdir -p "$RUNNER_TEMP/wasmtime"
+          cd "$RUNNER_TEMP/wasmtime"
+          curl -sSfL "https://github.com/bytecodealliance/wasmtime/releases/download/$version/$name.tar.xz" | tar -xJ
+          echo "$RUNNER_TEMP/wasmtime/$name" >> "$GITHUB_PATH"
       - run: wasmtime --version
       - run: cargo test -p implicit-predicates-core --all-features --target wasm32-wasip1
       - run: cargo test -p implicit-predicates --all-features --target wasm32-wasip1
