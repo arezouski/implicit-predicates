@@ -148,6 +148,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir ${{ github.workspace }}
+      # `RUSTFLAGS` replaces the flags of `.cargo/config.toml`, so the stack
+      # size set there for this target has to be repeated here.
+      RUSTFLAGS: -D warnings -C link-arg=-zstack-size=16777216
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
