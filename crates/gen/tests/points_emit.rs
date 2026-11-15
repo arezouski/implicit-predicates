@@ -281,6 +281,14 @@ fn declarations_that_cannot_be_emitted_are_rejected_with_their_position() {
         (1, 7),
         "cannot name a point type",
     );
+    // Items of the core that the generated modules import.
+    for name in ["Big", "BigCoords"] {
+        rejected(
+            &format!("point {name}(p: F64x3, t: f64) = t * p;"),
+            (1, 7),
+            "cannot name a point type",
+        );
+    }
     // Names of the prelude that the module uses.
     for name in ["Result", "Ok", "Err", "Option", "Some", "None", "From"] {
         rejected(

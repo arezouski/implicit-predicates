@@ -23,8 +23,10 @@ const RESERVED_PARAMS: [&str; 8] = [
 /// their own items, items of the core and of the oracle, or names of the
 /// prelude. Every other item they use, primitive types and modules among
 /// them, starts with a lowercase letter, which a point type cannot.
-const RESERVED_TYPES: [&str; 21] = [
+const RESERVED_TYPES: [&str; 23] = [
     "AnyPoint",
+    "Big",
+    "BigCoords",
     "PointError",
     "Point",
     "Scratch",

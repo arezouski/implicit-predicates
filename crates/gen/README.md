@@ -93,7 +93,8 @@ Names:
   identifiers; two points cannot share a name, nor two parameters of one
   point;
 - the name of a point type must start with an uppercase ASCII letter, and
-  cannot be a name that the generated modules use: `AnyPoint`, `PointError`,
+  cannot be a name that the generated modules use: `AnyPoint`, `Big`,
+  `BigCoords`, `PointError`,
   `Point`, `Scratch`, `ScratchExhausted`, `ExactCoords`, `ExactError`,
   `Weight`, `Mark`, `Span`, `Dyadic`, `UNIT`, `TINY`, `SUM_OPERAND_LIMIT`,
   `Result`, `Ok`, `Err`, `Option`, `Some`, `None` and `From`; two point
