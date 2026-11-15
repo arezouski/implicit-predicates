@@ -50,12 +50,16 @@ fn the_arenas_that_suffice_for_explicit_points_are_the_constants() {
 }
 
 /// The range of magnitudes of explicit coordinates for which `orient3d`
-/// allocates nothing.
+/// allocates nothing in release builds.
 #[test]
 fn the_documented_range_without_allocation_is_the_translated_range() {
     let (low, high) = orient3d::TRANSLATED_RANGE;
     assert_eq!((low, high), (pow2(-188), pow2(238)));
-    for (file, text) in [("README.md", ROOT_README), ("crate README", CRATE_README)] {
+    for (file, text) in [
+        ("lib.rs", LIB),
+        ("README.md", ROOT_README),
+        ("crate README", CRATE_README),
+    ] {
         assert!(flat(text).contains("`2^-188..=2^238`"), "{file}");
     }
     assert!(flat(CHANGELOG).contains("`2^-188..=2^238`"));

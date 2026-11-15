@@ -44,11 +44,12 @@
 //!
 //! [`check`] sees only what the views of a point (`approx`, `err`,
 //! `is_explicit`, `exact` and `exact_big`) show of it: it cannot know that the
-//! exact coordinates are those the point is meant to have. A point with an
-//! input that is not finite, or with a weight other than one, is not a
-//! violation for it: the predicates panic on those with their own messages,
-//! in release builds too. A point that breaks the contract panics in debug
-//! builds with a message that begins with ``breaks the contract of `Point`: ``.
+//! exact coordinates are those the point is meant to have. It reports a point
+//! with an input that is not finite, or with a weight other than one, but the
+//! checks of debug builds let those two through: the predicates panic on them
+//! with their own messages, in release builds too. A point that breaks the
+//! contract in any other way that the checks see panics in debug builds with
+//! a message that begins with ``breaks the contract of `Point`: ``.
 //!
 //! ```
 //! # #[cfg(feature = "std")] {
@@ -118,10 +119,11 @@
 //! - `std`, on by default: `orient3d`, `insphere` and `insphere_sos`,
 //!   which keep the exact coordinates of implicit points, and those of
 //!   explicit points as big integers when the last stage needs them, in an
-//!   arena of each thread, and the checks of the contract that debug builds
-//!   run. Without it the crate is `no_std`, and [`orient3d_in`],
-//!   [`insphere_in`] and [`insphere_sos_in`], which take the arena, are the
-//!   way to call the predicates.
+//!   arena of each thread, and run the whole of [`check`] in debug builds.
+//!   Without it the crate is `no_std`, and [`orient3d_in`], [`insphere_in`]
+//!   and [`insphere_sos_in`], which take the arena, are the way to call the
+//!   predicates; their checks of debug builds, which take no room in an
+//!   arena, run with it or without it.
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 
@@ -169,7 +171,10 @@ use generated::orient3d as orient3d_stages;
 ///
 /// A floating-point filter on the approximations of the points decides most
 /// calls. When it cannot, explicit points go through exact stages whose
-/// temporaries are on the stack; with an implicit point, the exact
+/// temporaries are on the stack, so that in release builds no call on
+/// explicit points whose nonzero coordinates have magnitudes in
+/// `2^-188..=2^238` allocates (debug builds allocate the arena of the check
+/// of the contract, below); with an implicit point, the exact
 /// coordinates of the points are written to an arena of the calling thread,
 /// which starts at 16,384 `f64` and grows on the heap when a call needs
 /// more. When those stages cannot decide either, because a coordinate, or a
@@ -421,7 +426,7 @@ pub fn orient3d_in(
 /// opposite, so the result can be read only if the orientation of `a`, `b`,
 /// `c` and `d` is known; the function does not check it. If `a`, `b`, `c`
 /// and `d` are coplanar, they lie on no sphere and the sign has no such
-/// meaning. Swapping any two of the first four points flips the sign.
+/// meaning. Swapping any two of the five points flips the sign.
 ///
 /// A floating-point filter on the approximations of the points decides most
 /// calls. When it cannot, a second filter test that scales its bound by the
@@ -533,10 +538,10 @@ fn insphere_in_thread_arena(
 ///
 /// `scratch` is left as it was, on success and on error. It is not used when
 /// the filter decides. It holds the coordinates of the points as big
-/// integers, for which five explicit points always suffice with 6,835 `f64`;
-/// points on a line need more, as many as the length of their exact
-/// coordinates takes. An arena made with `Scratch::growable` (with the
-/// `alloc` feature of `implicit-predicates-core`) never runs out.
+/// integers: for five explicit points, 6,835 `f64` always suffice; points
+/// on a line need more, as many as the length of their exact coordinates
+/// takes. An arena made with `Scratch::growable` (with the `alloc` feature
+/// of `implicit-predicates-core`) never runs out.
 ///
 /// # Errors
 ///

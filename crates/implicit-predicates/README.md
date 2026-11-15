@@ -68,18 +68,20 @@ on the segment between them, and `AnyPoint`, either of the last two.
 A floating-point filter on the approximations of the points decides most
 calls. When it cannot, the exact stages take over. `orient3d` on explicit
 points goes to exact stages on floating-point expansions held on the stack,
-so no call on explicit points whose nonzero coordinates have magnitudes in
-`2^-188..=2^238` allocates. With a point on a segment, and for `insphere`
-and `insphere_sos` whatever the points, the exact coordinates go to an arena
-of the calling thread, 16,384 `f64` to start with, allocated on the first
-such call, that grows on the heap when a call needs more. The last exact
-stage evaluates the determinant on big integers in that arena; it decides
-every input, and for `orient3d` it runs only when the expansions cannot
-decide, because a coordinate is too large or too small for them.
-`orient3d_in`, `insphere_in` and `insphere_sos_in` take the arena instead and
-report `ScratchExhausted` if it is too small. Without its default `std`
-feature the crate is `no_std`: `orient3d`, `insphere` and `insphere_sos` are
-not available, and the `_in` functions are the way to call the predicates.
+so in release builds no call on explicit points whose nonzero coordinates
+have magnitudes in `2^-188..=2^238` allocates; debug builds allocate an
+arena for the check of the contract of the points. With a point on a
+segment, and for `insphere` and `insphere_sos` whatever the points, the
+exact coordinates go to an arena of the calling thread, 16,384 `f64` to
+start with, allocated on the first such call, that grows on the heap when a
+call needs more. The last exact stage evaluates the determinant on big
+integers in that arena; it decides every input, and for `orient3d` it runs
+only when the expansions cannot decide, because a coordinate is too large or
+too small for them. `orient3d_in`, `insphere_in` and `insphere_sos_in` take
+the arena instead and report `ScratchExhausted` if it is too small. Without
+its default `std` feature the crate is `no_std`: `orient3d`, `insphere` and
+`insphere_sos` are not available, and the `_in` functions are the way to
+call the predicates.
 
 So the result is a `Sign` for every finite input, whatever the magnitude of
 the coordinates. An input that is not finite (NaN or infinite) makes the
@@ -131,9 +133,8 @@ from their declarations.
 - Explicit points and implicit points through one API.
 - New predicates and point types through a code generator.
 
-The first release is planned to offer `orient3d`, `insphere` and a
-symbolically perturbed `insphere`, over explicit points and points on a
-segment, which this crate already provides.
+The first release will contain `orient3d`, `insphere` and a symbolically
+perturbed `insphere`, over explicit points and points on a segment.
 
 ## Minimum supported Rust version
 

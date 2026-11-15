@@ -137,10 +137,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `filter_axes` follows the filter when the predicate has it. A call that
   the expansions on the differences decline goes to the stage on big
   integers.
-- So no call of `orient3d` on explicit points whose nonzero coordinates
-  have magnitudes in `2^-188..=2^238` allocates, instead of
-  `2^-188..=2^239`: with a coordinate above `2^238`, such a call goes to the
-  stage on big integers, in the arena of the thread.
+- So, in release builds, no call of `orient3d` on explicit points whose
+  nonzero coordinates have magnitudes in `2^-188..=2^238` allocates,
+  instead of `2^-188..=2^239`: with a coordinate above `2^238`, such a call
+  goes to the stage on big integers, in the arena of the thread.
 - The `#[exact]` form of a definition is only checked to be the same
   polynomial as the main form; no stage evaluates it, and no plan of an
   exact stage is derived from it. So `generate` no longer rejects an
@@ -165,7 +165,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stage over spans rejected, such as one with a product operand of
   degree 17, is now generated. Predicates of degree 4 or less keep their
   chain.
-
 - In debug builds, a point that breaks the contract of `Point` now panics
   with a message that begins with ``breaks the contract of `Point`: ``, in
   `orient3d`, `insphere`, `insphere_sos` and their `_in` variants, and in the
@@ -175,8 +174,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coordinates a point writes to the arena are valid, without using room in
   it; and `orient3d`, `insphere` and `insphere_sos`, which take no arena,
   also run `check` on each point when a call reaches the exact stages, in an
-  arena of their own. An input that is not finite and a weight other than
-  one keep the panics of the predicates. Release builds are unchanged: they
+  arena of their own, which they allocate: in debug builds, a call of
+  `orient3d` on explicit points that the filter does not decide allocates.
+  An input that is not finite and a weight other than one keep the panics
+  of the predicates. Release builds are unchanged: they
   check nothing, and a point that breaks the contract can still give a wrong
   sign.
 - The feature `std` of `implicit-predicates` provides `insphere` and

@@ -59,9 +59,10 @@ A point gives a predicate an approximation of its coordinates in `f64`, a
 bound on the error of each one, and, only when the filter cannot decide, its
 exact coordinates. Most calls are decided by the filter, without heap
 allocation. When it cannot decide, `orient3d` on explicit points goes
-through exact stages whose temporaries are on the stack, so no call on
-explicit points whose nonzero coordinates have magnitudes in
-`2^-188..=2^238` allocates. With a point on a segment, and for `insphere`
+through exact stages whose temporaries are on the stack, so in release
+builds no call on explicit points whose nonzero coordinates have magnitudes
+in `2^-188..=2^238` allocates; debug builds allocate an arena for the check
+of the contract of the points. With a point on a segment, and for `insphere`
 and `insphere_sos` whatever the points, the exact coordinates are written to
 an arena of the calling thread, which is allocated on the first such call
 and grows when a call needs more; explicit points outside that range use the
@@ -130,9 +131,8 @@ computing the point's coordinates.
   once and get the same staged evaluation as the built-in ones.
 - `no_std` core with no dependencies.
 
-The first release is planned to offer `orient3d`, `insphere` and a
-symbolically perturbed `insphere`, over explicit points and points on a
-segment, which the crate already provides.
+The first release will contain `orient3d`, `insphere` and a symbolically
+perturbed `insphere`, over explicit points and points on a segment.
 
 ## Workspace
 
