@@ -34,7 +34,8 @@ use crate::{insphere, orient3d};
 /// infinitesimal, far larger for a smaller index than for any larger one.
 /// So when `orient3d(a, b, c, d)` is positive and `e` is on the sphere
 /// through the other four, `e` counts as inside it if its index is the
-/// smallest of the five, and as outside if the index of `a` is. Every caller
+/// smallest of the five. With a smaller index on another point, `e` may
+/// count as inside or outside, depending on where the points are. Every caller
 /// that gives each point the same index wherever it appears gets ties
 /// broken consistently, as a Delaunay tetrahedralization needs.
 ///
@@ -79,7 +80,8 @@ use crate::{insphere, orient3d};
 /// assert_eq!(insphere(&a, &b, &c, &d, &e), Sign::Zero);
 /// // `e` has the smallest index: it counts as inside.
 /// assert_eq!(insphere_sos(&a, &b, &c, &d, &e, [1, 2, 3, 4, 0]), Sign::Positive);
-/// // `a` has the smallest index: `e` counts as outside.
+/// // `a` has the smallest index: here `e` counts as outside, but with `e`
+/// // elsewhere on the sphere it could count as inside.
 /// assert_eq!(insphere_sos(&a, &b, &c, &d, &e, [0, 1, 2, 3, 4]), Sign::Negative);
 /// // The same point twice is a tie too, broken the same way.
 /// assert_eq!(insphere_sos(&a, &b, &c, &d, &a, [1, 2, 3, 4, 0]), Sign::Positive);

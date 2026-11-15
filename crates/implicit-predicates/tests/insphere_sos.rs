@@ -493,3 +493,50 @@ fn repeated_indices_panic_in_debug_with_the_arena_of_the_thread() {
     let [a, b, c, d, e] = &p;
     let _ = implicit_predicates::insphere_sos(a, b, c, d, e, [7, 1, 2, 7, 4]);
 }
+
+/// What the documentation says of five cospherical points with `a`, `b`,
+/// `c` and `d` positively oriented: `e` counts as inside when its index is
+/// the smallest, wherever it is on the sphere; with the index of `a` the
+/// smallest, it counts as inside or outside depending on where it is, since
+/// the sign is then that of `orient3d(b, c, d, e)`.
+#[test]
+fn the_documented_side_of_a_cospherical_point() {
+    // Points of the sphere of radius 5 about the origin.
+    let (a, b, c, d) = ([5, 0, 0], [0, 5, 0], [0, 0, 5], [-5, 0, 0]);
+    let outside = [0, 0, -5];
+    // On the other side of the plane through b, c and d from a.
+    let inside = [-3, 4, 0];
+    for e in [outside, inside] {
+        let p: Grid5 = [a, b, c, d, e];
+        assert_terms_dominate(&p);
+        assert_eq!(minor(&p, 4), 250);
+        let f = to_f64(&p);
+        assert_eq!(oracle(&f), Sign::Zero);
+        assert_eq!(sos(&f, [1, 2, 3, 4, 0]), Sign::Positive);
+        for idx in [[1, 2, 3, 4, 0], [0, 1, 2, 3, 4]] {
+            assert_eq!(sos(&f, idx), perturbed(&p, idx), "{p:?} {idx:?}");
+        }
+    }
+    assert_eq!(minor(&[a, b, c, d, inside], 0), 50);
+    assert_eq!(
+        sos(&to_f64(&[a, b, c, d, outside]), [0, 1, 2, 3, 4]),
+        Sign::Negative
+    );
+    assert_eq!(
+        sos(&to_f64(&[a, b, c, d, inside]), [0, 1, 2, 3, 4]),
+        Sign::Positive
+    );
+    // The documentation does not claim that `e` is outside whenever `a` has
+    // the smallest index.
+    let docs: String = include_str!("../src/sos.rs")
+        .lines()
+        .map(|line| line.trim_start().trim_start_matches("///").trim())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(docs.contains(
+        "`e` counts as inside it if its index is the smallest of the five. With a smaller \
+         index on another point, `e` may count as inside or outside, depending on where \
+         the points are."
+    ));
+    assert!(!docs.contains("as outside if the index of `a` is"));
+}
