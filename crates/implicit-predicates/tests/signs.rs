@@ -263,6 +263,8 @@ proptest! {
         }
     }
 
+    // Excluded on wasm32: panics abort on wasm32, so they cannot be caught there.
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn non_finite_inputs_are_none_in_every_stage_and_a_panic_in_orient3d(
         p in prop_oneof![random4(), grid4(), extreme4(&edges())],

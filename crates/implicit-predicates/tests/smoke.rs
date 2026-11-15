@@ -85,6 +85,8 @@ fn each_stage_agrees_on_a_grid_case() {
     }
 }
 
+// Excluded on wasm32: panics abort on wasm32, so they cannot be caught there.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn non_finite_input_is_none_in_every_stage_and_a_panic_in_orient3d() {
     let points = [

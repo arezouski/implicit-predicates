@@ -3,6 +3,8 @@
 //! coordinates, a point whose exact coordinates call a predicate does not
 //! make it panic, and the result does not depend on earlier calls.
 
+// The tests that cannot run on wasm32 leave their helpers unused there.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 // `orient3d` needs the `std` feature.
 #![cfg(feature = "std")]
 
@@ -315,6 +317,8 @@ fn results_on_a_new_thread(cases: &[Args]) -> Vec<Sign> {
     .unwrap()
 }
 
+// Excluded on wasm32: threads are not supported on wasm32-wasip1.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn the_result_does_not_depend_on_earlier_calls() {
     let cases = coplanar_on_lines();
@@ -420,6 +424,8 @@ impl Point for Probe {
     }
 }
 
+// Excluded on wasm32: panics abort on wasm32, so they cannot be caught there.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn the_arena_of_the_thread_is_empty_after_a_call_that_panicked() {
     std::thread::spawn(|| {
@@ -479,6 +485,8 @@ fn an_arena_too_small_is_reported_by_insphere_until_it_fits() {
     assert!(try_size(high_water - 1).0.is_err());
 }
 
+// Excluded on wasm32: panics abort on wasm32, so they cannot be caught there.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn the_arena_of_the_thread_is_empty_after_an_insphere_that_panicked() {
     std::thread::spawn(|| {

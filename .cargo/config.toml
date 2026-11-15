@@ -1,0 +1,4 @@
+# The default 1 MiB stack of a wasm32 program is too small for the debug
+# builds of the property tests (deeply nested strategies).
+[target.wasm32-wasip1]
+rustflags = ["-C", "link-arg=-zstack-size=16777216"]

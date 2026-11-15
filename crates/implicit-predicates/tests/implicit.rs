@@ -3,6 +3,8 @@
 //! and on the concrete types; the degenerate cases; and inputs that are not
 //! finite, which panic.
 
+// The tests that cannot run on wasm32 leave their helpers unused there.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 // `orient3d` needs the `std` feature.
 #![cfg(feature = "std")]
 
@@ -253,6 +255,8 @@ proptest! {
         }
     }
 
+    // Excluded on wasm32: panics abort on wasm32, so they cannot be caught there.
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn inputs_that_are_not_finite_panic(
         args in any_args(),

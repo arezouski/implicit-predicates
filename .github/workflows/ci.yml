@@ -132,6 +132,24 @@ jobs:
       # The tests of the crate without its `std` feature, on the host.
       - run: cargo test -p implicit-predicates --no-default-features
 
+  wasm:
+    # The tests that compare against the exact reference, on wasm32 under
+    # wasmtime: this runs the guards for a 32-bit `usize`. The directory is
+    # preopened so that the versioned corpus samples can be read.
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - run: curl https://wasmtime.dev/install.sh -sSf | bash -s -- --version v50.0.1
+      - run: echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+      - run: wasmtime --version
+      - run: cargo test -p implicit-predicates-core --all-features --target wasm32-wasip1
+      - run: cargo test -p implicit-predicates --all-features --target wasm32-wasip1
+
   reference:
     # The bindings to the third-party reference libraries, outside the
     # workspace. The sources are downloaded at pinned commits; no model is

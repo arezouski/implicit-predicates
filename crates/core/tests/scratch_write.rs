@@ -95,6 +95,8 @@ fn write_of_an_invalid_expansion_is_caught_in_debug_builds() {
     let _ = Scratch::borrowed(&mut buf).write(2, copy(&[3.0, 5.0]));
 }
 
+// Panics abort on wasm32, so a panic cannot be caught there.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn after_the_panic_the_top_is_back_but_the_high_water_mark_has_risen() {
     let mut buf = [0.0; 8];

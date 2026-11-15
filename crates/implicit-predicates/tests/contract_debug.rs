@@ -5,6 +5,9 @@
 //! the arena of the caller, and a point whose exact coordinates call a
 //! predicate passes them.
 
+// The tests that cannot run on wasm32 leave their helpers unused there.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
+
 mod common;
 
 #[cfg(feature = "std")]
@@ -353,16 +356,22 @@ fn assert_cases(cases: &[Case]) {
     }
 }
 
+// Excluded on wasm32: panics abort on wasm32, so they cannot be caught there.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn a_point_with_an_invalid_error_bound_stops_in_the_filter() {
     assert_cases(&filter_cases());
 }
 
+// Excluded on wasm32: panics abort on wasm32, so they cannot be caught there.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn invalid_exact_coordinates_stop_in_the_exact_stages() {
     assert_cases(&exact_stage_cases());
 }
 
+// Excluded on wasm32: panics abort on wasm32, so they cannot be caught there.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn the_predicates_without_an_arena_check_the_whole_contract() {
     assert_cases(&complete_check_cases());

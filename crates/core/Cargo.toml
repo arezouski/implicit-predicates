@@ -26,4 +26,10 @@ workspace = true
 [dev-dependencies]
 implicit-predicates-oracle = { path = "../oracle" }
 implicit-predicates-test-support = { path = "../../test-support" }
+
+# `fork` and `timeout` pull in crates that do not build for wasm32.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std", "bit-set"] }
