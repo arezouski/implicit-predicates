@@ -48,3 +48,21 @@ pub(crate) fn with<R>(f: impl FnOnce(&mut Scratch<'_>) -> R) -> R {
         (_, None) => unreachable!("the arena of the thread ran `f` without a result"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::INITIAL;
+
+    /// The crate documentation and its README quote the initial size.
+    #[test]
+    fn the_documented_initial_size_is_the_constant() {
+        let documented = format!("{},{:03} `f64`", INITIAL / 1000, INITIAL % 1000);
+        for (file, text) in [
+            ("lib.rs", include_str!("lib.rs")),
+            ("README.md", include_str!("../README.md")),
+        ] {
+            let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(flat.contains(&documented), "{file}: {documented}");
+        }
+    }
+}

@@ -15,7 +15,7 @@ exclude = ["tests/"]
 
 [features]
 default = ["std"]
-# The arena of each thread used by `orient3d`.
+# The arena of each thread used by `orient3d`, `insphere` and `insphere_sos`.
 std = ["implicit-predicates-core/alloc"]
 
 [dependencies]

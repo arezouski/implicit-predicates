@@ -39,9 +39,9 @@ mod implicit;
 
 pub use contenders::{
     geometry_insphere_sign, geometry_orient3d_sign, implicit_predicates_insphere_any_sign,
-    implicit_predicates_orient3d_any_sign, implicit_predicates_orient3d_sign, naive_insphere,
-    naive_insphere_sign, naive_orient3d, naive_orient3d_sign, robust_insphere_sign,
-    robust_orient3d_sign,
+    implicit_predicates_insphere_public_sign, implicit_predicates_orient3d_any_sign,
+    implicit_predicates_orient3d_sign, naive_insphere, naive_insphere_sign, naive_orient3d,
+    naive_orient3d_sign, robust_insphere_sign, robust_orient3d_sign,
 };
 pub use implicit::{
     CORPUS_DIR, EXACT_SEED, ExactSet, IMPLICIT_SEED, INSPHERE_EXACT_SEED, INSPHERE_IMPLICIT_SEED,

@@ -96,7 +96,8 @@ pub trait Point {
     /// [`err`](Self::err) is zero and [`exact`](Self::exact) gives
     /// [`Weight::One`]; returning `false` is always allowed. A wrong `true`
     /// makes the predicates return wrong signs; debug builds of the
-    /// predicates check only that the errors of such a point are zero.
+    /// predicates and [`check`] verify that the errors of such a point are
+    /// zero.
     fn is_explicit(&self) -> bool;
 
     /// Writes the exact coordinates as expansions in `scratch`: the point is

@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `insphere` and `insphere_in`, in `implicit-predicates`: the exact sign of
+  the position of a point with respect to the sphere through four others,
+  over points of any type that implements `Point`, with the convention of
+  Shewchuk's `insphere`. A floating-point filter and a second test of it
+  that scales its bound by the extent of each axis decide most calls; the
+  others go to an exact stage on big integers, so every call with finite
+  inputs returns its exact sign. `insphere` needs the `std` feature and uses
+  the arena of the thread; `insphere_in` takes the arena and works without
+  `std`: 6,835 `f64` always suffice for five explicit points, and it returns
+  `ScratchExhausted` when the arena is too small. They panic on an input
+  that is not finite and on a point whose exact coordinates have a weight
+  other than `Weight::One`, like `orient3d`.
+- `insphere_sos` and `insphere_sos_in`: `insphere` with its ties broken by a
+  symbolic perturbation ordered by the indices of the five points, which
+  must be distinct. The result is `Sign::Zero` exactly when the five points
+  are coplanar. `insphere_sos` needs `std`; `insphere_sos_in` takes the
+  arena.
+- `check`, `CheckError` and `Violation`, in `implicit-predicates-core` and
+  re-exported by `implicit-predicates`: `check` tests that a point type keeps
+  the contract of `Point`, and reports the first obligation it breaks. It
+  sees only what the views of a point show of it.
+- A `cargo-fuzz` package, `fuzz`, outside the workspace and not published,
+  with targets that compare the public predicates with the exact reference.
+- Tests of `implicit-predicates-core` and `implicit-predicates` on
+  `wasm32-wasip1`, run under wasmtime in CI, which exercise the guards for a
+  32-bit `usize`.
 - `ExactError::Weighted`, in `implicit-predicates-core`: the exact
   coordinates of a point have a weight other than one, which the big-integer
   coordinates of `Point::exact_big` cannot carry. `Point::exact_big` must
@@ -139,6 +165,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stage over spans rejected, such as one with a product operand of
   degree 17, is now generated. Predicates of degree 4 or less keep their
   chain.
+
+- In debug builds, a point that breaks the contract of `Point` now panics
+  with a message that begins with ``breaks the contract of `Point`: ``, in
+  `orient3d`, `insphere`, `insphere_sos` and their `_in` variants, and in the
+  generated chains. Every call checks that no error bound of a point is NaN
+  or negative and that a point that says it is explicit has no error; when
+  the filter does not decide, the chains also check that the exact
+  coordinates a point writes to the arena are valid, without using room in
+  it; and `orient3d`, `insphere` and `insphere_sos`, which take no arena,
+  also run `check` on each point when a call reaches the exact stages, in an
+  arena of their own. An input that is not finite and a weight other than
+  one keep the panics of the predicates. Release builds are unchanged: they
+  check nothing, and a point that breaks the contract can still give a wrong
+  sign.
+- The feature `std` of `implicit-predicates` provides `insphere` and
+  `insphere_sos` as well as `orient3d`: without it, `insphere_in`,
+  `insphere_sos_in` and `orient3d_in` are the entry points.
 
 ### Removed
 

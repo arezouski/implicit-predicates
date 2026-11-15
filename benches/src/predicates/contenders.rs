@@ -103,6 +103,14 @@ pub fn implicit_predicates_insphere_any_sign(p: &InSphereImplicitInput) -> i8 {
     })
 }
 
+/// The public `insphere` of `implicit-predicates` on points of any type,
+/// with the arena of the thread that the function keeps for itself.
+#[must_use]
+pub fn implicit_predicates_insphere_public_sign(p: &InSphereImplicitInput) -> i8 {
+    let [a, b, c, d, e] = p;
+    i8::from(implicit_predicates::insphere(a, b, c, d, e))
+}
+
 /// `insphere` of the `geometry-predicates` crate.
 #[must_use]
 pub fn geometry_insphere_sign(p: &InSphereInput) -> i8 {

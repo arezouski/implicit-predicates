@@ -119,7 +119,7 @@ pub(crate) fn write_generic_chain(out: &mut String, chain: &GenericChain) {
     write_exact_stages_explicit_in(out, chain);
     write_exact_stages_in(out, &s, chain.spans, chain.axes);
     let checks = if chain.spans.is_some() {
-        "valid expansions and "
+        "valid expansions or "
     } else {
         ""
     };

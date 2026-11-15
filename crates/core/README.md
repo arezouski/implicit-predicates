@@ -18,8 +18,14 @@ Currently it provides:
   product of two expansions; `Scratch::write` lets other code write
   expansions of its own into it;
 - `Point`, the contract every point type implements: an approximation of its
-  coordinates, a bound on their error, and its exact coordinates as
-  expansions in an arena. `[f64; 3]` implements it as an explicit point;
+  coordinates, a bound on their error, and its exact coordinates, as
+  expansions and as big integers, in an arena. `[f64; 3]` implements it as
+  an explicit point;
+- `check`, with `CheckError` and `Violation`, which tests that a point keeps
+  the contract of `Point`, for the tests of a point type. It sees only what
+  the views of a point show of it. In debug builds, the predicates of
+  `implicit-predicates` that take no arena run it on each point when a call
+  reaches their exact stages; release builds never do;
 - `Big`, exact integers of arbitrary size in an arena, built from `f64`
   values, with exact addition, subtraction and multiplication;
 - `filter`, the helpers that turn the errors of the points of a call into

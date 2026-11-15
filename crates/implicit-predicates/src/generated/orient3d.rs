@@ -601,7 +601,7 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point>(
 /// also if a point breaks an obligation of the contract of [`Point`] that the
 /// chain checks without room in the arena: an error bound that is NaN or
 /// negative, an error that is not zero on a point that says it is explicit, or
-/// exact coordinates that are not valid expansions and big integers in their
+/// exact coordinates that are not valid expansions or big integers in their
 /// unique representation, below the top of `scratch`.
 #[inline]
 pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point>(

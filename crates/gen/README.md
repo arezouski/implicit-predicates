@@ -251,7 +251,13 @@ For each predicate the generator writes one module with:
   every input, and fail only when the arena runs out of room. They panic on
   a point whose exact coordinates have a weight other than one, and on a
   point that cannot give its coordinates as big integers because an input
-  is not finite or its weight is other than one;
+  is not finite or its weight is other than one. In debug builds the
+  chain also asserts the obligations of `Point` that need no room in the
+  arena: an error bound that is not NaN or negative, no error on a point
+  that says it is explicit, and exact coordinates that are valid expansions
+  or big integers in their unique representation, below the top of the
+  arena. A point that breaks one panics with a message that begins with
+  ``breaks the contract of `Point`:``; release builds check none of it;
 - `big_integers_in`, the main form evaluated exactly with the big-integer
   operations of an arena, on the coordinates of the points as big
   integers; it always decides, and fails only when the arena runs out of
