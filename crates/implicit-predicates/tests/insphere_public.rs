@@ -2,34 +2,42 @@
 //! points of every type: random, grid, cospherical and extreme points, the
 //! symmetries of the predicate, the same point twice, the arena of
 //! `insphere_in`, a point whose exact coordinates call a predicate, and the
-//! panics.
-
-// `insphere` needs the `std` feature.
-#![cfg(feature = "std")]
+//! panics. The tests that call `insphere` need the `std` feature; those that
+//! call only `insphere_in` run without it.
 
 mod common;
 
+#[cfg(feature = "std")]
 #[path = "generators/insphere_calls.rs"]
 mod insphere_calls;
 
+#[cfg(feature = "std")]
 use std::cell::Cell;
 
-use common::args::{Arg, Call5, any_points, with_concrete5};
-use common::insphere::{BIG_INTEGERS, Points5, first_deciding, oracle_args};
+use common::args::Arg;
+#[cfg(feature = "std")]
+use common::args::{Call5, any_points, with_concrete5};
+#[cfg(feature = "std")]
+use common::insphere::oracle_args;
+use common::insphere::{BIG_INTEGERS, Points5, first_deciding};
 use common::odd_points::{NoCoordinates, Weighted};
 use implicit_predicates::stages::insphere::BIG_INTEGERS_EXPLICIT_ARENA;
-use implicit_predicates::{
-    BigCoords, ExactCoords, ExactError, Lnc, Point, Scratch, ScratchExhausted, Sign, insphere,
-    insphere_in, orient3d,
-};
+#[cfg(feature = "std")]
+use implicit_predicates::{BigCoords, ExactCoords, ExactError, insphere, orient3d};
+use implicit_predicates::{Lnc, Point, Scratch, ScratchExhausted, Sign, insphere_in};
+#[cfg(feature = "std")]
 use implicit_predicates_test_support::{config, grid5, random5};
+#[cfg(feature = "std")]
 use insphere_calls::{Args5, calls, cospherical_args, extreme_args, line_at};
+#[cfg(feature = "std")]
 use proptest::prelude::*;
 
 /// `insphere`, and `insphere_in` with a growable arena, on points of any
 /// type; checks that the two agree and that the arena is left as it was.
+#[cfg(feature = "std")]
 struct Public;
 
+#[cfg(feature = "std")]
 impl Call5 for Public {
     type Output = Sign;
     fn call<A: Point, B: Point, C: Point, D: Point, E: Point>(
@@ -51,6 +59,7 @@ impl Call5 for Public {
 
 /// `insphere` on the five arguments in every type: arrays, `Explicit` and
 /// `Lnc`, and `AnyPoint`; checks that they agree, and returns the sign.
+#[cfg(feature = "std")]
 fn every_type(args: &Args5) -> Sign {
     let sign = with_concrete5(args, true, &mut Public);
     assert_eq!(with_concrete5(args, false, &mut Public), sign, "{args:?}");
@@ -59,10 +68,12 @@ fn every_type(args: &Args5) -> Sign {
     sign
 }
 
+#[cfg(feature = "std")]
 fn mixed_calls() -> impl Strategy<Value = Args5> {
     prop_oneof![calls(), cospherical_args(), extreme_args()]
 }
 
+#[cfg(feature = "std")]
 proptest! {
     #![proptest_config(config())]
 
@@ -73,11 +84,11 @@ proptest! {
 
     #[test]
     fn swapping_two_points_flips_the_sign(args in calls()) {
-        // The predicate is antisymmetric in its first four points.
+        // The predicate is antisymmetric in its five points.
         let sign = every_type(&args);
         prop_assert_eq!(sign, oracle_args(&args), "{:?}", args);
-        for i in 0..4 {
-            for j in i + 1..4 {
+        for i in 0..5 {
+            for j in i + 1..5 {
                 let mut swapped = args;
                 swapped.swap(i, j);
                 prop_assert_eq!(every_type(&swapped), -sign, "{:?}", swapped);
@@ -108,6 +119,7 @@ proptest! {
 }
 
 /// Values of every magnitude that `f64` has at its ends and in the middle.
+#[cfg(feature = "std")]
 const EXTREMES: [f64; 10] = [
     1e-300,
     -1e-300,
@@ -121,10 +133,12 @@ const EXTREMES: [f64; 10] = [
     1.0,
 ];
 
+#[cfg(feature = "std")]
 fn extreme_point() -> impl Strategy<Value = [f64; 3]> {
     prop::array::uniform3(prop::sample::select(EXTREMES.to_vec()))
 }
 
+#[cfg(feature = "std")]
 proptest! {
     #![proptest_config(config())]
 
@@ -214,20 +228,31 @@ fn the_documented_arena_for_explicit_points_is_the_constant() {
     assert!(!insphere_in_docs.contains(&format!("{words} `f64`")));
 }
 
+#[cfg(feature = "std")]
 thread_local! {
     /// The calls to `exact_big` of [`Reentrant`], and how many of them saw a
     /// predicate return the right sign.
     static CALLS: Cell<usize> = const { Cell::new(0) };
+    /// The calls to `exact` of [`Reentrant`].
+    static EXACT_CALLS: Cell<usize> = const { Cell::new(0) };
 }
+
+/// The calls to `Point::exact` of one point that the check of the contract
+/// makes in a call of `insphere` that reaches the exact stages: two in debug
+/// builds, none in release builds.
+#[cfg(feature = "std")]
+const CHECK_EXACT_CALLS: usize = if cfg!(debug_assertions) { 2 } else { 0 };
 
 /// A point whose exact coordinates are those of `point`, written after calls
 /// to `orient3d` and `insphere` with implicit points, which need an arena
 /// while the arena of the thread is in use; its error is infinite, so the
 /// filter never decides.
+#[cfg(feature = "std")]
 struct Reentrant {
     point: [f64; 3],
 }
 
+#[cfg(feature = "std")]
 impl Point for Reentrant {
     fn approx(&self) -> &[f64; 3] {
         &self.point
@@ -244,6 +269,7 @@ impl Point for Reentrant {
     // The stages of `insphere` never ask for it, but in debug builds the
     // check of the contract of the point does.
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        EXACT_CALLS.with(|n| n.set(n.get() + 1));
         self.point.exact(scratch)
     }
 
@@ -259,14 +285,20 @@ impl Point for Reentrant {
     }
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn a_point_that_calls_a_predicate_is_decided() {
     let [a, b, c, d, e] = SPHERE;
+    let exact_calls = || EXACT_CALLS.with(|n| n.replace(0));
+    exact_calls();
     let r = Reentrant { point: e };
     assert_eq!(insphere(&a, &b, &c, &d, &r), Sign::Zero);
     assert!(CALLS.with(Cell::get) >= 1);
+    // The stages ask only for the coordinates as big integers.
+    assert_eq!(exact_calls(), CHECK_EXACT_CALLS);
     let r = Reentrant { point: a };
     assert_eq!(insphere(&r, &b, &c, &d, &e), Sign::Zero);
+    assert_eq!(exact_calls(), CHECK_EXACT_CALLS);
     // With an arena of the caller, the predicates inside use the arena of
     // the thread.
     let mut buf = vec![0.0; 1 << 15];
@@ -277,9 +309,11 @@ fn a_point_that_calls_a_predicate_is_decided() {
         Ok(Sign::Zero)
     );
     assert_eq!(scratch.used(), 0);
+    assert_eq!(exact_calls(), 0);
 }
 
 /// `insphere` on four points of the unit sphere and `e`.
+#[cfg(feature = "std")]
 fn with(e: &impl Point) -> Sign {
     let (a, b, c, d) = (
         [1.0, 0.0, 0.0],
@@ -306,11 +340,12 @@ fn with_arena(e: &impl Point) -> Sign {
 fn the_unit_sphere_decides_by_the_side_of_the_point() {
     // a, b, c, d = (1,0,0), (0,1,0), (0,0,1), (-1,0,0) are positively
     // oriented, so a point inside has a positive sign.
-    for sign in
-        [with, with_arena].map(|f| (f(&[0.0; 3]), f(&[2.0, 0.0, 0.0]), f(&[0.0, 0.0, -1.0])))
-    {
-        assert_eq!(sign, (Sign::Positive, Sign::Negative, Sign::Zero));
-    }
+    let signs =
+        |f: fn(&[f64; 3]) -> Sign| (f(&[0.0; 3]), f(&[2.0, 0.0, 0.0]), f(&[0.0, 0.0, -1.0]));
+    let expected = (Sign::Positive, Sign::Negative, Sign::Zero);
+    assert_eq!(signs(with_arena), expected);
+    #[cfg(feature = "std")]
+    assert_eq!(signs(with), expected);
 }
 
 macro_rules! panics {
@@ -318,6 +353,7 @@ macro_rules! panics {
         mod $name {
             use super::*;
 
+            #[cfg(feature = "std")]
             #[test]
             #[should_panic(expected = $message)]
             fn insphere() {

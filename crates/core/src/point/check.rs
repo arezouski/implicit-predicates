@@ -37,7 +37,10 @@ use crate::sign::Sign;
 ///    [`Violation::Weighted`];
 /// 7. that a second call to `approx`, `err`, `is_explicit` and `exact_big`
 ///    gives the same values as the first, again in the unique
-///    representation.
+///    representation; and that a second call to `exact` fails with
+///    `OutOfRange` when the first did, and otherwise gives a weight of one
+///    and valid expansions below the top with the same values as the
+///    first.
 ///
 /// After every call to `exact` and `exact_big`, before reading what it
 /// returned, `check` also checks that the call did not leave the top of the
@@ -49,10 +52,13 @@ use crate::sign::Sign;
 /// without it. `check` can only tell whether the views of the point agree
 /// with one another: it cannot know whether the exact coordinates are
 /// those of the point its author meant to define. Nor does it see a point
-/// that lowers the top and then writes back up past where it was.
+/// that lowers the top and then writes back up past where it was, nor a
+/// span of `exact` that points into what was in the arena below the top
+/// it was given, rather than at what the point wrote, when the values
+/// there happen to be the right ones.
 ///
 /// `check` writes the exact coordinates in `scratch`, twice as big integers
-/// and once as expansions, and the sums and differences that compare them.
+/// and twice as expansions, and the sums and differences that compare them.
 /// A growable arena (`Scratch::growable`, with the `alloc` feature) never
 /// runs out. With a borrowed buffer, a few times the room that the exact
 /// coordinates of the point need is enough; when it is not, `check` returns
@@ -214,8 +220,9 @@ pub enum Violation {
         axis: usize,
     },
     /// Two calls in a row to [`Point::approx`], [`Point::err`],
-    /// [`Point::is_explicit`] or [`Point::exact_big`] gave different
-    /// values.
+    /// [`Point::is_explicit`], [`Point::exact`] or [`Point::exact_big`]
+    /// gave different values, or [`Point::exact`] failed with
+    /// [`ExactError::OutOfRange`] on one call and not on the other.
     Unstable,
     /// A call to [`Point::exact`] or [`Point::exact_big`] left the top of
     /// the arena below the top it had when the call began: it reset the
@@ -346,6 +353,7 @@ fn check_above<P: Point + ?Sized>(p: &P, scratch: &mut Scratch<'_>) -> Result<()
     if scratch.used() < top {
         return Err(Violation::ArenaBelowTop.into());
     }
+    let in_range = exact.is_ok();
     match exact {
         Ok(coords) => {
             if coords.w != Weight::One {
@@ -389,6 +397,32 @@ fn check_above<P: Point + ?Sized>(p: &P, scratch: &mut Scratch<'_>) -> Result<()
         if scratch.big_sub(second[axis], big[axis])?.sign() != Sign::Zero {
             return Err(Violation::Unstable.into());
         }
+    }
+    let top = scratch.used();
+    let second = p.exact(scratch);
+    if scratch.used() < top {
+        return Err(Violation::ArenaBelowTop.into());
+    }
+    match second {
+        Ok(coords) if in_range => {
+            if coords.w != Weight::One {
+                return Err(Violation::Unstable.into());
+            }
+            let spans = [coords.x, coords.y, coords.z];
+            if let Some(axis) = (0..3).find(|&k| !contract::expansion_is_valid(scratch, spans[k])) {
+                return Err(Violation::InvalidExpansion { axis }.into());
+            }
+            // The first call gave the values of `big`.
+            for axis in 0..3 {
+                if !same_value(scratch, spans[axis], big[axis])? {
+                    return Err(Violation::Unstable.into());
+                }
+            }
+        }
+        Err(ExactError::OutOfRange) if !in_range => {}
+        Err(ExactError::Exhausted(_)) => return Err(CheckError::Exhausted),
+        // In range on one call and not on the other, or weighted now.
+        Ok(_) | Err(_) => return Err(Violation::Unstable.into()),
     }
     Ok(())
 }

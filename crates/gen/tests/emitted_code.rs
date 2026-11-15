@@ -648,14 +648,12 @@ fn a_point_that_breaks_the_contract_panics_in_debug_builds() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             stages::staged_in(&mut scratch, &p[0], &p[1], &p[2], &liar)
         }));
-        if cfg!(debug_assertions) {
-            let payload = result.expect_err("no panic");
-            let message = payload.downcast_ref::<String>().expect("a message");
-            assert!(message.starts_with("breaks the contract of `Point`: argument 3: "), "{message}");
-            assert!(message.contains(obligation), "{lie}: {message}");
-        } else {
-            assert!(result.is_ok(), "{lie}");
-        }
+        // The emitted crate is tested in the dev profile, with debug
+        // assertions.
+        let payload = result.expect_err("no panic");
+        let message = payload.downcast_ref::<String>().expect("a message");
+        assert!(message.starts_with("breaks the contract of `Point`: argument 3: "), "{message}");
+        assert!(message.contains(obligation), "{lie}: {message}");
     }
 }
 "#;

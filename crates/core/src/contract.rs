@@ -1,6 +1,9 @@
 //! The obligations of the contract of [`Point`](crate::Point) that need no
 //! room in an arena, for the debug assertions of the predicates and for
-//! [`point::check`](crate::point::check). Not part of the public API.
+//! [`point::check`](crate::point::check). Every predicate that
+//! `implicit-predicates-gen` emits calls them, in the crate that holds it,
+//! so they are kept stable for generated code; they are not meant to be
+//! called by hand.
 
 use crate::bigint::Big;
 use crate::expansion;

@@ -6,14 +6,14 @@
 //!
 //! The recording program uses the opposite sign convention, so the recorded
 //! sign is `REFERENCE_ORIENT3D_FACTOR` times ours for `orient3d`, and
-//! `REFERENCE_INSPHERE_FACTOR` times ours for `insphere`. Each `insphere` call
-//! is also given to the public `insphere` and `insphere_in`, which must agree
-//! with `staged_in` of the hidden module. Calls
-//! with a kind of point that this crate does not provide yet are counted
-//! and reported. Every call is decided: a call that no stage on expansions
-//! decides goes to the stage on big integers, and is reported with the
-//! reason (see `common::corpus_sweep::Why`); on the samples there must be
-//! none, for either predicate. On the generated corpus, the stage on big integers
+//! `REFERENCE_INSPHERE_FACTOR` times ours for `insphere`. Each `insphere`
+//! call is also given to the public `insphere` and `insphere_in`, which
+//! must agree with `staged_in` of the hidden module. Calls with a kind of
+//! point that this crate does not provide yet are counted and reported.
+//! Every call is decided: a call that no stage on expansions decides goes
+//! to the stage on big integers, and is reported with the reason (see
+//! `common::corpus_sweep::Why`); on the samples there must be none, for
+//! either predicate. On the generated corpus, the stage on big integers
 //! alone must also give the recorded sign of every call. Every `insphere`
 //! call whose recorded sign is zero is also given to `insphere_sos`, with
 //! the position of each point in the table of points of its model as its
@@ -84,16 +84,17 @@ fn assert_no_mismatch(name: &str, tally: &impl Sweep) {
     );
 }
 
-/// Fails unless the sweep met ties of `insphere` and `insphere_sos` broke
-/// every one of them, but for those that give a position of the table of
-/// points twice, which it skips. The calls with five coplanar points, which
-/// no order breaks, would be among those it did not break.
+/// Fails unless the sweep met ties of `insphere`, none of them with five
+/// coplanar points, which no order breaks, and `insphere_sos` broke every
+/// one of them, but for those that give a position of the table of points
+/// twice, which it skips.
 fn assert_ties_broken(name: &str, tally: &InSphereTally) {
     let ties = &tally.ties;
     assert!(
         ties.calls > 0,
         "{name}: no insphere call with a recorded zero"
     );
+    assert_eq!(ties.coplanar, 0, "{name}: coplanar ties: {ties:?}");
     assert_eq!(ties.sos_zero, 0, "{name}: ties not broken: {ties:?}");
 }
 

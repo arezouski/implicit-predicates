@@ -10,6 +10,8 @@
 
 mod common;
 
+use std::cell::Cell;
+
 #[cfg(feature = "std")]
 use common::odd_points::LIAR_AT;
 use common::odd_points::{Liar, Lie};
@@ -273,13 +275,13 @@ fn exact_stage_cases() -> Vec<Case> {
     ]
 }
 
-/// The liars that only the complete check catches.
+/// The liars that only the complete check catches: the predicates that
+/// take an arena, `insphere_sos_in` among them, which calls only
+/// `insphere_in` and `orient3d_in`, do not.
 fn complete_check_cases() -> Vec<Case> {
     let outcome = |p: Predicate| {
         if p.checks_fully() {
             Outcome::Panics
-        } else if p == InsphereSosIn {
-            Outcome::Either
         } else {
             Outcome::Quiet
         }
@@ -305,6 +307,12 @@ fn complete_check_cases() -> Vec<Case> {
         },
         Case {
             lie: Lie::UnstableExactBig,
+            obligation: Violation::Unstable.to_string(),
+            outcome,
+            release_quiet: true,
+        },
+        Case {
+            lie: Lie::UnstableExact,
             obligation: Violation::Unstable.to_string(),
             outcome,
             release_quiet: true,
@@ -409,35 +417,114 @@ fn a_liar_does_not_panic_in_release_builds() {
     }
 }
 
-/// The smallest arena, in `f64`, with which `f` decides.
-fn smallest_arena(f: impl Fn(&mut Scratch<'_>) -> Option<Sign>) -> usize {
-    (0..1 << 16)
+/// The smallest arena, in `f64`, with which `f` decides, and the high
+/// water of an arena with room to spare after `f` decides.
+fn smallest_arena(f: impl Fn(&mut Scratch<'_>) -> Option<Sign>) -> (usize, usize) {
+    let smallest = (0..1 << 16)
         .find(|&n| {
             let mut buf = vec![0.0; n];
             f(&mut Scratch::borrowed(&mut buf)).is_some()
         })
-        .expect("an arena of 2^16 suffices")
+        .expect("an arena of 2^16 suffices");
+    let mut buf = vec![0.0; 1 << 16];
+    let mut scratch = Scratch::borrowed(&mut buf);
+    assert!(f(&mut scratch).is_some());
+    (smallest, scratch.high_water())
 }
 
-/// The checks of debug builds write nothing in the arena of the caller: the
-/// smallest arena with which a call decides, measured in a release build, is
-/// the same in a debug build.
+/// `point`, counting the calls to `exact` and to `exact_big`.
+struct Counted<P> {
+    point: P,
+    calls: Cell<[usize; 2]>,
+}
+
+impl<P: Point> Counted<P> {
+    fn new(point: P) -> Self {
+        Counted {
+            point,
+            calls: Cell::new([0; 2]),
+        }
+    }
+
+    /// The calls to `exact` and to `exact_big` since the last time.
+    fn take(&self) -> [usize; 2] {
+        self.calls.replace([0; 2])
+    }
+
+    fn count(&self, method: usize) {
+        let mut calls = self.calls.get();
+        calls[method] += 1;
+        self.calls.set(calls);
+    }
+}
+
+impl<P: Point> Point for Counted<P> {
+    fn approx(&self) -> &[f64; 3] {
+        self.point.approx()
+    }
+
+    fn err(&self) -> &[f64; 3] {
+        self.point.err()
+    }
+
+    fn is_explicit(&self) -> bool {
+        self.point.is_explicit()
+    }
+
+    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        self.count(0);
+        self.point.exact(scratch)
+    }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        self.count(1);
+        self.point.exact_big(scratch)
+    }
+}
+
+/// The checks of debug builds write nothing in the arena of the caller, not
+/// even above its top, and ask nothing of the points through it: the
+/// smallest arena with which a call decides, the high water of an arena
+/// with room to spare, and the calls to `exact` and `exact_big` of the
+/// point on a line in one call, all measured in a release build, are the
+/// same in a debug build.
 #[test]
 fn a_debug_check_takes_nothing_from_the_arena_of_the_caller() {
     let (a, b, c) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
-    let m = Lnc::new(a, b, 0.1).unwrap();
+    let m = Counted::new(Lnc::new(a, b, 0.1).unwrap());
     let orient3d = smallest_arena(|s| orient3d_in(s, &a, &b, &c, &m).ok());
-    assert_eq!(orient3d, ORIENT3D_SMALLEST_ARENA);
+    assert_eq!(orient3d, (ORIENT3D_SMALLEST_ARENA, ORIENT3D_SMALLEST_ARENA));
+    m.take();
+    let mut buf = vec![0.0; 1 << 16];
+    assert!(orient3d_in(&mut Scratch::borrowed(&mut buf), &a, &b, &c, &m).is_ok());
+    assert_eq!(m.take(), ORIENT3D_CALLS);
     let d = [-1.0, 0.0, 0.0];
-    let e = Lnc::new(a, b, 1.0).unwrap();
+    let e = Counted::new(Lnc::new(a, b, 1.0).unwrap());
     let insphere = smallest_arena(|s| insphere_in(s, &a, &b, &c, &d, &e).ok());
-    assert_eq!(insphere, INSPHERE_SMALLEST_ARENA);
+    assert_eq!(insphere, (INSPHERE_SMALLEST_ARENA, INSPHERE_SMALLEST_ARENA));
+    e.take();
+    assert!(insphere_in(&mut Scratch::borrowed(&mut buf), &a, &b, &c, &d, &e).is_ok());
+    assert_eq!(e.take(), INSPHERE_CALLS);
     let sos = smallest_arena(|s| insphere_sos_in(s, &a, &b, &c, &d, &e, [4, 3, 2, 1, 0]).ok());
-    assert_eq!(sos, INSPHERE_SOS_SMALLEST_ARENA);
+    assert_eq!(
+        sos,
+        (INSPHERE_SOS_SMALLEST_ARENA, INSPHERE_SOS_SMALLEST_ARENA)
+    );
+    e.take();
+    let mut scratch = Scratch::borrowed(&mut buf);
+    assert!(insphere_sos_in(&mut scratch, &a, &b, &c, &d, &e, [4, 3, 2, 1, 0]).is_ok());
+    assert_eq!(e.take(), INSPHERE_SOS_CALLS);
 }
 
-/// The smallest arenas of [`a_debug_check_takes_nothing_from_the_arena_of_the_caller`],
+/// The calls to `exact` and to `exact_big` of the point on a line in the
+/// calls of [`a_debug_check_takes_nothing_from_the_arena_of_the_caller`],
 /// measured in a release build.
+const ORIENT3D_CALLS: [usize; 2] = [1, 0];
+const INSPHERE_CALLS: [usize; 2] = [0, 1];
+const INSPHERE_SOS_CALLS: [usize; 2] = [0, 1];
+
+/// The smallest arenas of [`a_debug_check_takes_nothing_from_the_arena_of_the_caller`],
+/// measured in a release build, which are also the high waters there.
 const ORIENT3D_SMALLEST_ARENA: usize = 39;
 const INSPHERE_SMALLEST_ARENA: usize = 24;
 const INSPHERE_SOS_SMALLEST_ARENA: usize = 24;

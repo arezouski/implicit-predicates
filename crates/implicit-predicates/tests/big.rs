@@ -528,11 +528,14 @@ fn seventeen_components_go_to_the_big_integers() {
         assert_ne!(expected, Sign::Zero);
         assert_eq!(orient3d(&a, &b, &c, &long), expected, "{n} components");
         // In debug builds `orient3d` also checks the contract of the point,
-        // which asks for its coordinates as big integers; `orient3d_in`
+        // which asks twice for its coordinates as big integers; `orient3d_in`
         // does not.
-        if cfg!(not(debug_assertions)) {
-            assert_eq!(long.big_calls.get(), expected_big_calls, "{n} components");
-        }
+        let check_big_calls = if cfg!(debug_assertions) { 2 } else { 0 };
+        assert_eq!(
+            long.big_calls.get(),
+            expected_big_calls + check_big_calls,
+            "{n} components"
+        );
         long.big_calls.set(0);
         let mut buf = vec![0.0; 1 << 12];
         let mut scratch = Scratch::borrowed(&mut buf);

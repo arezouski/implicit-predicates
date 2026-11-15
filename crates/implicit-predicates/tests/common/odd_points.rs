@@ -241,6 +241,10 @@ pub enum Lie {
     UnstableExplicit,
     /// `exact_big` changes from one call to the next.
     UnstableExactBig,
+    /// `exact` changes from one call to the next.
+    UnstableExact,
+    /// `exact` fails with `OutOfRange` after the first call.
+    ExactLeavesRange,
     /// The first call to `exact_big` resets the arena to the mark given to
     /// [`Liar::lowering_to`], below the top it was given, and writes the
     /// coordinates there.
@@ -270,6 +274,7 @@ pub struct Liar {
     err: [[f64; 3]; 2],
     calls: std::cell::Cell<usize>,
     big_calls: std::cell::Cell<usize>,
+    exact_calls: std::cell::Cell<usize>,
     mark: std::cell::Cell<Option<Mark>>,
 }
 
@@ -304,6 +309,7 @@ impl Liar {
             err: [err, second.1],
             calls: std::cell::Cell::new(0),
             big_calls: std::cell::Cell::new(0),
+            exact_calls: std::cell::Cell::new(0),
             mark: std::cell::Cell::new(None),
         }
     }
@@ -357,6 +363,13 @@ impl Point for Liar {
     }
 
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        let later = self.exact_calls.get() > 0;
+        self.exact_calls.set(self.exact_calls.get() + 1);
+        match self.lie {
+            Lie::UnstableExact if later => return [LIAR_AT[0], LIAR_AT[1], 0.5].exact(scratch),
+            Lie::ExactLeavesRange if later => return Err(ExactError::OutOfRange),
+            _ => {}
+        }
         let coords = LIAR_AT.exact(scratch)?;
         let mut spans = [coords.x, coords.y, coords.z];
         let mut w = Weight::One;

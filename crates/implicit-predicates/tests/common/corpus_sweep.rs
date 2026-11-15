@@ -670,11 +670,11 @@ impl Ties {
 /// What a sweep of the `insphere` calls found, by number of implicit points
 /// (0 to 5).
 ///
-/// `insphere` has no stage on expansions: the sweep calls `staged_in` of the
-/// hidden module, and the public `insphere` and `insphere_in`, which must
-/// give its sign, and every call that neither test
-/// of the filter decides, with explicit points too, goes to the stage on
-/// big integers, in the arena, for the reason [`Why::BigIntegersOnly`].
+/// `insphere` has no stage on expansions: the sweep calls `staged_in` of
+/// the hidden module, and the public `insphere` and `insphere_in`, which
+/// must give its sign, and every call that neither test of the filter
+/// decides, with explicit points too, goes to the stage on big integers, in
+/// the arena, for the reason [`Why::BigIntegersOnly`].
 #[derive(Debug)]
 pub struct InSphereTally {
     pub buckets: [Bucket<{ INSPHERE_COLUMNS.len() }>; 6],

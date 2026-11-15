@@ -263,8 +263,9 @@ fn a_point_that_calls_a_predicate_does_not_make_it_panic() {
 
 /// The calls to `Point::exact` of a point that is not explicit that the
 /// check of its contract makes, in debug builds, when a call to `orient3d`
-/// reaches the exact stages, before those of the stages.
-const CHECK_CALLS: usize = if cfg!(debug_assertions) { 1 } else { 0 };
+/// reaches the exact stages, before those of the stages: two, since the
+/// check asks twice to see that the coordinates do not change.
+const CHECK_CALLS: usize = if cfg!(debug_assertions) { 2 } else { 0 };
 
 /// A point whose exact coordinates panic when the stages ask for them, with
 /// the number of calls to `exact` so far.

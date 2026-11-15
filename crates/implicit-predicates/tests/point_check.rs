@@ -240,6 +240,8 @@ fn each_liar_gets_its_violation() {
         (Lie::UnstableErr, V::Unstable),
         (Lie::UnstableExplicit, V::Unstable),
         (Lie::UnstableExactBig, V::Unstable),
+        (Lie::UnstableExact, V::Unstable),
+        (Lie::ExactLeavesRange, V::Unstable),
     ];
     for (lie, violation) in cases {
         assert_eq!(
@@ -267,6 +269,7 @@ fn a_liar_leaves_the_arena_as_it_found_it() {
         Lie::InvalidExpansion(1),
         Lie::ExactMismatch(0),
         Lie::UnstableExactBig,
+        Lie::UnstableExact,
     ] {
         let mut scratch = Scratch::growable(4);
         let span = scratch.push(&below).unwrap();
