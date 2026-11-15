@@ -94,6 +94,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace --all-features --release
 
+  fuzz:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - name: Run each target
+        working-directory: fuzz
+        run: |
+          for target in orient3d insphere insphere_sos point_check; do
+            cargo fuzz run "$target" -- -max_total_time=300
+          done
+
   msrv:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,51 @@
+[package]
+name = "implicit-predicates-fuzz"
+description = "Fuzz targets that compare the public predicates with the exact reference"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+implicit-predicates = { path = "../crates/implicit-predicates" }
+implicit-predicates-corpus = { path = "../corpus" }
+implicit-predicates-oracle = { path = "../crates/oracle" }
+libfuzzer-sys = "0.4"
+
+[workspace]
+
+[[bin]]
+name = "orient3d"
+path = "fuzz_targets/orient3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "insphere"
+path = "fuzz_targets/insphere.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "insphere_sos"
+path = "fuzz_targets/insphere_sos.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "point_check"
+path = "fuzz_targets/point_check.rs"
+test = false
+doc = false
+bench = false
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"
