@@ -14,6 +14,7 @@ implicit-predicates-corpus = { path = "../corpus" }
 cc = "1.2"
 
 [dev-dependencies]
+implicit-predicates = { path = "../crates/implicit-predicates" }
 implicit-predicates-oracle = { path = "../crates/oracle" }
 implicit-predicates-test-support = { path = "../test-support" }
 criterion = { version = "0.8", default-features = false }
