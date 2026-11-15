@@ -31,11 +31,19 @@ pub enum Mode {
     /// Coordinates with all their bits, on a plane up to rounding, so that
     /// the determinants are near zero and the rounding errors decide.
     NearCoplanar,
+    /// A large common offset of 2^20 to 2^40 plus a small spread, so that
+    /// the differences are exact but the coordinates themselves are not
+    /// small.
+    Translated,
+    /// Points on a common sphere up to a few units in the last place, of
+    /// any scale from 2^-32 to 2^32; implicit points have their parents on
+    /// the sphere and a parameter near an end, so that they land near it.
+    NearSpherical,
 }
 
 impl Mode {
     /// Every mode.
-    pub const ALL: [Mode; 7] = [
+    pub const ALL: [Mode; 9] = [
         Mode::Grid,
         Mode::SharedParents,
         Mode::Repeated,
@@ -43,6 +51,8 @@ impl Mode {
         Mode::ExtremeExponents,
         Mode::Nudged,
         Mode::NearCoplanar,
+        Mode::Translated,
+        Mode::NearSpherical,
     ];
 
     /// The mode that the first byte `b` chooses.
@@ -123,20 +133,53 @@ fn nudge(x: f64, k: i64) -> f64 {
     f64::from_bits((bits & (1 << 63)) | magnitude)
 }
 
-/// A number in [-1, 1) with all its bits.
+/// A number in [-1, 1) with 52 random bits.
 fn unit(r: &mut Reader<'_>) -> Option<f64> {
     Some((r.u64()? >> 11) as f64 / 2f64.powi(52) - 1.0)
 }
 
-/// A point of the mode; in [`Mode::NearCoplanar`], on the plane
-/// `z = plane[0] + plane[1] * x + plane[2] * y`, rounded and then moved by
-/// up to two units in the last place.
-fn point3(mode: Mode, plane: &[f64; 3], r: &mut Reader<'_>) -> Option<[f64; 3]> {
-    if mode == Mode::NearCoplanar {
-        let (x, y) = (unit(r)?, unit(r)?);
-        let z = plane[0] + plane[1] * x + plane[2] * y;
-        let k = i64::from(r.byte()? % 5) - 2;
-        return Some([x, y, nudge(z, k)]);
+/// A point of the mode. `pool` holds three grid points that give the
+/// parameters of the geometric modes: in [`Mode::NearCoplanar`], the plane
+/// `z = pool[0][0] + pool[0][1] * x + pool[0][2] * y`, rounded and then
+/// moved by up to two units in the last place; in [`Mode::Translated`], the
+/// offset; in [`Mode::NearSpherical`], the center and the radius.
+fn point3(mode: Mode, pool: &[[f64; 3]; 3], r: &mut Reader<'_>) -> Option<[f64; 3]> {
+    let plane = &pool[0];
+    match mode {
+        Mode::NearCoplanar => {
+            let (x, y) = (unit(r)?, unit(r)?);
+            let z = plane[0] + plane[1] * x + plane[2] * y;
+            let k = i64::from(r.byte()? % 5) - 2;
+            return Some([x, y, nudge(z, k)]);
+        }
+        Mode::Translated => {
+            let shift = 20 + 5 * pool[1][0].abs() as i32;
+            let spread = 2f64.powi(i32::from(r.byte()? % 6));
+            let mut p = [0.0; 3];
+            for k in 0..3 {
+                let offset = (pool[0][k] + 5.0) * 2f64.powi(shift);
+                p[k] = offset + spread * unit(r)?;
+            }
+            return Some(p);
+        }
+        Mode::NearSpherical => {
+            let (dx, dy, dz) = (unit(r)?, unit(r)?, unit(r)?);
+            let norm = (dx * dx + dy * dy + dz * dz).sqrt();
+            let dir = if norm > 1e-3 {
+                [dx / norm, dy / norm, dz / norm]
+            } else {
+                [1.0, 0.0, 0.0]
+            };
+            let radius = 1.0 + pool[1][0].abs();
+            let scale = 2f64.powi(8 * pool[2][0] as i32);
+            let mut p = [0.0; 3];
+            for k in 0..3 {
+                let c = (pool[0][k] + radius * dir[k]) * scale;
+                p[k] = nudge(c, i64::from(r.byte()? % 3));
+            }
+            return Some(p);
+        }
+        _ => {}
     }
     Some([
         coordinate(mode, r)?,
@@ -155,6 +198,15 @@ fn parameter(mode: Mode, r: &mut Reader<'_>) -> Option<f64> {
     if mode == Mode::NearCoplanar && b % 2 == 0 {
         return Some((r.u64()? >> 11) as f64 / 2f64.powi(53));
     }
+    if mode == Mode::NearSpherical && b % 2 == 0 {
+        return Some(match b / 2 % 5 {
+            0 => 0.0,
+            1 => 1.0,
+            2 => nudge(1.0, -1 - i64::from(b / 10 % 2)),
+            3 => nudge(0.0, 1 + i64::from(b / 10 % 2)),
+            _ => (r.u64()? >> 11) as f64 / 2f64.powi(53),
+        });
+    }
     Some(match b % 16 {
         0 => 0.0,
         1 => 1.0,
@@ -172,7 +224,7 @@ fn parameter(mode: Mode, r: &mut Reader<'_>) -> Option<f64> {
 fn point(mode: Mode, pool: &[[f64; 3]; 3], r: &mut Reader<'_>) -> Option<AnyPoint> {
     let kind = r.byte()?;
     if kind % 2 == 0 {
-        return Some(Explicit::new(point3(mode, &pool[0], r)?).ok()?.into());
+        return Some(Explicit::new(point3(mode, pool, r)?).ok()?.into());
     }
     let (p, q) = if mode == Mode::SharedParents {
         (
@@ -180,7 +232,7 @@ fn point(mode: Mode, pool: &[[f64; 3]; 3], r: &mut Reader<'_>) -> Option<AnyPoin
             pool[usize::from(kind >> 3) % 3],
         )
     } else {
-        (point3(mode, &pool[0], r)?, point3(mode, &pool[0], r)?)
+        (point3(mode, pool, r)?, point3(mode, pool, r)?)
     };
     Some(Lnc::new(p, q, parameter(mode, r)?).ok()?.into())
 }
@@ -204,12 +256,15 @@ pub fn decode(data: &[u8]) -> Option<Case> {
     let mode = Mode::of_byte(r.byte()?);
     // The pool: three grid points, whose first one is also the plane of
     // `NearCoplanar`.
-    let grid = if mode == Mode::NearCoplanar {
+    let grid = if matches!(
+        mode,
+        Mode::NearCoplanar | Mode::Translated | Mode::NearSpherical
+    ) {
         Mode::Grid
     } else {
         mode
     };
-    let none = [0.0; 3];
+    let none = [[0.0; 3]; 3];
     let pool = [
         point3(grid, &none, &mut r)?,
         point3(grid, &none, &mut r)?,
@@ -304,6 +359,7 @@ pub fn run_orient3d(case: &Case) {
         );
         let got = implicit_predicates::orient3d_in(&mut scratch, &e[0], &e[1], &e[2], &e[3]);
         assert_eq!(got, Ok(want), "{case:?}");
+        assert_eq!(scratch.used(), 0, "{case:?}");
     }
 }
 
@@ -327,6 +383,7 @@ pub fn run_insphere(case: &Case) {
         );
         let got = implicit_predicates::insphere_in(&mut scratch, &p[0], &p[1], &p[2], &p[3], &p[4]);
         assert_eq!(got, Ok(want), "{case:?}");
+        assert_eq!(scratch.used(), 0, "{case:?}");
     }
 }
 
@@ -458,7 +515,8 @@ mod tests {
         let mut modes = BTreeSet::new();
         let (mut grid, mut shared, mut repeated) = (false, false, false);
         let (mut t0, mut t1, mut tiny, mut huge, mut nudged) = (false, false, false, false, false);
-        let mut full_bits = false;
+        let (mut full_bits, mut offset, mut sphere_lnc, mut scales) =
+            (false, false, false, BTreeSet::new());
         let mut kinds = [false; 2];
         for case in cases(100_000) {
             modes.insert(case.mode as u8);
@@ -468,6 +526,9 @@ mod tests {
                     continue;
                 };
                 kinds[1] = true;
+                if case.mode == Mode::NearSpherical {
+                    sphere_lnc |= l.t() == 0.0 || l.t() == 1.0 || l.t() > 0.999999 || l.t() < 1e-6;
+                }
                 t0 |= l.t() == 0.0;
                 t1 |= l.t() == 1.0;
                 for other in &case.points[..k] {
@@ -481,7 +542,11 @@ mod tests {
                     Mode::Grid => grid |= c.fract() == 0.0 && c.abs() <= 4.0,
                     Mode::Nudged => nudged |= c.fract() != 0.0 && c.abs() < 5.0,
                     Mode::NearCoplanar => full_bits |= c.to_bits() & 1 == 1 && c.abs() <= 8.0,
+                    Mode::Translated => offset |= c.abs() >= 2f64.powi(19),
                     _ => {}
+                }
+                if case.mode == Mode::NearSpherical && c != 0.0 {
+                    scales.insert(c.abs().log2().floor() as i32 / 8);
                 }
                 tiny |= c != 0.0 && c.abs() < 1e-200;
                 huge |= c.abs() > 1e200;
@@ -491,6 +556,8 @@ mod tests {
         }
         assert_eq!(modes.len(), Mode::ALL.len());
         assert!(grid && shared && repeated && t0 && t1 && tiny && huge && nudged && full_bits);
+        assert!(offset && sphere_lnc, "{offset} {sphere_lnc}");
+        assert!(scales.len() > 4, "{scales:?}");
         assert!(kinds[0] && kinds[1]);
     }
 
