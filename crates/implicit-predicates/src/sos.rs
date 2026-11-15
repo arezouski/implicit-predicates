@@ -58,7 +58,8 @@ use crate::{insphere, orient3d};
 ///
 /// - In the cases where [`insphere`] or [`orient3d`] panic: an input of a
 ///   point is not finite, or the exact coordinates of a point have a weight
-///   other than [`Weight::One`].
+///   other than [`Weight::One`]; and, in debug builds, a point that breaks
+///   the contract of [`Point`], as they say.
 /// - In debug builds, if two of the indices are equal. In release builds the
 ///   sign is then unspecified, but it is that of `insphere` whenever
 ///   `insphere` is not zero, and there is no panic.
@@ -124,9 +125,10 @@ pub fn insphere_sos(
 ///
 /// If an input of a point is not finite, or the exact coordinates of a
 /// point have a weight other than [`Weight::One`]; and, in debug builds, if
-/// two of the indices are equal. After a panic `scratch` may be left above
-/// the top it had; resetting it to a mark taken before the call releases
-/// what the call wrote.
+/// two of the indices are equal, or a point breaks the contract of [`Point`]
+/// in one of the ways that [`insphere_in`] and [`orient3d_in`] check. After
+/// a panic `scratch` may be left above the top it had; resetting it to a
+/// mark taken before the call releases what the call wrote.
 ///
 /// # Examples
 ///

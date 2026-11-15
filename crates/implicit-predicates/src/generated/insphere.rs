@@ -507,9 +507,11 @@ pub fn staged(p: [&[f64; 3]; 5]) -> Option<Sign> {
 /// of their errors: `0.0` when every point is explicit, and otherwise
 /// `uncertainty_max` of their errors, from `implicit_predicates_core::filter`.
 ///
-/// The errors are not read when every point is explicit. When that is known
-/// from the types, as with `[f64; 3]`, whose `is_explicit` is the constant
-/// `true`, this is `filter` with `e = 0.0`.
+/// In release builds the errors are not read when every point is explicit. When
+/// that is known from the types, as with `[f64; 3]`, whose `is_explicit` is the
+/// constant `true`, this is then `filter` with `e = 0.0`. Debug builds first
+/// check the errors of each point: none is NaN or negative, and an explicit
+/// point has none.
 #[inline]
 pub fn filter_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
     p0: &P0,
@@ -518,6 +520,11 @@ pub fn filter_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
     p3: &P3,
     p4: &P4,
 ) -> Option<Sign> {
+    debug_check_err(0, p0);
+    debug_check_err(1, p1);
+    debug_check_err(2, p2);
+    debug_check_err(3, p3);
+    debug_check_err(4, p4);
     let p = [
         p0.approx(),
         p1.approx(),
@@ -549,9 +556,11 @@ pub fn filter_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
 /// otherwise `uncertainty` of their errors, from
 /// `implicit_predicates_core::filter`.
 ///
-/// The errors are not read when every point is explicit. When that is known
-/// from the types, as with `[f64; 3]`, whose `is_explicit` is the constant
-/// `true`, this is `filter_axes` with `e = [0.0; 3]`.
+/// In release builds the errors are not read when every point is explicit. When
+/// that is known from the types, as with `[f64; 3]`, whose `is_explicit` is the
+/// constant `true`, this is then `filter_axes` with `e = [0.0; 3]`. Debug
+/// builds first check the errors of each point: none is NaN or negative, and an
+/// explicit point has none.
 #[inline]
 pub fn filter_axes_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
     p0: &P0,
@@ -560,6 +569,11 @@ pub fn filter_axes_points<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>
     p3: &P3,
     p4: &P4,
 ) -> Option<Sign> {
+    debug_check_err(0, p0);
+    debug_check_err(1, p1);
+    debug_check_err(2, p2);
+    debug_check_err(3, p3);
+    debug_check_err(4, p4);
     let p = [
         p0.approx(),
         p1.approx(),
@@ -605,11 +619,11 @@ pub fn exact_stages_explicit_in(
     p: [&[f64; 3]; 5],
 ) -> Result<Sign, ScratchExhausted> {
     fn big(scratch: &mut Scratch<'_>, p: [&[f64; 3]; 5]) -> Result<Sign, ScratchExhausted> {
-        let q0 = exact_big(scratch, p[0])?;
-        let q1 = exact_big(scratch, p[1])?;
-        let q2 = exact_big(scratch, p[2])?;
-        let q3 = exact_big(scratch, p[3])?;
-        let q4 = exact_big(scratch, p[4])?;
+        let q0 = exact_big(scratch, 0, p[0])?;
+        let q1 = exact_big(scratch, 1, p[1])?;
+        let q2 = exact_big(scratch, 2, p[2])?;
+        let q3 = exact_big(scratch, 3, p[3])?;
+        let q4 = exact_big(scratch, 4, p[4])?;
         big_integers_in(scratch, [&q0, &q1, &q2, &q3, &q4])
     }
     if let Some(sign) = filter_axes(p, [0.0; 3]) {
@@ -656,11 +670,11 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
         p3: &P3,
         p4: &P4,
     ) -> Result<Sign, ScratchExhausted> {
-        let q0 = exact_big(scratch, p0)?;
-        let q1 = exact_big(scratch, p1)?;
-        let q2 = exact_big(scratch, p2)?;
-        let q3 = exact_big(scratch, p3)?;
-        let q4 = exact_big(scratch, p4)?;
+        let q0 = exact_big(scratch, 0, p0)?;
+        let q1 = exact_big(scratch, 1, p1)?;
+        let q2 = exact_big(scratch, 2, p2)?;
+        let q3 = exact_big(scratch, 3, p3)?;
+        let q4 = exact_big(scratch, 4, p4)?;
         big_integers_in(scratch, [&q0, &q1, &q2, &q3, &q4])
     }
     if let Some(sign) = filter_axes_points(p0, p1, p2, p3, p4) {
@@ -688,7 +702,12 @@ pub fn exact_stages_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
 /// # Panics
 ///
 /// If an input of a point is not finite, or the exact coordinates of a point
-/// have a weight other than one, as [`exact_stages_in`] says.
+/// have a weight other than one, as [`exact_stages_in`] says. In debug builds,
+/// also if a point breaks an obligation of the contract of [`Point`] that the
+/// chain checks without room in the arena: an error bound that is NaN or
+/// negative, an error that is not zero on a point that says it is explicit, or
+/// exact coordinates that are not big integers in their unique representation,
+/// below the top of `scratch`.
 #[inline]
 pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
     scratch: &mut Scratch<'_>,
@@ -718,16 +737,25 @@ pub fn staged_in<P0: Point, P1: Point, P2: Point, P3: Point, P4: Point>(
 }
 
 /// The exact coordinates of the point `p` as big integers, written to
-/// `scratch`.
+/// `scratch`. `position` is the position of `p` among the arguments of the
+/// predicate.
 ///
 /// # Panics
 ///
 /// If `p` cannot give them for any reason other than the room of the arena: by
 /// the contract of [`Point::exact_big`], only when an input is not finite or
-/// the coordinates have a weight other than one.
-fn exact_big(scratch: &mut Scratch<'_>, p: &impl Point) -> Result<BigCoords, ScratchExhausted> {
+/// the coordinates have a weight other than one; in debug builds, if they break
+/// the contract of [`Point`] as [`debug_check_big`] says.
+fn exact_big(
+    scratch: &mut Scratch<'_>,
+    position: usize,
+    p: &impl Point,
+) -> Result<BigCoords, ScratchExhausted> {
     match p.exact_big(scratch) {
-        Ok(c) => Ok(c),
+        Ok(c) => {
+            debug_check_big(scratch, position, &c);
+            Ok(c)
+        }
         Err(ExactError::Exhausted(e)) => Err(e),
         Err(ExactError::Weighted) => no_exact_coordinates(
             "implicit-predicates: a point has a weight other than one, which the predicates do not support",
@@ -745,6 +773,47 @@ fn exact_big(scratch: &mut Scratch<'_>, p: &impl Point) -> Result<BigCoords, Scr
 #[inline(never)]
 fn no_exact_coordinates(reason: &str) -> ! {
     panic!("{reason}")
+}
+
+/// Checks, in debug builds, that `p`, the argument `position` of the predicate,
+/// keeps the obligations of the contract of [`Point`] on its errors: no
+/// [`Point::err`] is NaN or negative, and a point whose [`Point::is_explicit`]
+/// is `true` has no error. It needs no arena.
+///
+/// # Panics
+///
+/// In debug builds, if `p` breaks one of them.
+#[inline(always)]
+fn debug_check_err(position: usize, p: &impl Point) {
+    debug_assert!(
+        implicit_predicates_core::contract::err_is_valid(p.err()),
+        "breaks the contract of `Point`: argument {position}: an error bound is NaN or negative: {:?}",
+        p.err(),
+    );
+    debug_assert!(
+        !p.is_explicit() || *p.err() == [0.0; 3],
+        "breaks the contract of `Point`: argument {position}: the point says it is explicit, but its error bound is not zero: {:?}",
+        p.err(),
+    );
+}
+
+/// Checks, in debug builds, that every coordinate of `c`, the exact coordinates
+/// as big integers of the argument `position` of the predicate, is in the
+/// unique representation of a [`Big`], with its words below the top of
+/// `scratch`, as the contract of [`Point::exact_big`] requires. It needs no
+/// room in the arena.
+///
+/// # Panics
+///
+/// In debug builds, if a coordinate is not.
+#[inline(always)]
+fn debug_check_big(scratch: &Scratch<'_>, position: usize, c: &BigCoords) {
+    for (axis, b) in [c.x, c.y, c.z].into_iter().enumerate() {
+        debug_assert!(
+            implicit_predicates_core::contract::big_is_canonical(scratch, b),
+            "breaks the contract of `Point`: argument {position}: the exact coordinate on axis {axis} as a big integer is not in its unique representation",
+        );
+    }
 }
 
 /// The larger of `a` and `b`, or `b` if they are unordered.

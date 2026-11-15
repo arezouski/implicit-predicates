@@ -241,8 +241,10 @@ impl Point for Reentrant {
         false
     }
 
-    fn exact(&self, _: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
-        panic!("`Point::exact` called on a point for a predicate of degree five")
+    // The stages of `insphere` never ask for it, but in debug builds the
+    // check of the contract of the point does.
+    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        self.point.exact(scratch)
     }
 
     fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {

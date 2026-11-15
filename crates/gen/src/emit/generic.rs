@@ -45,6 +45,10 @@ pub(crate) const WEIGHT_PANIC: &str =
 pub(crate) const NOT_FINITE_PANIC: &str =
     "implicit-predicates: a point has no exact coordinates: an input is not finite";
 
+/// How the message of every panic of a debug check of the contract of
+/// `Point` begins.
+pub(crate) const CONTRACT_PANIC: &str = "breaks the contract of `Point`: ";
+
 /// The pieces of text that the functions over points of any type share,
 /// for `points` points.
 struct Signature {
@@ -114,6 +118,11 @@ pub(crate) fn write_generic_chain(out: &mut String, chain: &GenericChain) {
     write_exact_stages(out, chain);
     write_exact_stages_explicit_in(out, chain);
     write_exact_stages_in(out, &s, chain.spans, chain.axes);
+    let checks = if chain.spans.is_some() {
+        "valid expansions and "
+    } else {
+        ""
+    };
     comment(
         out,
         "///",
@@ -130,7 +139,12 @@ pub(crate) fn write_generic_chain(out: &mut String, chain: &GenericChain) {
              [`ScratchExhausted`] if `scratch` runs out of room.\n\n\
              # Panics\n\n\
              If an input of a point is not finite, or the exact coordinates of a point \
-             have a weight other than one, as [`exact_stages_in`] says."
+             have a weight other than one, as [`exact_stages_in`] says. In debug builds, \
+             also if a point breaks an obligation of the contract of [`Point`] that the \
+             chain checks without room in the arena: an error bound that is NaN or \
+             negative, an error that is not zero on a point that says it is explicit, or \
+             exact coordinates that are not {checks}big integers in their unique \
+             representation, below the top of `scratch`."
         ),
     );
     writeln!(
@@ -158,45 +172,81 @@ fn write_exact(out: &mut String) {
         0,
         "The exact coordinates of the point `p`, written to `scratch`, or `None` if \
          it cannot give them for any reason other than the room of the arena, such as \
-         inputs outside the range of its exact arithmetic.\n\n\
+         inputs outside the range of its exact arithmetic. `position` is the \
+         position of `p` among the arguments of the predicate.\n\n\
          # Panics\n\n\
          If the coordinates have a weight other than [`Weight::One`], which the \
-         predicates do not support.",
+         predicates do not support; in debug builds, if they break the contract of \
+         [`Point`] as [`debug_check_expansions`] says.",
     );
     writeln!(
         out,
-        "fn exact(scratch: &mut Scratch<'_>, p: &impl Point) \
+        "fn exact(scratch: &mut Scratch<'_>, position: usize, p: &impl Point) \
          -> Result<Option<ExactCoords>, ScratchExhausted> {{\n\
          match p.exact(scratch) {{\n\
          Ok(c) if c.w != Weight::One => no_exact_coordinates(\n\"{WEIGHT_PANIC}\",\n),\n\
-         Ok(c) => Ok(Some(c)),\n\
+         Ok(c) => {{\n\
+         debug_check_expansions(scratch, position, &c);\n\
+         Ok(Some(c))\n\
+         }}\n\
          Err(ExactError::Exhausted(e)) => Err(e),\n\
          Err(_) => Ok(None),\n\
          }}\n\
          }}\n"
     )
     .unwrap();
+    comment(
+        out,
+        "///",
+        0,
+        "Checks, in debug builds, that every span of `c`, the exact coordinates of \
+         the argument `position` of the predicate, holds a valid expansion of \
+         `scratch`, below its top, as the contract of [`Point::exact`] requires. It \
+         needs no room in the arena.\n\n\
+         # Panics\n\n\
+         In debug builds, if a span does not.",
+    );
+    writeln!(
+        out,
+        "#[inline(always)]\n\
+         fn debug_check_expansions(scratch: &Scratch<'_>, position: usize, c: &ExactCoords) {{\n\
+         for (axis, span) in [c.x, c.y, c.z].into_iter().enumerate() {{\n\
+         debug_assert!(\n\
+         implicit_predicates_core::contract::expansion_is_valid(scratch, span),\n\
+         \"{CONTRACT_PANIC}argument {{position}}: the exact coordinate on axis {{axis}} \
+         is not a valid expansion\",\n\
+         );\n\
+         }}\n\
+         }}\n"
+    )
+    .unwrap();
 }
 
-/// Writes the helpers of the chain that every predicate has: `exact_big` and
-/// `no_exact_coordinates`.
+/// Writes the helpers of the chain that every predicate has: `exact_big`,
+/// `no_exact_coordinates`, and the debug checks `debug_check_err` and
+/// `debug_check_big`.
 fn write_helpers(out: &mut String) {
     comment(
         out,
         "///",
         0,
-        "The exact coordinates of the point `p` as big integers, written to `scratch`.\n\n\
+        "The exact coordinates of the point `p` as big integers, written to `scratch`. \
+         `position` is the position of `p` among the arguments of the predicate.\n\n\
          # Panics\n\n\
          If `p` cannot give them for any reason other than the room of the arena: by \
          the contract of [`Point::exact_big`], only when an input is not finite or \
-         the coordinates have a weight other than one.",
+         the coordinates have a weight other than one; in debug builds, if they break \
+         the contract of [`Point`] as [`debug_check_big`] says.",
     );
     writeln!(
         out,
-        "fn exact_big(scratch: &mut Scratch<'_>, p: &impl Point) \
+        "fn exact_big(scratch: &mut Scratch<'_>, position: usize, p: &impl Point) \
          -> Result<BigCoords, ScratchExhausted> {{\n\
          match p.exact_big(scratch) {{\n\
-         Ok(c) => Ok(c),\n\
+         Ok(c) => {{\n\
+         debug_check_big(scratch, position, &c);\n\
+         Ok(c)\n\
+         }}\n\
          Err(ExactError::Exhausted(e)) => Err(e),\n\
          Err(ExactError::Weighted) => no_exact_coordinates(\n\"{WEIGHT_PANIC}\",\n),\n\
          Err(_) => no_exact_coordinates(\n\"{NOT_FINITE_PANIC}\",\n),\n\
@@ -218,6 +268,61 @@ fn write_helpers(out: &mut String) {
          panic!(\"{reason}\")\n\
          }\n\n",
     );
+    comment(
+        out,
+        "///",
+        0,
+        "Checks, in debug builds, that `p`, the argument `position` of the predicate, \
+         keeps the obligations of the contract of [`Point`] on its errors: no \
+         [`Point::err`] is NaN or negative, and a point whose [`Point::is_explicit`] \
+         is `true` has no error. It needs no arena.\n\n\
+         # Panics\n\n\
+         In debug builds, if `p` breaks one of them.",
+    );
+    writeln!(
+        out,
+        "#[inline(always)]\n\
+         fn debug_check_err(position: usize, p: &impl Point) {{\n\
+         debug_assert!(\n\
+         implicit_predicates_core::contract::err_is_valid(p.err()),\n\
+         \"{CONTRACT_PANIC}argument {{position}}: an error bound is NaN or negative: {{:?}}\",\n\
+         p.err(),\n\
+         );\n\
+         debug_assert!(\n\
+         !p.is_explicit() || *p.err() == [0.0; 3],\n\
+         \"{CONTRACT_PANIC}argument {{position}}: the point says it is explicit, but its \
+         error bound is not zero: {{:?}}\",\n\
+         p.err(),\n\
+         );\n\
+         }}\n"
+    )
+    .unwrap();
+    comment(
+        out,
+        "///",
+        0,
+        "Checks, in debug builds, that every coordinate of `c`, the exact coordinates \
+         as big integers of the argument `position` of the predicate, is in the unique \
+         representation of a [`Big`], with its words below the top of `scratch`, as \
+         the contract of [`Point::exact_big`] requires. It needs no room in the \
+         arena.\n\n\
+         # Panics\n\n\
+         In debug builds, if a coordinate is not.",
+    );
+    writeln!(
+        out,
+        "#[inline(always)]\n\
+         fn debug_check_big(scratch: &Scratch<'_>, position: usize, c: &BigCoords) {{\n\
+         for (axis, b) in [c.x, c.y, c.z].into_iter().enumerate() {{\n\
+         debug_assert!(\n\
+         implicit_predicates_core::contract::big_is_canonical(scratch, b),\n\
+         \"{CONTRACT_PANIC}argument {{position}}: the exact coordinate on axis {{axis}} \
+         as a big integer is not in its unique representation\",\n\
+         );\n\
+         }}\n\
+         }}\n"
+    )
+    .unwrap();
 }
 
 /// Writes `{stage}_points`, the stage `stage` (`filter` or `filter_axes`)
@@ -238,14 +343,23 @@ fn write_filter_points(
              uncertainty of their errors: `{zero}` when every point is explicit, and \
              otherwise `{uncertainty}` of their errors, from \
              `implicit_predicates_core::filter`.\n\n\
-             The errors are not read when every point is explicit. When that is known \
-             from the types, as with `[f64; 3]`, whose `is_explicit` is the constant \
-             `true`, this is `{stage}` with `e = {zero}`."
+             In release builds the errors are not read when every point is explicit. \
+             When that is known from the types, as with `[f64; 3]`, whose `is_explicit` \
+             is the constant `true`, this is then `{stage}` with `e = {zero}`. Debug \
+             builds first check the errors of each point: none is NaN or negative, and \
+             an explicit point has none."
         ),
     );
+    let checks: String = s
+        .args
+        .split(", ")
+        .enumerate()
+        .map(|(i, p)| format!("debug_check_err({i}, {p});\n"))
+        .collect();
     writeln!(
         out,
         "#[inline]\npub fn {stage}_points{}({}) -> Option<Sign> {{\n\
+         {checks}\
          let p = {};\n\
          let e = if {} {{\n{zero}\n}} else {{\n\
          implicit_predicates_core::filter::{uncertainty}({})\n}};\n\
@@ -407,7 +521,7 @@ fn write_exact_stages_explicit_in(out: &mut String, chain: &GenericChain) {
     )
     .unwrap();
     for i in 0..points {
-        writeln!(out, "let q{i} = exact_big(scratch, p[{i}])?;").unwrap();
+        writeln!(out, "let q{i} = exact_big(scratch, {i}, p[{i}])?;").unwrap();
     }
     let refs: Vec<String> = (0..points).map(|i| format!("&q{i}")).collect();
     writeln!(out, "{BIG_STAGE}(scratch, [{}])\n}}", refs.join(", ")).unwrap();
@@ -484,7 +598,7 @@ fn write_exact_stages_in(out: &mut String, s: &Signature, spans: Option<&str>, a
     if let Some(name) = spans {
         writeln!(out, "fn spans{} {{", signature("Option<Sign>")).unwrap();
         for (i, p) in points.iter().enumerate() {
-            writeln!(out, "let q{i} = exact(scratch, {p})?;").unwrap();
+            writeln!(out, "let q{i} = exact(scratch, {i}, {p})?;").unwrap();
         }
         let some: Vec<String> = (0..points.len()).map(|i| format!("Some(q{i})")).collect();
         let q: Vec<String> = (0..points.len()).map(|i| format!("q{i}")).collect();
@@ -499,7 +613,7 @@ fn write_exact_stages_in(out: &mut String, s: &Signature, spans: Option<&str>, a
     }
     writeln!(out, "fn big{} {{", signature("Sign")).unwrap();
     for (i, p) in points.iter().enumerate() {
-        writeln!(out, "let q{i} = exact_big(scratch, {p})?;").unwrap();
+        writeln!(out, "let q{i} = exact_big(scratch, {i}, {p})?;").unwrap();
     }
     writeln!(out, "{BIG_STAGE}(scratch, [{}])\n}}", refs.join(", ")).unwrap();
     if axes {

@@ -310,7 +310,7 @@ fn a_predicate_of_degree_5_or_more_has_only_the_stage_on_big_integers() {
         };
         let order = [
             "fn big(",
-            "let q0 = exact_big(scratch, p[0])?;",
+            "let q0 = exact_big(scratch, 0, p[0])?;",
             "big_integers_in(scratch, [&q0, ",
             first,
             "let mark = scratch.mark();\nlet result = big(scratch, p);\nscratch.reset(mark);\nresult",
@@ -331,7 +331,7 @@ fn a_predicate_of_degree_5_or_more_has_only_the_stage_on_big_integers() {
         };
         let order = [
             "fn big<",
-            "let q0 = exact_big(scratch, p0)?;",
+            "let q0 = exact_big(scratch, 0, p0)?;",
             "big_integers_in(scratch, [&q0, ",
             first,
             "let mark = scratch.mark();\nlet result = big(scratch, ",
@@ -385,7 +385,7 @@ fn incircle_chains_the_translated_form_over_spans() {
     let arena = &arena[..arena.find("\n}\n\n").unwrap()];
     let order = [
         "let mark = scratch.mark();",
-        "exact(scratch, p[0])?",
+        "exact(scratch, 0, p[0])?",
         "expansions_translated_in(scratch, q)",
         "scratch.reset(mark);",
     ]

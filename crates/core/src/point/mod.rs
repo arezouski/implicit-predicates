@@ -61,9 +61,10 @@ use crate::scratch::{Scratch, ScratchExhausted, Span};
 ///   arena may hold partial results above that top.
 ///
 /// A predicate given a point that breaks this contract can return a wrong
-/// sign: predicates do not check it. [`check`] tests a point against every
-/// obligation that the views of the point can show, and is meant for the
-/// tests of a type of your own.
+/// sign: release builds of the predicates do not check it, and debug builds
+/// check only part of it. [`check`] tests a point against every obligation
+/// that the views of the point can show, and is meant for the tests of a
+/// type of your own.
 ///
 /// # Examples
 ///
@@ -94,13 +95,14 @@ pub trait Point {
     /// [`approx`](Self::approx) holds the exact coordinates, every
     /// [`err`](Self::err) is zero and [`exact`](Self::exact) gives
     /// [`Weight::One`]; returning `false` is always allowed. A wrong `true`
-    /// makes the predicates return wrong signs, unchecked.
+    /// makes the predicates return wrong signs; debug builds of the
+    /// predicates check only that the errors of such a point are zero.
     fn is_explicit(&self) -> bool;
 
     /// Writes the exact coordinates as expansions in `scratch`: the point is
     /// `(x / w, y / w, z / w)`. Every span returned must hold a valid
-    /// expansion of `scratch` (see [`expansion`]); predicates rely on it
-    /// without checking it.
+    /// expansion of `scratch` (see [`expansion`]); predicates rely on it,
+    /// and check it only in debug builds.
     ///
     /// # Errors
     ///
@@ -160,7 +162,7 @@ impl BigCoords {
 /// The exact coordinates of a point, in homogeneous form: the point is
 /// `(x / w, y / w, z / w)`. The spans belong to the arena given to
 /// [`Point::exact`], and each holds a valid expansion (see [`expansion`]);
-/// the predicates that read them do not check it.
+/// the predicates that read them check it only in debug builds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExactCoords {
     /// The numerator of the first coordinate.

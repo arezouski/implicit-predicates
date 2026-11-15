@@ -527,16 +527,18 @@ fn seventeen_components_go_to_the_big_integers() {
         let expected = exact_at(&[da, db, dc, value]);
         assert_ne!(expected, Sign::Zero);
         assert_eq!(orient3d(&a, &b, &c, &long), expected, "{n} components");
-        assert_eq!(long.big_calls.get(), expected_big_calls, "{n} components");
+        // In debug builds `orient3d` also checks the contract of the point,
+        // which asks for its coordinates as big integers; `orient3d_in`
+        // does not.
+        if cfg!(not(debug_assertions)) {
+            assert_eq!(long.big_calls.get(), expected_big_calls, "{n} components");
+        }
+        long.big_calls.set(0);
         let mut buf = vec![0.0; 1 << 12];
         let mut scratch = Scratch::borrowed(&mut buf);
         assert_eq!(orient3d_in(&mut scratch, &a, &b, &c, &long), Ok(expected));
         assert_eq!(scratch.used(), 0);
-        assert_eq!(
-            long.big_calls.get(),
-            2 * expected_big_calls,
-            "{n} components"
-        );
+        assert_eq!(long.big_calls.get(), expected_big_calls, "{n} components");
         // The stage over spans alone: it decides on 16 components, not on
         // 17.
         let q = [a, b, c].map(|x| x.exact(&mut scratch).unwrap());

@@ -135,8 +135,8 @@ fn the_chain_for_points_of_any_type_takes_the_exact_stages_of_staged_for_explici
         explicit,
         &[
             "fn big(",
-            "let q0 = exact_big(scratch, p[0])?;",
-            "let q3 = exact_big(scratch, p[3])?;",
+            "let q0 = exact_big(scratch, 0, p[0])?;",
+            "let q3 = exact_big(scratch, 3, p[3])?;",
             "big_integers_in(scratch, [&q0, &q1, &q2, &q3])\n}",
             "if let Some(sign) = exact_stages(p) {\nreturn Ok(sign);\n}",
             "let mark = scratch.mark();",
@@ -174,7 +174,7 @@ fn the_chain_for_points_of_any_type_takes_the_exact_stages_of_staged_for_explici
     let order = positions(
         explicit,
         &[
-            "let q3 = exact_big(scratch, p[3])?;",
+            "let q3 = exact_big(scratch, 3, p[3])?;",
             "big_integers_in(scratch, [&q0, &q1, &q2, &q3])",
             "if let Some(sign) = exact_stages(scratch, p)? {\nreturn Ok(sign);\n}",
         ],
@@ -197,8 +197,8 @@ fn the_stages_over_spans_run_on_the_exact_coordinates_in_order_and_reset_the_are
         spans,
         &[
             "fn spans<",
-            "let q0 = exact(scratch, p0)?;",
-            "let q3 = exact(scratch, p3)?;",
+            "let q0 = exact(scratch, 0, p0)?;",
+            "let q3 = exact(scratch, 3, p3)?;",
             "let (Some(q0), Some(q1), Some(q2), Some(q3)) = (q0, q1, q2, q3) else {\n\
              return Ok(None);\n};",
             "let q = [&q0, &q1, &q2, &q3];",
@@ -219,8 +219,8 @@ fn the_stages_over_spans_run_on_the_exact_coordinates_in_order_and_reset_the_are
         exact.contains(
             "Ok(c) if c.w != Weight::One => no_exact_coordinates(\n\
          \"implicit-predicates: a point has a weight other than one, which the predicates do \
-         not support\",\n),\nOk(c) => Ok(Some(c)),\n\
-         Err(ExactError::Exhausted(e)) => Err(e),\nErr(_) => Ok(None),"
+         not support\",\n),\nOk(c) => {\ndebug_check_expansions(scratch, position, &c);\n\
+         Ok(Some(c))\n}\nErr(ExactError::Exhausted(e)) => Err(e),\nErr(_) => Ok(None),"
         ),
         "{exact}"
     );
@@ -300,8 +300,8 @@ fn the_stages_for_points_of_any_type_end_with_the_stage_on_big_integers() {
                 "let q = [&q0, ",
                 "expansions_translated_in(scratch, q)",
                 "fn big<",
-                "let q0 = exact_big(scratch, p0)?;",
-                &format!("let {last} = exact_big(scratch, p{})?;", points - 1),
+                "let q0 = exact_big(scratch, 0, p0)?;",
+                &format!("let {last} = exact_big(scratch, {0}, p{0})?;", points - 1),
                 &format!("big_integers_in(scratch, [{}])", refs.join(", ")),
                 "let mark = scratch.mark();",
                 "let decided = spans(scratch, ",
@@ -322,7 +322,8 @@ fn the_stages_for_points_of_any_type_end_with_the_stage_on_big_integers() {
         let exact_big = &g.stages[g.stages.find("\nfn exact_big(").unwrap()..];
         assert!(
             exact_big.contains(
-                "Ok(c) => Ok(c),\nErr(ExactError::Exhausted(e)) => Err(e),\n\
+                "Ok(c) => {\ndebug_check_big(scratch, position, &c);\nOk(c)\n}\n\
+             Err(ExactError::Exhausted(e)) => Err(e),\n\
              Err(ExactError::Weighted) => no_exact_coordinates(\n\
              \"implicit-predicates: a point has a weight other than one, which the predicates do \
              not support\",\n),\n\
@@ -376,4 +377,108 @@ fn a_chain_on_big_integers_alone_reports_the_weight_from_the_big_integers() {
         )),
         "{exact_big}"
     );
+}
+
+/// The text of the private helper `name` in the unformatted module `code`,
+/// from its signature to the closing brace followed by a blank line.
+fn helper<'a>(code: &'a str, name: &str) -> &'a str {
+    let start = code
+        .find(&format!("\nfn {name}("))
+        .unwrap_or_else(|| panic!("no helper {name}"));
+    let body = &code[start..];
+    &body[..body.find("\n}\n\n").unwrap_or(body.len())]
+}
+
+#[test]
+fn the_chain_checks_the_contract_of_the_points_in_debug_builds_only() {
+    for (source, file, points, axes, spans) in [
+        (ORIENT3D, "predicates/orient3d.pred", 4, false, true),
+        (INSPHERE, "predicates/insphere.pred", 5, true, false),
+        (INCIRCLE, "t.pred", 4, true, true),
+    ] {
+        let g = generated(source, file);
+        // Each point is checked, with its position, before the filter reads
+        // it.
+        let mut filters = vec!["filter_points"];
+        if axes {
+            filters.push("filter_axes_points");
+        }
+        for name in filters {
+            let f = function(&g.stages, name);
+            let checks: Vec<String> = (0..points)
+                .map(|i| format!("debug_check_err({i}, p{i});\n"))
+                .collect();
+            let mut texts: Vec<&str> = checks.iter().map(String::as_str).collect();
+            texts.push("let p = [p0.approx()");
+            let order = positions(f, &texts);
+            assert!(order.is_sorted(), "{file}: {f}");
+        }
+        // The coordinates are checked as soon as a point gives them.
+        let exact_big = helper(&g.stages, "exact_big");
+        assert!(
+            exact_big.contains("Ok(c) => {\ndebug_check_big(scratch, position, &c);\nOk(c)\n}"),
+            "{file}: {exact_big}"
+        );
+        let explicit = function(&g.stages, "exact_stages_explicit_in");
+        let generic = function(&g.stages, "exact_stages_in");
+        for i in 0..points {
+            let q = format!("let q{i} = exact_big(scratch, {i}, p[{i}])?;");
+            assert!(explicit.contains(&q), "{file}: {explicit}");
+            let q = format!("let q{i} = exact_big(scratch, {i}, p{i})?;");
+            assert!(generic.contains(&q), "{file}: {generic}");
+            let q = format!("let q{i} = exact(scratch, {i}, p{i})?;");
+            assert_eq!(generic.contains(&q), spans, "{file}: {generic}");
+        }
+        assert_eq!(g.stages.contains("\nfn debug_check_expansions("), spans);
+        if spans {
+            let exact = helper(&g.stages, "exact");
+            assert!(
+                exact.contains(
+                    "Ok(c) => {\ndebug_check_expansions(scratch, position, &c);\nOk(Some(c))\n}"
+                ),
+                "{file}: {exact}"
+            );
+        }
+        // The checks are debug assertions on the functions of the core
+        // that need no arena, and their messages name the position.
+        let mut helpers = vec![
+            ("debug_check_err", "err_is_valid(p.err())", 2),
+            ("debug_check_big", "big_is_canonical(scratch, b)", 1),
+        ];
+        if spans {
+            helpers.push((
+                "debug_check_expansions",
+                "expansion_is_valid(scratch, span)",
+                1,
+            ));
+        }
+        for (name, call, assertions) in helpers {
+            let h = helper(&g.stages, name);
+            let start = g.stages.find(&format!("\nfn {name}(")).unwrap();
+            assert!(
+                g.stages[..start].ends_with("#[inline(always)]"),
+                "{file}: {name}"
+            );
+            assert!(
+                h.contains(&format!("implicit_predicates_core::contract::{call}")),
+                "{file}: {h}"
+            );
+            assert_eq!(
+                h.matches("debug_assert!(").count(),
+                assertions,
+                "{file}: {h}"
+            );
+            assert_eq!(h.matches("assert!(").count(), assertions, "{file}: {h}");
+            assert_eq!(
+                h.matches("\"breaks the contract of `Point`: argument {position}: ")
+                    .count(),
+                assertions,
+                "{file}: {h}"
+            );
+            assert!(
+                !h.contains("scratch.push") && !h.contains("&mut Scratch"),
+                "{file}: {h}"
+            );
+        }
+    }
 }

@@ -19,8 +19,10 @@
 //! input that remains, so the sign is exact for every finite input. The
 //! point types are generated from their declarations in the same
 //! way. A type of your own can implement [`Point`] too, but the predicates
-//! rely on its contract without checking it: an implementation that breaks
-//! it makes them return wrong signs. [`check`] tests that a point keeps it.
+//! rely on its contract: an implementation that breaks it makes them return
+//! wrong signs. Release builds do not check it; debug builds check part of
+//! it in every predicate, and all of it in those that take no arena when a
+//! call reaches the exact stages. [`check`] tests that a point keeps it.
 //! `insphere` and the other kinds of
 //! implicit points do not exist yet.
 //!
@@ -132,6 +134,15 @@ use generated::orient3d as orient3d_stages;
 ///   the point types of this crate has one. With a point of your own type
 ///   that has one, the call panics rather than give a sign computed without
 ///   it.
+/// - In debug builds, when the filter does not decide, if a point breaks
+///   the contract of [`Point`] in a way that [`check`] reports, other than
+///   an input that is not finite or a weight other than one; and, on every
+///   call, if an error bound of a point is NaN or negative, or a point says
+///   it is explicit with an error that is not zero. The message begins with
+///   ``breaks the contract of `Point`: `` and names the position of the
+///   point among the arguments and the obligation it breaks. The check runs
+///   in an arena of its own, never in the arena of the thread. Release
+///   builds do not check the contract.
 ///
 /// # Examples
 ///
@@ -183,11 +194,50 @@ pub fn orient3d(a: &impl Point, b: &impl Point, c: &impl Point, d: &impl Point) 
     if let Some(sign) = orient3d_stages::filter_points(a, b, c, d) {
         return sign;
     }
+    #[cfg(all(debug_assertions, feature = "std"))]
+    check_points(&[a, b, c, d]);
     if a.is_explicit() & b.is_explicit() & c.is_explicit() & d.is_explicit() {
         return orient3d_explicit([a.approx(), b.approx(), c.approx(), d.approx()]);
     }
     orient3d_in_thread_arena(a, b, c, d)
 }
+
+/// Checks, in debug builds, that each of `points`, the arguments of a call
+/// that reaches the exact stages, keeps the contract of [`Point`], with
+/// [`check`] in an arena of its own that grows: neither the arena of the
+/// thread nor that of a caller, so that a debug build runs out of room in
+/// the same calls as a release build. A point with an input that is not
+/// finite, or with a weight other than one, passes: the predicate then
+/// panics as it documents. So does a point whose check runs out of room,
+/// which the growable arena never does in practice.
+///
+/// # Panics
+///
+/// If a point breaks the contract in any other way, with a message that
+/// names its position among the arguments and the obligation it breaks.
+#[cfg(all(debug_assertions, feature = "std"))]
+#[cold]
+#[inline(never)]
+fn check_points(points: &[&dyn Point]) {
+    let mut scratch = Scratch::growable(CHECK_ARENA);
+    for (position, p) in points.iter().enumerate() {
+        match check(*p, &mut scratch) {
+            Err(CheckError::Violation(Violation::NotFinite | Violation::Weighted))
+            | Err(CheckError::Exhausted)
+            | Ok(()) => {}
+            Err(CheckError::Violation(v)) => {
+                panic!("breaks the contract of `Point`: argument {position}: {v}")
+            }
+            // `CheckError` may have more variants; none is a violation.
+            Err(_) => {}
+        }
+    }
+}
+
+/// The initial size, in `f64`, of the arena of [`check_points`]; it grows
+/// when a point needs more.
+#[cfg(all(debug_assertions, feature = "std"))]
+const CHECK_ARENA: usize = 1024;
 
 /// What the arena of the thread is, when it runs out: unreachable, since it
 /// grows as needed, and is exhausted only past `u32::MAX` components, far
@@ -245,10 +295,17 @@ fn orient3d_in_thread_arena(
 ///
 /// # Panics
 ///
-/// If an input of a point is not finite, or the exact coordinates of a
-/// point have a weight other than [`Weight::One`]. After a
-/// panic `scratch` may be left above the top it had; resetting it to a mark
-/// taken before the call releases what the call wrote.
+/// If an input of a point is not finite, or the exact coordinates of a point
+/// have a weight other than [`Weight::One`]. In debug builds, also if an error
+/// bound of a point is NaN or negative, a point says it is explicit with an
+/// error that is not zero, or the exact coordinates that a point writes to
+/// `scratch` are not valid expansions or big integers in their unique
+/// representation, with a message that begins with ``breaks the contract of
+/// `Point`: `` and names the position of the point. These checks take no room
+/// in `scratch`; the rest of the contract is not checked here, nor anything in
+/// release builds: [`check`] does it. After a panic `scratch` may be left above
+/// the top it had; resetting it to a mark taken before the call releases what
+/// the call wrote.
 ///
 /// # Examples
 ///
@@ -327,6 +384,15 @@ pub fn orient3d_in(
 ///   the point types of this crate has one. With a point of your own type
 ///   that has one, the call panics rather than give a sign computed without
 ///   it.
+/// - In debug builds, when the filter does not decide, if a point breaks
+///   the contract of [`Point`] in a way that [`check`] reports, other than
+///   an input that is not finite or a weight other than one; and, on every
+///   call, if an error bound of a point is NaN or negative, or a point says
+///   it is explicit with an error that is not zero. The message begins with
+///   ``breaks the contract of `Point`: `` and names the position of the
+///   point among the arguments and the obligation it breaks. The check runs
+///   in an arena of its own, never in the arena of the thread. Release
+///   builds do not check the contract.
 ///
 /// # Examples
 ///
@@ -364,6 +430,8 @@ pub fn insphere(
     if let Some(sign) = insphere_stages::filter_points(a, b, c, d, e) {
         return sign;
     }
+    #[cfg(all(debug_assertions, feature = "std"))]
+    check_points(&[a, b, c, d, e]);
     if a.is_explicit() & b.is_explicit() & c.is_explicit() & d.is_explicit() & e.is_explicit() {
         return insphere_explicit([a.approx(), b.approx(), c.approx(), d.approx(), e.approx()]);
     }
@@ -414,10 +482,16 @@ fn insphere_in_thread_arena(
 ///
 /// # Panics
 ///
-/// If an input of a point is not finite, or the exact coordinates of a
-/// point have a weight other than [`Weight::One`]. After a panic `scratch`
-/// may be left above the top it had; resetting it to a mark taken before the
-/// call releases what the call wrote.
+/// If an input of a point is not finite, or the exact coordinates of a point
+/// have a weight other than [`Weight::One`]. In debug builds, also if an error
+/// bound of a point is NaN or negative, a point says it is explicit with an
+/// error that is not zero, or the exact coordinates that a point writes to
+/// `scratch` are not big integers in their unique representation, with a
+/// message that begins with ``breaks the contract of `Point`: `` and names the
+/// position of the point. These checks take no room in `scratch`; the rest of
+/// the contract is not checked here, nor anything in release builds: [`check`]
+/// does it. After a panic `scratch` may be left above the top it had; resetting
+/// it to a mark taken before the call releases what the call wrote.
 ///
 /// # Examples
 ///

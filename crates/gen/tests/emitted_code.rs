@@ -431,8 +431,11 @@ const INCIRCLE: &str = include_str!("fixtures/incircle.pred");
 /// so that their differences are not exact in `f64`; on points of the circle
 /// scaled by a power of two, which must be zero; and on points outside the
 /// range of the stage over spans, which the chain hands over to the stage on
-/// big integers.
-const INCIRCLE_TEST: &str = r#"use implicit_predicates::{Lnc, Point, Scratch, Sign};
+/// big integers; and on points that break the contract of `Point`, which
+/// the checks of debug builds report.
+const INCIRCLE_TEST: &str = r#"use implicit_predicates::{
+    BigCoords, ExactCoords, ExactError, Lnc, Point, Scratch, Sign,
+};
 use implicit_predicates_oracle::Dyadic;
 
 /// The sign of the in-circle determinant of the projections of `p`: the
@@ -583,6 +586,77 @@ fn outside_the_range_over_spans_the_chain_falls_to_the_big_integers() {
     }
     assert!(explicit > 0 && implicit > 0, "{explicit} {implicit}");
     assert!(signs.iter().all(|&n| n > 0), "{signs:?}");
+}
+
+/// The point `at`, which breaks the contract of `Point` as `lie` says: with
+/// 0, its error bounds are negative; with 1, it releases the spans of its
+/// exact coordinates before it returns them, so that they lie above the top
+/// of the arena; with 2, it does the same with its coordinates as big
+/// integers.
+struct Liar {
+    at: [f64; 3],
+    lie: u8,
+}
+
+impl Point for Liar {
+    fn approx(&self) -> &[f64; 3] {
+        &self.at
+    }
+
+    fn err(&self) -> &[f64; 3] {
+        if self.lie == 0 { &[-1.0; 3] } else { &[0.0; 3] }
+    }
+
+    fn is_explicit(&self) -> bool {
+        false
+    }
+
+    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        let mark = scratch.mark();
+        let c = self.at.exact(scratch)?;
+        if self.lie == 1 {
+            scratch.reset(mark);
+        }
+        Ok(c)
+    }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        let mark = scratch.mark();
+        let c = self.at.exact_big(scratch)?;
+        if self.lie == 2 {
+            scratch.reset(mark);
+        }
+        Ok(c)
+    }
+}
+
+#[test]
+fn a_point_that_breaks_the_contract_panics_in_debug_builds() {
+    // Concyclic points, which the filter declines; the large ones are out
+    // of the range of the stage over spans, so they reach the stage on big
+    // integers.
+    let large = stages::SPANS_TRANSLATED_RANGE.1 * 256.0;
+    for (lie, scale, obligation) in [
+        (0, 1.0, "an error bound is NaN or negative"),
+        (1, 1.0, "is not a valid expansion"),
+        (2, large, "as a big integer is not in its unique representation"),
+    ] {
+        let p = on_circle(scale, 0.0, 0, 0);
+        let liar = Liar { at: p[3], lie };
+        let mut buffer = vec![0.0; 1 << 16];
+        let mut scratch = Scratch::borrowed(&mut buffer);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            stages::staged_in(&mut scratch, &p[0], &p[1], &p[2], &liar)
+        }));
+        if cfg!(debug_assertions) {
+            let payload = result.expect_err("no panic");
+            let message = payload.downcast_ref::<String>().expect("a message");
+            assert!(message.starts_with("breaks the contract of `Point`: argument 3: "), "{message}");
+            assert!(message.contains(obligation), "{lie}: {message}");
+        } else {
+            assert!(result.is_ok(), "{lie}");
+        }
+    }
 }
 "#;
 

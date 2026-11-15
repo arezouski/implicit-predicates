@@ -255,12 +255,18 @@ fn a_point_that_calls_a_predicate_does_not_make_it_panic() {
         };
         let [_, b, c, d] = any_points(args);
         assert_eq!(orient3d(&a, &b, &c, &d), exact_sign(args), "{args:?}");
-        assert_eq!(a.calls.get(), 1);
+        assert_eq!(a.calls.get(), 1 + CHECK_CALLS);
     }
 }
 
-/// A point whose exact coordinates panic.
-struct Panics(Lnc);
+/// The calls to `Point::exact` of a point that is not explicit that the
+/// check of its contract makes, in debug builds, when a call to `orient3d`
+/// reaches the exact stages, before those of the stages.
+const CHECK_CALLS: usize = if cfg!(debug_assertions) { 1 } else { 0 };
+
+/// A point whose exact coordinates panic when the stages ask for them, with
+/// the number of calls to `exact` so far.
+struct Panics(Lnc, Cell<usize>);
 
 impl Point for Panics {
     fn approx(&self) -> &[f64; 3] {
@@ -276,6 +282,11 @@ impl Point for Panics {
     }
 
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        let calls = self.1.get();
+        self.1.set(calls + 1);
+        if calls < CHECK_CALLS {
+            return self.0.exact(scratch);
+        }
         // Leave something in the arena first.
         scratch.push(&[1.0])?;
         panic!("exact coordinates that panic");
@@ -331,7 +342,12 @@ fn the_result_does_not_depend_on_earlier_calls() {
         };
         let [_, b, c, d] = any_points(&reversed[0]);
         let panicked = catch_unwind(AssertUnwindSafe(|| {
-            orient3d(&Panics(Lnc::new_unchecked(p, q, t)), &b, &c, &d)
+            orient3d(
+                &Panics(Lnc::new_unchecked(p, q, t), Cell::new(0)),
+                &b,
+                &c,
+                &d,
+            )
         }));
         assert!(panicked.is_err());
         let results: Vec<Sign> = reversed
@@ -353,10 +369,21 @@ thread_local! {
 }
 
 /// A point at the origin, not explicit, that records the `used()` of the
-/// arena on entry to its exact coordinates; when `panics`, it then fills
-/// part of the arena and panics.
+/// arena on entry to its exact coordinates when the stages ask for them;
+/// when `panics`, it then fills part of the arena and panics.
 struct Probe {
     panics: bool,
+    calls: Cell<usize>,
+}
+
+impl Probe {
+    /// The point that panics or not as `panics` says.
+    fn new(panics: bool) -> Probe {
+        Probe {
+            panics,
+            calls: Cell::new(0),
+        }
+    }
 }
 
 impl Point for Probe {
@@ -373,6 +400,11 @@ impl Point for Probe {
     }
 
     fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        let calls = self.calls.get();
+        self.calls.set(calls + 1);
+        if calls < CHECK_CALLS {
+            return [0.0; 3].exact(scratch);
+        }
         USED_ON_ENTRY.with(|u| u.set(scratch.used()));
         if self.panics {
             for _ in 0..1000 {
@@ -393,9 +425,8 @@ fn the_arena_of_the_thread_is_empty_after_a_call_that_panicked() {
     std::thread::spawn(|| {
         let (a, b, c) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
         for _ in 0..3 {
-            let panicked = catch_unwind(AssertUnwindSafe(|| {
-                orient3d(&Probe { panics: true }, &a, &b, &c)
-            }));
+            let panicked =
+                catch_unwind(AssertUnwindSafe(|| orient3d(&Probe::new(true), &a, &b, &c)));
             assert!(panicked.is_err());
             // A panic of the chain itself, with the coordinates of the
             // first three points as big integers left in the arena.
@@ -404,7 +435,7 @@ fn the_arena_of_the_thread_is_empty_after_a_call_that_panicked() {
             assert!(panicked.is_err());
         }
         // The first point is the first to write to the arena.
-        let sign = orient3d(&Probe { panics: false }, &a, &b, &c);
+        let sign = orient3d(&Probe::new(false), &a, &b, &c);
         assert_eq!(sign, orient3d(&[0.0; 3], &a, &b, &c));
         assert_eq!(USED_ON_ENTRY.with(Cell::get), 0);
     })

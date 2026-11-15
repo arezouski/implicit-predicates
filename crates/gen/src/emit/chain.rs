@@ -100,7 +100,7 @@ pub(crate) fn write_chain(
     // The stage over spans, on the exact coordinates.
     let q: Vec<String> = (0..points).map(|i| format!("Some(q{i})")).collect();
     let exact: Vec<String> = (0..points)
-        .map(|i| format!("exact(scratch, p[{i}])?"))
+        .map(|i| format!("exact(scratch, {i}, p[{i}])?"))
         .collect();
     let refs: Vec<String> = (0..points).map(|i| format!("&q{i}")).collect();
     comment(
