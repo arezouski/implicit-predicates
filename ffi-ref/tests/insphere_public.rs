@@ -11,9 +11,8 @@ use implicit_predicates_corpus::{Corpus, PointDef, Predicate};
 use implicit_predicates_ffi_ref::{current, legacy};
 
 /// Most implicit points of a call that `current` is asked about: with 3 or
-/// more the current reference library crashes the process in `insphere`, a
-/// defect of that library, so those calls are compared against `legacy` and
-/// the exact sign only.
+/// more the current reference library terminates the process in `insphere`,
+/// so those calls are compared against `legacy` and the exact sign only.
 const CURRENT_MAX_IMPLICIT: usize = 2;
 
 /// Counts of one run over the sample corpora.
@@ -33,7 +32,10 @@ struct Counts {
 /// convention.
 macro_rules! reference_sign {
     ($points:expr, $ids:expr, $call:expr) => {{
-        let id = |i: usize| $ids[$call.points()[i] as usize].unwrap();
+        let id = |i: usize| {
+            $ids[$call.points()[i] as usize]
+                .expect("an insphere call of the samples has only explicit and LNC points")
+        };
         $points.insphere(id(0), id(1), id(2), id(3), id(4))
     }};
 }
@@ -44,7 +46,7 @@ fn our_points(corpus: &Corpus) -> Vec<Option<AnyPoint>> {
         .points
         .iter()
         .map(|def| match *def {
-            PointDef::Explicit(xyz) => Some(Explicit::new(xyz).unwrap().into()),
+            PointDef::Explicit(xyz) => Some(Explicit::new(xyz).expect("finite coordinates").into()),
             PointDef::Lnc { p, q, t } => {
                 let parent = |i: u32| match corpus.points[i as usize] {
                     PointDef::Explicit(xyz) => xyz,
@@ -52,7 +54,11 @@ fn our_points(corpus: &Corpus) -> Vec<Option<AnyPoint>> {
                 };
                 // `Lnc::new(a, b, t)` is `b + t (a - b)`, the corpus point is
                 // `p + t (q - p)`: the parents go in the other order.
-                Some(Lnc::new(parent(q), parent(p), t).unwrap().into())
+                Some(
+                    Lnc::new(parent(q), parent(p), t)
+                        .expect("a valid LNC point")
+                        .into(),
+                )
             }
             PointDef::Lpi { .. } | PointDef::Tpi { .. } => None,
         })
@@ -76,7 +82,11 @@ fn public_insphere_matches_both_references_on_the_sample() {
                 .iter()
                 .filter(|&&i| matches!(corpus.points[i as usize], PointDef::Lnc { .. }))
                 .count();
-            let p: [&AnyPoint; 5] = std::array::from_fn(|i| ours[at(i)].as_ref().unwrap());
+            let p: [&AnyPoint; 5] = std::array::from_fn(|i| {
+                ours[at(i)]
+                    .as_ref()
+                    .expect("an insphere call of the samples has only explicit and LNC points")
+            });
             let got = i8::from(insphere(p[0], p[1], p[2], p[3], p[4]));
             let label = || format!("{} call {index}: {:?}", corpus.model, call.points());
 
@@ -96,7 +106,9 @@ fn public_insphere_matches_both_references_on_the_sample() {
         }
     }
     println!("{counts:?}");
-    assert!(counts.legacy > 1000, "{counts:?}");
-    assert!(counts.current > 1000, "{counts:?}");
-    assert!(counts.zero > 0, "{counts:?}");
+    // The samples are versioned, so the counts are exact.
+    assert_eq!(counts.legacy, 4558, "{counts:?}");
+    assert_eq!(counts.current, 2634, "{counts:?}");
+    assert_eq!(counts.skipped_for_current, 1924, "{counts:?}");
+    assert_eq!(counts.zero, 1040, "{counts:?}");
 }
