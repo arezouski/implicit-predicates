@@ -16,8 +16,9 @@
 //!   other code write expansions of its own into it;
 //! - [`point`], [`Point`], the contract every point type implements: an
 //!   approximation of its coordinates, a bound on their error, and its exact
-//!   coordinates as expansions in an arena. `[f64; 3]` implements it as an
-//!   explicit point, and [`check`] tests that a point keeps it;
+//!   coordinates in an arena, as expansions and as big integers. `[f64; 3]`
+//!   implements it as an explicit point, and [`check`] tests that a point
+//!   keeps it;
 //! - [`bigint`], [`Big`], exact integers of arbitrary size in an arena, built
 //!   from `f64` values, with exact addition, subtraction and multiplication;
 //! - [`filter`], the helpers that turn the errors of the points of a call

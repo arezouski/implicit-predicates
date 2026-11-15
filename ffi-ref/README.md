@@ -223,7 +223,10 @@ implicit points, and so in the replay of any corpus file that contains such
 calls. The fault happens inside the library's multi-precision arithmetic, on
 memory the library allocates itself, and whether it happens depends on the
 heap layout: the same call may succeed in another process. It was observed
-with GCC 16 and the library's own `-O3 -mavx2` options. The `legacy` library
+with GCC 16 and the options of the table above. It has not been reported
+upstream yet, and it has not been reproduced outside these bindings, which
+build the library as a shared library with the extra options listed above:
+the build of these bindings is not ruled out as its cause. The `legacy` library
 is not affected, and the versioned samples run to completion with both.
 
 The compile options of each library are deliberately left as upstream's, so

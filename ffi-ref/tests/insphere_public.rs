@@ -11,8 +11,9 @@ use implicit_predicates_corpus::{Corpus, PointDef, Predicate};
 use implicit_predicates_ffi_ref::{current, legacy};
 
 /// Most implicit points of a call that `current` is asked about: with 3 or
-/// more the current reference library terminates the process in `insphere`,
-/// so those calls are compared against `legacy` and the exact sign only.
+/// more the current reference library can end the process in `insphere` on
+/// some calls (see the README), so as a precaution those calls are compared
+/// against `legacy` and the exact sign only.
 const CURRENT_MAX_IMPLICIT: usize = 2;
 
 /// Counts of one run over the sample corpora.

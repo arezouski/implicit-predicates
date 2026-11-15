@@ -78,6 +78,10 @@ coordinates are `p + t * (q - p)`, evaluated exactly. The parameter `t = 0` is
 the first parent `p` and `t = 1` is the second parent `q`; values outside
 `[0, 1]` are allowed and give points on the line beyond the segment.
 
+The `Lnc` type of the `implicit-predicates` crate takes its parents in the
+other order: `Lnc::new(a, b, t)` is `b + t * (a - b)`. A stored point with
+parents `p` and `q` and parameter `t` is therefore `Lnc::new(q, p, t)`.
+
 ## Sign conventions
 
 Calls store the sign exactly as returned by the program that recorded them.

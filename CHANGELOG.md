@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-11-15
+
 ### Added
 
 - `insphere` and `insphere_in`, in `implicit-predicates`: the exact sign of
@@ -42,13 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   about the weight.
 - `Big`, in `implicit-predicates-core`: exact integers of arbitrary size
   stored in a `Scratch` arena, built from `f64` values with
-  `Scratch::big_from_f64`, with exact `big_add`, `big_sub` and `big_mul`.
+  `Scratch::big_from_f64`, with exact `big_add`, `big_sub` and `big_mul`;
+  `Scratch::big_limb` reads one of its 64-bit words.
 - `implicit-predicates` re-exports `Span` and `Mark`, so that a point type
   written by hand needs no other crate to name the types of the `Point`
   contract.
 - `Generated::warnings`, in `implicit-predicates-gen`: what the user of the
   generated code should know and the code cannot enforce. The command-line
-  tool prints them to standard error. There are three for now: no input at
+  tool prints them to standard error. There are three: no input at
   the edge of the error bound of a filter was found, so the table of edge
   cases of its checks is empty; a point type has an exact coordinate that
   can have more than 16 components: the stages on expansions decline it,
@@ -87,17 +90,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Polynomial::is_affine_in_each_coordinate`.
 - `Dyadic::from_words`, in `implicit-predicates-oracle`: builds a number
   from its sign, the 64-bit words of its magnitude and a binary exponent.
-- `orient3d` and `orient3d_in` end with an exact stage on big integers, so
-  they decide every finite input, whatever the magnitude of the
-  coordinates. With explicit points outside the range of the stages on the
-  stack, `orient3d` uses the arena of the thread and `orient3d_in` the arena
-  it is given, 1,456 `f64` of which always suffice.
-- Documented panics of `orient3d` and `orient3d_in`: on an input that is not
-  finite, and on a point whose exact coordinates have a weight other than
-  `Weight::One`, which the predicates do not support.
-- The generated chain for points of any type, `staged_in`, runs the stage on
-  big integers last, through `exact_stages_explicit_in` for explicit points
-  and `exact_stages_in` for the others.
 
 ### Changed
 
@@ -183,6 +175,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The feature `std` of `implicit-predicates` provides `insphere` and
   `insphere_sos` as well as `orient3d`: without it, `insphere_in`,
   `insphere_sos_in` and `orient3d_in` are the entry points.
+- `orient3d` and `orient3d_in` end with an exact stage on big integers, so
+  they decide every finite input, whatever the magnitude of the
+  coordinates. With explicit points outside the range of the stages on the
+  stack, `orient3d` uses the arena of the thread and `orient3d_in` the arena
+  it is given, 1,456 `f64` of which always suffice.
+- Documented panics of `orient3d` and `orient3d_in`: on an input that is not
+  finite, and on a point whose exact coordinates have a weight other than
+  `Weight::One`, which the predicates do not support.
+- The generated chain for points of any type, `staged_in`, runs the stage on
+  big integers last, through `exact_stages_explicit_in` for explicit points
+  and `exact_stages_in` for the others.
 
 ### Removed
 
@@ -196,6 +199,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `implicit-predicates-gen` rejects a point type named `Big` or `BigCoords`,
+  which the generated modules import from `implicit-predicates-core`, instead
+  of emitting code that does not compile.
 - The stages generated for a predicate without stages on the stack no
   longer define a helper that nothing calls.
 
@@ -329,3 +335,8 @@ tried. The API is incomplete and will change.
   or, if the earlier stages cannot decide, when a nonzero coordinate is
   outside `2^-188..=2^239`. `implicit_predicates::Sign` re-exports the `Sign`
   of `implicit-predicates-core`.
+
+[Unreleased]: https://github.com/arezouski/implicit-predicates/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/arezouski/implicit-predicates/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/arezouski/implicit-predicates/compare/v0.0.1...v0.0.2
+[0.0.1]: https://github.com/arezouski/implicit-predicates/releases/tag/v0.0.1

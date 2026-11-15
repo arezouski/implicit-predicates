@@ -6,7 +6,8 @@
 //! cannot decide does it ask for [`Point::exact`], the coordinates as
 //! expansions in a [`Scratch`] arena, in homogeneous form. A last exact
 //! stage asks for [`Point::exact_big`] instead: the coordinates as big
-//! integers ([`Big`]), with no weight.
+//! integers ([`Big`]), with no weight. A predicate may use only that last
+//! stage and never call [`Point::exact`].
 //!
 //! `[f64; 3]` implements the contract as an explicit point: its components
 //! are its exact coordinates, with no error. [`check`] tests that a point
@@ -193,7 +194,7 @@ pub enum Weight {
     Expansion(Span),
 }
 
-/// The error of [`Point::exact`].
+/// The error of [`Point::exact`] and of [`Point::exact_big`].
 ///
 /// More reasons may be added: code that matches on it needs an arm for the
 /// others, in which the exact coordinates are not available.

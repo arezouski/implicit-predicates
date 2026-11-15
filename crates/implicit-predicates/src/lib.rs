@@ -1,7 +1,7 @@
 //! Exact geometric predicates over explicit and implicit points.
 //!
-//! An implicit point is defined by an unevaluated construction, such as a
-//! point on an edge or inside a triangle. Predicates receive the construction
+//! An implicit point is defined by an unevaluated construction, such as the
+//! point at a given parameter on a segment. Predicates receive the construction
 //! itself and return the exact sign, without rounding the point's
 //! coordinates.
 //!
@@ -25,7 +25,8 @@
 //! is exact for every finite input; for `orient3d`, exact stages on the
 //! expansions of that crate come in between and decide nearly all of the
 //! rest. The point types are generated from their declarations in the same
-//! way. Other kinds of implicit points do not exist yet.
+//! way. Other kinds of implicit points (on a triangle, at the intersection of
+//! a line and a plane, or of three planes) are not implemented.
 //!
 //! A type of your own can implement [`Point`] too, but the predicates rely
 //! on its contract: an implementation that breaks it makes them return wrong
@@ -179,7 +180,7 @@ use generated::orient3d as orient3d_stages;
 /// which starts at 16,384 `f64` and grows on the heap when a call needs
 /// more. When those stages cannot decide either, because a coordinate, or a
 /// component of an exact coordinate, is too large or too small for their
-/// expansions, a last stage evaluates the determinant on big integers in
+/// expansions, or an exact coordinate has too many components, a last stage evaluates the determinant on big integers in
 /// the arena of the thread; it is slower, and decides every input. So
 /// every call with finite inputs returns its exact sign, whatever the
 /// magnitude of the coordinates. [`orient3d_in`] takes the arena instead,

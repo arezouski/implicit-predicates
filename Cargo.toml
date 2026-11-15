@@ -12,7 +12,7 @@ members = [
 exclude = ["ffi-ref", "fuzz"]
 
 [workspace.package]
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 rust-version = "1.86"
 license = "MIT OR Apache-2.0"
@@ -21,7 +21,7 @@ keywords = ["geometry", "predicates", "robust", "exact", "mesh"]
 categories = ["mathematics", "algorithms"]
 
 [workspace.dependencies]
-implicit-predicates-core = { version = "0.0.2", path = "crates/core" }
+implicit-predicates-core = { version = "0.0.3", path = "crates/core" }
 
 [workspace.lints.rust]
 missing_docs = "warn"

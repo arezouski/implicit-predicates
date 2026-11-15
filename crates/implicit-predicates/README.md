@@ -1,12 +1,13 @@
 # implicit-predicates
 
 Exact geometric predicates in Rust for explicit points and for *implicit*
-points: points defined by an unevaluated construction, such as a point on an
-edge or inside a triangle.
+points: points defined by an unevaluated construction, such as the point at a
+given parameter on a segment.
 
 > **Status: early development.** The crate provides `orient3d`, `insphere`
 > and `insphere_sos` for explicit points and points on a segment; the API may
-> change. Other kinds of implicit points do not exist yet.
+> change. Other kinds of implicit points (on a triangle, at the intersection of
+> a line and a plane, or of three planes) are not implemented.
 
 ## Example
 
@@ -97,7 +98,7 @@ same coordinates as `exact` whenever `exact` succeeds, failing with
 `OutOfRange` only for inputs that are not finite, and with `Weighted` for
 exact coordinates with a weight other than one. The predicates support only
 exact coordinates with a weight of `Weight::One` for now: a point whose
-`exact` gives another weight makes them panic.
+exact coordinates have another weight makes them panic.
 
 Release builds of the predicates do not check the contract, and an
 implementation that breaks it makes them return wrong signs, silently.
@@ -133,8 +134,7 @@ from their declarations.
 - Explicit points and implicit points through one API.
 - New predicates and point types through a code generator.
 
-The first release will contain `orient3d`, `insphere` and a symbolically
-perturbed `insphere`, over explicit points and points on a segment.
+Versions 0.0.x are development releases: each of them may change the API.
 
 ## Minimum supported Rust version
 

@@ -1,8 +1,8 @@
 # implicit-predicates
 
 Exact geometric predicates in Rust for explicit points and for *implicit*
-points: points defined by an unevaluated construction, such as a point on an
-edge or inside a triangle.
+points: points defined by an unevaluated construction, such as the point at a
+given parameter on a segment.
 
 > **Status: early development.** Three predicates exist so far, in
 > `implicit-predicates`, over explicit points and points on a segment:
@@ -12,7 +12,13 @@ edge or inside a triangle.
 > stages: a floating-point filter and a last exact stage on big integers
 > (`orient3d` has exact stages on floating-point expansions in between), so
 > each returns the exact sign for every finite input. Other kinds of
-> implicit points do not exist yet. Every API is subject to change.
+> implicit points (on a triangle, at the intersection of a line and a
+> plane, or of three planes) are not implemented. Versions 0.0.x are
+> development releases: each of them may change the API.
+
+Add it to a project with `cargo add implicit-predicates`. The API is
+documented at <https://docs.rs/implicit-predicates>, and the changes of each
+release are in the [changelog](CHANGELOG.md).
 
 ## Example
 
@@ -131,9 +137,6 @@ computing the point's coordinates.
   once and get the same staged evaluation as the built-in ones.
 - `no_std` core with no dependencies.
 
-The first release will contain `orient3d`, `insphere` and a symbolically
-perturbed `insphere`, over explicit points and points on a segment.
-
 ## Workspace
 
 | Crate | Purpose |
@@ -165,6 +168,20 @@ The libraries `ffi-ref` binds are licensed under the LGPL and are linked
 only for local tests and benchmarks: they are downloaded at pinned commits
 into a git-ignored directory, and no part of them is included in this
 repository or in the published crates.
+
+## Development
+
+```sh
+cargo test --workspace --all-features
+```
+
+runs the tests, which compare every stage of the predicates with the exact
+reference of `implicit-predicates-oracle`, on random, degenerate and recorded
+inputs. The code of the predicates and of the point types is generated and
+versioned; the command that regenerates it, and checks that it is up to
+date, is in the README of [`implicit-predicates-gen`](crates/gen). The
+READMEs of `fuzz`, `corpus/tools` and `ffi-ref` say how to run the fuzzing
+targets, record a corpus and build the bindings of the reference libraries.
 
 ## Minimum supported Rust version
 
