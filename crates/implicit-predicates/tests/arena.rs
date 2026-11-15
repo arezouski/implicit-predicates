@@ -15,7 +15,7 @@ use common::args::{Arg, Args, any_points, exact_sign};
 use common::generated::exact_at;
 use implicit_predicates::{
     BigCoords, ExactCoords, ExactError, Lnc, Point, Scratch, ScratchExhausted, Sign, Weight,
-    orient3d, orient3d_in,
+    insphere, insphere_in, orient3d, orient3d_in,
 };
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{coplanar4, near_coplanar4, sample};
@@ -407,6 +407,59 @@ fn the_arena_of_the_thread_is_empty_after_a_call_that_panicked() {
         let sign = orient3d(&Probe { panics: false }, &a, &b, &c);
         assert_eq!(sign, orient3d(&[0.0; 3], &a, &b, &c));
         assert_eq!(USED_ON_ENTRY.with(Cell::get), 0);
+    })
+    .join()
+    .unwrap();
+}
+
+/// Five points on the sphere of radius 5 about the origin, the first of
+/// them given as a point on a line: the sign is zero, and no test of the
+/// filter decides, so the call needs the arena.
+fn sphere_with_a_line() -> (Lnc, [[f64; 3]; 4]) {
+    let sphere = [
+        [3.0, 4.0, 0.0],
+        [5.0, 0.0, 0.0],
+        [0.0, 3.0, 4.0],
+        [-4.0, 0.0, 3.0],
+        [0.0, -5.0, 0.0],
+    ];
+    let m = Lnc::new_unchecked(sphere[0], sphere[1], 1.0);
+    (m, [sphere[1], sphere[2], sphere[3], sphere[4]])
+}
+
+#[test]
+fn an_arena_too_small_is_reported_by_insphere_until_it_fits() {
+    let (m, [b, c, d, e]) = sphere_with_a_line();
+    let try_size = |size: usize| {
+        let mut buf = vec![0.0; size];
+        let mut scratch = Scratch::borrowed(&mut buf);
+        let result = insphere_in(&mut scratch, &m, &b, &c, &d, &e);
+        assert_eq!(scratch.used(), 0, "size {size}");
+        (result, scratch.high_water())
+    };
+    let (result, high_water) = try_size(1 << 16);
+    assert_eq!(result, Ok(Sign::Zero));
+    assert!(high_water > 0);
+    // The smallest size that fits: every smaller one is reported.
+    assert_eq!(try_size(high_water).0, Ok(Sign::Zero));
+    for size in (0..high_water).step_by(1 + high_water / 64) {
+        assert!(try_size(size).0.is_err(), "size {size}");
+    }
+    assert!(try_size(high_water - 1).0.is_err());
+}
+
+#[test]
+fn the_arena_of_the_thread_is_empty_after_an_insphere_that_panicked() {
+    std::thread::spawn(|| {
+        let (m, [b, c, d, e]) = sphere_with_a_line();
+        let bad = Lnc::new_unchecked(b, c, f64::NAN);
+        for _ in 0..3 {
+            // A panic of the chain itself, with the coordinates of the first
+            // points as big integers left in the arena.
+            let panicked = catch_unwind(|| insphere(&m, &b, &c, &d, &bad));
+            assert!(panicked.is_err());
+        }
+        assert_eq!(insphere(&m, &b, &c, &d, &e), Sign::Zero);
     })
     .join()
     .unwrap();

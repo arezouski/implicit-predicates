@@ -609,8 +609,9 @@ pub const INSPHERE_COLUMNS: [&str; 3] = insphere_chain::CHAIN;
 /// What a sweep of the `insphere` calls found, by number of implicit points
 /// (0 to 5).
 ///
-/// `insphere` has no public function and no stage on expansions: the sweep
-/// calls `staged_in` of the hidden module, and every call that neither test
+/// `insphere` has no stage on expansions: the sweep calls `staged_in` of the
+/// hidden module, and the public `insphere` and `insphere_in`, which must
+/// give its sign, and every call that neither test
 /// of the filter decides, with explicit points too, goes to the stage on
 /// big integers, in the arena, for the reason [`Why::BigIntegersOnly`].
 #[derive(Debug)]
@@ -636,6 +637,10 @@ pub struct InSphereTally {
     /// The largest `high_water` of the arena of `staged_in`, by number of
     /// implicit points.
     pub high_water: [usize; 6],
+    /// The stored count and the weight of the calls by the sign of
+    /// `orient3d(a, b, c, d)` on their first four points: negative, zero,
+    /// positive. The sign of `insphere` is read against it.
+    pub orientation: [(usize, f64); 3],
     /// The arena of `staged_in`, one per number of implicit points, and the
     /// one used to attribute calls and run the stages alone.
     arenas: [Scratch<'static>; 6],
@@ -683,6 +688,7 @@ impl InSphereTally {
             mismatches: Mismatches::default(),
             points: PointCounts::default(),
             high_water: [0; 6],
+            orientation: [(0, 0.0); 3],
             arenas: std::array::from_fn(|_| Scratch::growable(1 << 14)),
             scratch: Scratch::growable(1 << 14),
             factor,
@@ -734,6 +740,10 @@ impl Sweep for InSphereTally {
         for (high, added) in self.high_water.iter_mut().zip(other.high_water) {
             *high = (*high).max(added);
         }
+        for (sum, added) in self.orientation.iter_mut().zip(other.orientation) {
+            sum.0 += added.0;
+            sum.1 += added.1;
+        }
     }
 
     fn counts(&self) -> Vec<usize> {
@@ -746,6 +756,7 @@ impl Sweep for InSphereTally {
         counts.extend([unsupported, non_finite, unchecked, self.mismatches.count]);
         counts.extend([self.explicit_past_filter.0, self.explicit_past_filters.0]);
         counts.extend(self.high_water);
+        counts.extend(self.orientation.map(|(n, _)| n));
         for reasons in [&self.big_integers, &self.big_integers_explicit] {
             counts.extend(reasons.sorted().iter().map(|&(_, n, _)| n));
         }
@@ -755,6 +766,7 @@ impl Sweep for InSphereTally {
     fn sums(&self) -> Vec<f64> {
         let mut sums: Vec<_> = self.buckets.iter().flat_map(Bucket::sums).collect();
         sums.extend([self.explicit_past_filter.1, self.explicit_past_filters.1]);
+        sums.extend(self.orientation.map(|(_, w)| w));
         sums
     }
 
@@ -784,6 +796,20 @@ impl InSphereTally {
         let arena = &mut self.arenas[implicit];
         let chain = insphere_stages::staged_in(arena, a, b, c, d, e)
             .unwrap_or_else(|e| panic!("a growable arena is exhausted: {e:?}"));
+        // The public functions: the one with the arena of the thread, and
+        // the one with an arena of the caller.
+        let public = implicit_predicates::insphere(a, b, c, d, e);
+        let used_before = self.scratch.used();
+        let public_in = implicit_predicates::insphere_in(&mut self.scratch, a, b, c, d, e);
+        let public_in_used = self.scratch.used();
+        let orientation = implicit_predicates::orient3d(a, b, c, d);
+        let slot = match orientation {
+            Sign::Negative => 0,
+            Sign::Zero => 1,
+            Sign::Positive => 2,
+        };
+        self.orientation[slot].0 += 1;
+        self.orientation[slot].1 += weight;
         // When neither test of the filter decides, the sign of the stage on
         // big integers: the one it gave alone, or else the one of the chain,
         // which ends with it.
@@ -810,7 +836,7 @@ impl InSphereTally {
             };
             format!(
                 "{} call {index}: recorded {recorded}, decision {decision:?}, staged_in {chain:?}, \
-                 alone: {alone}, points {p:?}",
+                 insphere {public:?}, insphere_in {public_in:?}, alone: {alone}, points {p:?}",
                 corpus.model
             )
         };
@@ -822,7 +848,13 @@ impl InSphereTally {
                         && alone.iter().all(|s| s.is_none_or(|s| s == chain))
                 })
         });
-        if self.factor * i8::from(chain) != recorded || !agrees || arena.used() != 0 {
+        let public_agrees =
+            public == chain && public_in == Ok(chain) && public_in_used == used_before;
+        if self.factor * i8::from(chain) != recorded
+            || !agrees
+            || !public_agrees
+            || arena.used() != 0
+        {
             self.mismatches.add(describe);
         }
         // A call without a decision has an input that is not finite, which
@@ -871,6 +903,18 @@ impl InSphereTally {
                 &self.high_water,
             );
             self.points.report(&mut line);
+            let [negative, zero, positive] = self.orientation;
+            let total = negative.1 + zero.1 + positive.1;
+            line(format!(
+                "orientation of the first four points, weighted: negative {:.4} %, zero {:.4} %, \
+                 positive {:.4} % ({} / {} / {} stored)",
+                100.0 * negative.1 / total,
+                100.0 * zero.1 / total,
+                100.0 * positive.1 / total,
+                negative.0,
+                zero.0,
+                positive.0,
+            ));
             for (what, (stored, weight)) in [
                 (
                     "the first test of the filter does not",

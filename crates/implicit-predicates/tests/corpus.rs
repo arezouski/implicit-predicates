@@ -6,8 +6,9 @@
 //!
 //! The recording program uses the opposite sign convention, so the recorded
 //! sign is `REFERENCE_ORIENT3D_FACTOR` times ours for `orient3d`, and
-//! `REFERENCE_INSPHERE_FACTOR` times ours for `insphere`. `insphere` has no
-//! public function: its chain is `staged_in` of the hidden module. Calls
+//! `REFERENCE_INSPHERE_FACTOR` times ours for `insphere`. Each `insphere` call
+//! is also given to the public `insphere` and `insphere_in`, which must agree
+//! with `staged_in` of the hidden module. Calls
 //! with a kind of point that this crate does not provide yet are counted
 //! and reported. Every call is decided: a call that no stage on expansions
 //! decides goes to the stage on big integers, and is reported with the

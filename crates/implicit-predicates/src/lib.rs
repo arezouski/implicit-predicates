@@ -74,6 +74,7 @@ pub use implicit_predicates_core::{
     Weight,
 };
 
+use generated::insphere as insphere_stages;
 use generated::orient3d as orient3d_stages;
 
 /// The orientation of `d` with respect to the plane through `a`, `b` and
@@ -269,6 +270,183 @@ pub fn orient3d_in(
     d: &impl Point,
 ) -> Result<Sign, ScratchExhausted> {
     orient3d_stages::staged_in(scratch, a, b, c, d)
+}
+
+/// The position of `e` with respect to the sphere through `a`, `b`, `c` and
+/// `d`: the exact sign of the determinant
+///
+/// ```text
+/// | a.x - e.x   a.y - e.y   a.z - e.z   |a - e|^2 |
+/// | b.x - e.x   b.y - e.y   b.z - e.z   |b - e|^2 |
+/// | c.x - e.x   c.y - e.y   c.z - e.z   |c - e|^2 |
+/// | d.x - e.x   d.y - e.y   d.z - e.z   |d - e|^2 |
+/// ```
+///
+/// at the exact coordinates of the points, which may be of any type that
+/// implements [`Point`]: `[f64; 3]`, [`Explicit`], [`Lnc`], [`AnyPoint`],
+/// or a type of your own. It is the same sign as that of the 5x5 determinant
+/// with rows `(x, y, z, x^2 + y^2 + z^2, 1)` of the five points.
+///
+/// This is the convention of Shewchuk's `insphere`: when
+/// [`orient3d(a, b, c, d)`](orient3d) is [`Sign::Positive`], the sign is
+/// [`Sign::Positive`] when `e` lies inside the sphere, [`Sign::Negative`]
+/// when it lies outside, and [`Sign::Zero`] when the five points are
+/// cospherical. When `orient3d(a, b, c, d)` is negative the signs are the
+/// opposite, so the result can be read only if the orientation of `a`, `b`,
+/// `c` and `d` is known; the function does not check it. If `a`, `b`, `c`
+/// and `d` are coplanar, they lie on no sphere and the sign has no such
+/// meaning. Swapping any two of the first four points flips the sign.
+///
+/// A floating-point filter on the approximations of the points decides most
+/// calls. When it cannot, a second filter test that scales its bound by the
+/// extent of each axis tries, and when that does not decide either the
+/// determinant is evaluated exactly on big integers, in an arena of the
+/// calling thread that starts at 16,384 `f64` and grows on the heap when a
+/// call needs more. So every call with finite inputs returns its exact sign,
+/// whatever the magnitude of the coordinates. [`insphere_in`] takes the arena
+/// instead, and needs no `std`.
+///
+/// Requires the `std` feature, which is on by default.
+///
+/// # Panics
+///
+/// - If an input of a point is not finite: a coordinate of an explicit
+///   point, or an input of an implicit one, is NaN or infinite. So does a
+///   point of your own type whose [`Point::exact_big`] fails for any reason
+///   other than the room of the arena, which its contract allows only for
+///   inputs that are not finite or for coordinates with a weight other than
+///   one, the case below.
+/// - If the exact coordinates of a point have a weight other than
+///   [`Weight::One`]: the predicates do not support weights yet, and none of
+///   the point types of this crate has one. With a point of your own type
+///   that has one, the call panics rather than give a sign computed without
+///   it.
+///
+/// # Examples
+///
+/// ```
+/// use implicit_predicates::{Lnc, Sign, insphere, orient3d};
+///
+/// // Four points of the unit sphere, positively oriented.
+/// let (a, b, c, d) = (
+///     [1.0, 0.0, 0.0],
+///     [0.0, 1.0, 0.0],
+///     [0.0, 0.0, 1.0],
+///     [-1.0, 0.0, 0.0],
+/// );
+/// assert_eq!(orient3d(&a, &b, &c, &d), Sign::Positive);
+/// assert_eq!(insphere(&a, &b, &c, &d, &[0.0, 0.0, 0.0]), Sign::Positive); // inside
+/// assert_eq!(insphere(&a, &b, &c, &d, &[2.0, 0.0, 0.0]), Sign::Negative); // outside
+/// assert_eq!(insphere(&a, &b, &c, &d, &[0.0, 0.0, -1.0]), Sign::Zero); // on it
+///
+/// // A point on the chord between a and b, b + 0.1 (a - b), is inside the
+/// // sphere, and the point at the end of it, a, is on the sphere, exactly.
+/// let m = Lnc::new(a, b, 0.1)?;
+/// assert_eq!(insphere(&a, &b, &c, &d, &m), Sign::Positive);
+/// assert_eq!(insphere(&a, &b, &c, &d, &Lnc::new(a, b, 1.0)?), Sign::Zero);
+/// # Ok::<(), implicit_predicates::PointError>(())
+/// ```
+#[cfg(feature = "std")]
+#[inline]
+pub fn insphere(
+    a: &impl Point,
+    b: &impl Point,
+    c: &impl Point,
+    d: &impl Point,
+    e: &impl Point,
+) -> Sign {
+    if let Some(sign) = insphere_stages::filter_points(a, b, c, d, e) {
+        return sign;
+    }
+    if a.is_explicit() & b.is_explicit() & c.is_explicit() & d.is_explicit() & e.is_explicit() {
+        return insphere_explicit([a.approx(), b.approx(), c.approx(), d.approx(), e.approx()]);
+    }
+    insphere_in_thread_arena(a, b, c, d, e)
+}
+
+/// The exact stages of [`insphere`] for explicit points, in the arena of the
+/// thread: the second filter test, then the stage on big integers. There are
+/// no stages on the stack, since the temporaries of an expansion of degree
+/// five do not fit there.
+#[cfg(feature = "std")]
+#[cold]
+#[inline(never)]
+fn insphere_explicit(p: [&[f64; 3]; 5]) -> Sign {
+    arena::with(|scratch| insphere_stages::exact_stages_explicit_in(scratch, p)).expect(GROWS)
+}
+
+/// The exact stages of [`insphere`] for points that are not all explicit,
+/// in the arena of the thread.
+#[cfg(feature = "std")]
+#[cold]
+#[inline(never)]
+fn insphere_in_thread_arena(
+    a: &impl Point,
+    b: &impl Point,
+    c: &impl Point,
+    d: &impl Point,
+    e: &impl Point,
+) -> Sign {
+    arena::with(|scratch| insphere_stages::exact_stages_in(scratch, a, b, c, d, e)).expect(GROWS)
+}
+
+/// `insphere` with the arena `scratch` instead of the arena of the thread:
+/// the same sign, or an error if `scratch` runs out of room. Available
+/// without `std`.
+///
+/// `scratch` is left as it was, on success and on error. It is not used when
+/// the filter decides. It holds the coordinates of the points as big
+/// integers, for which five explicit points always suffice with 6,835 `f64`;
+/// points on a line need more, as many as the length of their exact
+/// coordinates takes. An arena made with `Scratch::growable` (with the
+/// `alloc` feature of `implicit-predicates-core`) never runs out.
+///
+/// # Errors
+///
+/// [`ScratchExhausted`] if `scratch` runs out of room; a larger arena then
+/// gives the result.
+///
+/// # Panics
+///
+/// If an input of a point is not finite, or the exact coordinates of a
+/// point have a weight other than [`Weight::One`]. After a panic `scratch`
+/// may be left above the top it had; resetting it to a mark taken before the
+/// call releases what the call wrote.
+///
+/// # Examples
+///
+/// ```
+/// use implicit_predicates::{Lnc, Scratch, Sign, insphere_in};
+///
+/// let (a, b, c, d) = (
+///     [1.0, 0.0, 0.0],
+///     [0.0, 1.0, 0.0],
+///     [0.0, 0.0, 1.0],
+///     [-1.0, 0.0, 0.0],
+/// );
+/// // The point `a`, as a point on a line: on the sphere, which the filter
+/// // cannot show, so the exact stage needs the arena.
+/// let e = Lnc::new(a, b, 1.0)?;
+/// let mut buf = vec![0.0; 6835];
+/// let mut scratch = Scratch::borrowed(&mut buf);
+/// assert_eq!(insphere_in(&mut scratch, &a, &b, &c, &d, &e), Ok(Sign::Zero));
+/// assert_eq!(scratch.used(), 0);
+///
+/// // An arena too small is reported.
+/// let mut small = [0.0; 8];
+/// assert!(insphere_in(&mut Scratch::borrowed(&mut small), &a, &b, &c, &d, &e).is_err());
+/// # Ok::<(), implicit_predicates::PointError>(())
+/// ```
+#[inline]
+pub fn insphere_in(
+    scratch: &mut Scratch<'_>,
+    a: &impl Point,
+    b: &impl Point,
+    c: &impl Point,
+    d: &impl Point,
+    e: &impl Point,
+) -> Result<Sign, ScratchExhausted> {
+    insphere_stages::staged_in(scratch, a, b, c, d, e)
 }
 
 /// The individual stages of each predicate, for tests and benchmarks.
