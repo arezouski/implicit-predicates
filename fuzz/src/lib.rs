@@ -35,9 +35,10 @@ pub enum Mode {
     /// the differences are exact but the coordinates themselves are not
     /// small.
     Translated,
-    /// Points on a common sphere up to a few units in the last place, of
-    /// any scale from 2^-32 to 2^32; implicit points have their parents on
-    /// the sphere and a parameter near an end, so that they land near it.
+    /// Points on a common sphere exactly, in three out of four inputs, and
+    /// moved by up to two units in the last place otherwise, of any scale
+    /// from 2^-32 to 2^32; implicit points have their parents on the sphere
+    /// and a parameter at or near an end, so that they land on or near it.
     NearSpherical,
 }
 
@@ -163,19 +164,29 @@ fn point3(mode: Mode, pool: &[[f64; 3]; 3], r: &mut Reader<'_>) -> Option<[f64; 
             return Some(p);
         }
         Mode::NearSpherical => {
-            let (dx, dy, dz) = (unit(r)?, unit(r)?, unit(r)?);
-            let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-            let dir = if norm > 1e-3 {
-                [dx / norm, dy / norm, dz / norm]
-            } else {
-                [1.0, 0.0, 0.0]
-            };
-            let radius = 1.0 + pool[1][0].abs();
+            // The signed permutations of the integer vector `|pool[1]|` all
+            // have the same squared norm, so with the integer center
+            // `pool[0]` and a power of two as a factor, which keep every
+            // value exact, the points are exactly cospherical. Then, a
+            // quarter of the time, each coordinate is moved by 0 to 2 ulps.
+            let (perm, signs, nudges) = (r.byte()?, r.byte()?, r.byte()?);
+            let v = pool[1].map(f64::abs);
+            let order = [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ][usize::from(perm) % 6];
             let scale = 2f64.powi(8 * pool[2][0] as i32);
             let mut p = [0.0; 3];
             for k in 0..3 {
-                let c = (pool[0][k] + radius * dir[k]) * scale;
-                p[k] = nudge(c, i64::from(r.byte()? % 3));
+                let sign = if signs >> k & 1 == 1 { -1.0 } else { 1.0 };
+                p[k] = (pool[0][k] + sign * v[order[k]]) * scale;
+                if nudges % 4 == 0 {
+                    p[k] = nudge(p[k], i64::from(nudges >> (2 + 2 * k) & 3).min(2));
+                }
             }
             return Some(p);
         }
@@ -559,6 +570,37 @@ mod tests {
         assert!(offset && sphere_lnc, "{offset} {sphere_lnc}");
         assert!(scales.len() > 4, "{scales:?}");
         assert!(kinds[0] && kinds[1]);
+    }
+
+    /// Whether the five points are exactly cospherical with four of them
+    /// not coplanar, which is when `insphere_sos` has a tie to break.
+    fn is_proper_tie(points: &[AnyPoint; 5]) -> bool {
+        exact_insphere(points) == Sign::Zero
+            && (0..5).any(|skip| {
+                let four: Vec<AnyPoint> =
+                    (0..5).filter(|&k| k != skip).map(|k| points[k]).collect();
+                exact_orient3d(&four) != Sign::Zero
+            })
+    }
+
+    #[test]
+    fn exact_ties_are_reached() {
+        let (mut all, mut sphere, mut sphere_nonzero, mut sphere_cases) = (0, 0, 0, 0);
+        for case in cases(100_000) {
+            let tie = is_proper_tie(&case.points);
+            all += usize::from(tie);
+            if case.mode == Mode::NearSpherical {
+                sphere_cases += 1;
+                sphere += usize::from(tie);
+                sphere_nonzero += usize::from(exact_insphere(&case.points) != Sign::Zero);
+            }
+        }
+        println!(
+            "proper ties: {all} of all modes, {sphere} of {sphere_cases} near-spherical, {sphere_nonzero} near-spherical with non-zero insphere"
+        );
+        assert!(sphere >= 200, "{sphere}");
+        assert!(sphere_nonzero >= 200, "{sphere_nonzero}");
+        assert!(all >= sphere);
     }
 
     #[test]
