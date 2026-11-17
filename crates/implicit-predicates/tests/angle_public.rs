@@ -1,34 +1,158 @@
 //! The public `dot_sign_3d`, `dihedral_sign` and their `_in` variants against
 //! the independent oracle on points of every type: random, grid, right-angled,
 //! repeated and extreme points, points that share parents, points on a
-//! vertex or an edge of their triangle, the symmetries of the predicates, the
-//! arena of the `_in` variants, and the panics. The tests that call the
-//! functions without the suffix need the `std` feature; those that call only
-//! the `_in` variants run without it.
+//! vertex or an edge of their triangle, points on the shared edge of
+//! `dihedral_sign`, the symmetries of the predicates, the arena of the `_in`
+//! variants, with points of widely spread exponents too, and the panics. The
+//! tests that call the functions without the suffix need the `std` feature;
+//! those that call only the `_in` variants run without it.
 
 mod common;
 
 #[path = "generators/angle_calls.rs"]
 mod angle_calls;
 
+use std::ops::RangeInclusive;
+
 use angle_calls::{
     Call3, Call4, Pt, any_points, calls3, calls4, exact_points, explicit_extreme_calls,
-    extreme_calls, with_concrete3, with_concrete4,
+    extreme_calls, wide_calls, wide_explicit_calls, with_concrete3, with_concrete4,
 };
 use common::odd_points::{NoCoordinates, Weighted};
 use common::{pow2, sign_of};
 use implicit_predicates::stages::{dihedral_sign as dihedral_stages, dot_sign_3d as dot_stages};
 use implicit_predicates::{
-    Bpt, Explicit, Lnc, Point, Scratch, ScratchExhausted, Sign, dihedral_sign_in, dot_sign_3d_in,
+    Bpt, ExactCoords, Explicit, Lnc, Point, Scratch, ScratchExhausted, Sign, dihedral_sign_in,
+    dot_sign_3d_in,
 };
 use implicit_predicates_corpus::exact;
-use implicit_predicates_test_support::{config, leaf, point3};
+use implicit_predicates_test_support::{config, leaf, point3, sample};
 use proptest::prelude::*;
 
 /// The initial size of the arena of each thread, in `f64`, which the
-/// documentation quotes: a call with points of the families of these tests
-/// never needs more than this in an arena of the caller.
+/// documentation quotes. It is also the cap that these tests set on the
+/// peak arena of a call with points of their families other than those of
+/// wide exponents: an observed bound, defended by the tests, not a derived
+/// guarantee.
 const THREAD_ARENA: usize = 16_384;
+
+/// The cap on the peak arena, in `f64`, of a call of `dot_sign_3d_in` on the
+/// points of [`wide_calls`], and of its stage on expansions on their exact
+/// coordinates, those coordinates included: an observed bound, the next
+/// power of two at least twice the worst peak seen on 25,000 such calls with
+/// all their points on segments and as many on triangles (1,656), defended
+/// by these tests against a regression that makes the stage need far more;
+/// not a derived guarantee.
+const DOT_WIDE_ARENA: usize = 1 << 12;
+
+/// The same for `dihedral_sign_in`, whose worst peak seen on those calls is
+/// 50,510.
+const DIHEDRAL_WIDE_ARENA: usize = 1 << 17;
+
+/// The exponent `k` of the power of two `2^k`.
+fn exponent_of(power: f64) -> i32 {
+    // `log2` is exact on a power of two.
+    let k = power.log2() as i32;
+    assert_eq!(pow2(k), power, "not a power of two");
+    k
+}
+
+/// The exponents of the parents of [`wide_calls`] for a stage on expansions
+/// whose range is `range`, as widely spread as that range allows. A
+/// coordinate of a point on a segment or on a triangle is a parent plus
+/// products of a parameter and exact differences of parents. Its smallest
+/// component can be the low part of the product of a parameter, rarely below
+/// `2^-14`, and of the low part of a difference, itself at least a unit in
+/// the last place of the smaller parent: about `2^-118` times the smallest
+/// parent. Its largest is below four times the largest parent.
+fn wide_exponents((min, max): (f64, f64)) -> RangeInclusive<i32> {
+    exponent_of(min) + 118..=exponent_of(max) - 2
+}
+
+/// The exponents of explicit points whose coordinates are all in `range`,
+/// as widely spread as it allows.
+fn wide_explicit_exponents((min, max): (f64, f64)) -> RangeInclusive<i32> {
+    exponent_of(min)..=exponent_of(max) - 1
+}
+
+/// `dot_sign_3d_in` on `args` in an arena four times as large as `cap`:
+/// checks its sign against the oracle and that its peak arena is at most
+/// `cap`.
+fn dot_within(args: &[Pt; 3], cap: usize) -> Result<(), TestCaseError> {
+    let mut buf = vec![0.0; 4 * cap];
+    let mut scratch = Scratch::borrowed(&mut buf);
+    let [p, q, r] = any_points(args);
+    prop_assert_eq!(
+        dot_sign_3d_in(&mut scratch, &p, &q, &r),
+        Ok(oracle3(args)),
+        "{:?}",
+        args
+    );
+    let peak = scratch.high_water();
+    prop_assert!(peak <= cap, "{} > {} on {:?}", peak, cap, args);
+    Ok(())
+}
+
+/// The same for `dihedral_sign_in`.
+fn dihedral_within(args: &[Pt; 4], cap: usize) -> Result<(), TestCaseError> {
+    let mut buf = vec![0.0; 4 * cap];
+    let mut scratch = Scratch::borrowed(&mut buf);
+    let [a, b, c, d] = any_points(args);
+    prop_assert_eq!(
+        dihedral_sign_in(&mut scratch, &a, &b, &c, &d),
+        Ok(oracle4(args)),
+        "{:?}",
+        args
+    );
+    let peak = scratch.high_water();
+    prop_assert!(peak <= cap, "{} > {} on {:?}", peak, cap, args);
+    Ok(())
+}
+
+/// A stage on expansions of the predicate, on exact coordinates.
+type OverSpans<const N: usize> =
+    fn(&mut Scratch<'_>, [&ExactCoords; N]) -> Result<Option<Sign>, ScratchExhausted>;
+
+/// `stage` on the exact coordinates of `args`, written to an arena four times
+/// as large as `cap`, whatever the filter would say: checks that its sign,
+/// when it decides, is `expected`, and that its peak arena, the coordinates
+/// included, is at most `cap`. Returns whether it decided.
+fn stage_within<const N: usize>(
+    args: &[Pt; N],
+    stage: OverSpans<N>,
+    expected: Sign,
+    cap: usize,
+) -> Result<bool, TestCaseError> {
+    let mut buf = vec![0.0; 4 * cap];
+    let mut scratch = Scratch::borrowed(&mut buf);
+    let points = any_points(args);
+    let coords: Option<Vec<ExactCoords>> =
+        points.iter().map(|p| p.exact(&mut scratch).ok()).collect();
+    let decided = match coords {
+        Some(q) => stage(&mut scratch, std::array::from_fn(|i| &q[i])),
+        None => Ok(None),
+    };
+    prop_assert!(decided.is_ok(), "the arena runs out on {:?}", args);
+    let decided = decided.unwrap();
+    if let Some(sign) = decided {
+        prop_assert_eq!(sign, expected, "{:?}", args);
+    }
+    let peak = scratch.high_water();
+    prop_assert!(peak <= cap, "{} > {} on {:?}", peak, cap, args);
+    Ok(decided.is_some())
+}
+
+/// Calls of `dot_sign_3d` of [`wide_calls`], in the range of its stage on
+/// expansions.
+fn wide_calls3() -> impl Strategy<Value = [Pt; 3]> {
+    wide_calls(wide_exponents(dot_stages::SPANS_TRANSLATED_RANGE))
+}
+
+/// Calls of `dihedral_sign` of [`wide_calls`], in the range of its stage on
+/// expansions.
+fn wide_calls4() -> impl Strategy<Value = [Pt; 4]> {
+    wide_calls(wide_exponents(dihedral_stages::SPANS_TRANSLATED_RANGE))
+}
 
 /// The exact sign of `dot_sign_3d` at the points of `args`, by the oracle
 /// written by hand.
@@ -233,6 +357,69 @@ proptest! {
         prop_assert_eq!(dihedral_in_every_type(&edge), Sign::Zero, "{:?}", edge);
     }
 
+    /// A point on a triangle that lies on the line through `c` and `d`, as
+    /// the apex `a` or `b`: the triangle of that apex is degenerate, so the
+    /// sign is zero. The point is built with `Bpt::new` when its parameters
+    /// are in the triangle, as every kind but the last has them, and with
+    /// `Bpt::new_unchecked` in every case.
+    #[test]
+    fn a_bpt_on_the_shared_edge_gives_zero(
+        args4 in calls4(),
+        (c, d, x) in (point3(), point3(), point3()),
+        (w, kind, apex) in (0.0..=1.0f64, 0usize..5, 0usize..2),
+    ) {
+        let mut args = args4;
+        (args[2], args[3]) = (Pt::Explicit(c), Pt::Explicit(d));
+        // `v`, `1 - w` rounded, is a multiple of `2^-53` in `[0, 1]`, so
+        // `u = 1 - v` is exact: `u + v = 1` exactly.
+        let v = 1.0 - w;
+        let u = 1.0 - v;
+        let on_edge = match kind {
+            // `u c + (1 - u) d`, with `u + v = 1` exactly.
+            0 => Pt::Bpt(c, d, x, u, v),
+            // The same with the third corner in another place, and the
+            // parameter of `x` zero.
+            1 => Pt::Bpt(c, x, d, w, 0.0),
+            2 => Pt::Bpt(x, c, d, 0.0, w),
+            // Two corners are `d`: the point is on the line whatever the
+            // parameters.
+            3 => Pt::Bpt(c, d, d, 0.5 * w, 0.5 * v),
+            // Outside the triangle, on the line beyond `c`: `u` in
+            // `[3/2, 2]` and `v = 1 - u`, which is exact and negative.
+            _ => {
+                let u = 1.5 + 0.5 * w;
+                Pt::Bpt(c, d, x, u, 1.0 - u)
+            }
+        };
+        args[apex] = on_edge;
+        prop_assert_eq!(oracle4(&args), Sign::Zero, "{:?}", args);
+        prop_assert_eq!(dihedral_in_every_type(&args), oracle4(&args), "{:?}", args);
+
+        let Pt::Bpt(p, q, r, u, v) = on_edge else { unreachable!() };
+        let made = Bpt::new(p, q, r, u, v);
+        prop_assert_eq!(made.is_ok(), kind < 4, "{:?}", on_edge);
+        if let Ok(point) = made {
+            let [a, b, c, d] = any_points(&args);
+            let mut buf = vec![0.0; 1 << 16];
+            let mut scratch = Scratch::borrowed(&mut buf);
+            let sign = if apex == 0 {
+                dihedral_sign_in(&mut scratch, &point, &b, &c, &d)
+            } else {
+                dihedral_sign_in(&mut scratch, &a, &point, &c, &d)
+            };
+            prop_assert_eq!(sign, Ok(oracle4(&args)), "{:?}", args);
+            #[cfg(feature = "std")]
+            {
+                let sign = if apex == 0 {
+                    implicit_predicates::dihedral_sign(&point, &b, &c, &d)
+                } else {
+                    implicit_predicates::dihedral_sign(&a, &point, &c, &d)
+                };
+                prop_assert_eq!(sign, oracle4(&args), "{:?}", args);
+            }
+        }
+    }
+
     #[test]
     fn extreme_magnitudes_give_the_exact_sign(
         three in extreme_calls::<3>(),
@@ -285,46 +472,83 @@ proptest! {
 
     /// A call with explicit points of every magnitude, or with points on a
     /// segment or a triangle of the families of these tests, stays within
-    /// the initial arena of the thread, and for explicit points within the
-    /// documented sizes.
+    /// the initial arena of the thread; one with points on segments or
+    /// triangles of full mantissas and widely spread exponents, in the range
+    /// of the stage on expansions, within the caps observed for them, and so
+    /// does that stage on their exact coordinates, whatever the filter says.
     #[test]
     fn a_call_with_implicit_points_stays_within_a_bounded_arena(
         three in prop_oneof![calls3(), extreme_calls::<3>()],
         four in prop_oneof![calls4(), extreme_calls::<4>()],
+        wide3 in wide_calls3(),
+        wide4 in wide_calls4(),
     ) {
-        let mut buf = vec![0.0; THREAD_ARENA];
-        let mut scratch = Scratch::borrowed(&mut buf);
-        let [p, q, r] = any_points(&three);
-        prop_assert_eq!(dot_sign_3d_in(&mut scratch, &p, &q, &r), Ok(oracle3(&three)), "{:?}", three);
-        prop_assert!(scratch.high_water() <= THREAD_ARENA, "{:?}", three);
-        let [a, b, c, d] = any_points(&four);
-        prop_assert_eq!(
-            dihedral_sign_in(&mut scratch, &a, &b, &c, &d),
-            Ok(oracle4(&four)),
-            "{:?}", four
-        );
-        prop_assert!(scratch.high_water() <= THREAD_ARENA, "{:?}", four);
+        dot_within(&three, THREAD_ARENA)?;
+        dihedral_within(&four, THREAD_ARENA)?;
+        dot_within(&wide3, DOT_WIDE_ARENA)?;
+        dihedral_within(&wide4, DIHEDRAL_WIDE_ARENA)?;
+        let expansions3 = dot_stages::expansions_translated_in;
+        stage_within(&wide3, expansions3, oracle3(&wide3), DOT_WIDE_ARENA)?;
+        let expansions4 = dihedral_stages::expansions_translated_in;
+        stage_within(&wide4, expansions4, oracle4(&wide4), DIHEDRAL_WIDE_ARENA)?;
     }
+}
+
+/// The calls of wide exponents are in the range of the stages on expansions:
+/// the stage decides nearly all of them, so the caps above bound the stage at
+/// work, not a stage that declines at once.
+#[test]
+fn the_stages_on_expansions_decide_the_calls_of_wide_exponents() {
+    let cases = 400;
+    let decided3 = sample(wide_calls3(), cases)
+        .iter()
+        .filter(|args| {
+            let expansions = dot_stages::expansions_translated_in;
+            stage_within(args, expansions, oracle3(args), DOT_WIDE_ARENA).unwrap()
+        })
+        .count();
+    let decided4 = sample(wide_calls4(), cases)
+        .iter()
+        .filter(|args| {
+            let expansions = dihedral_stages::expansions_translated_in;
+            stage_within(args, expansions, oracle4(args), DIHEDRAL_WIDE_ARENA).unwrap()
+        })
+        .count();
+    // A stage may decline a call with a parameter far below `2^-14`, which
+    // is rare.
+    assert!(decided3 * 100 >= cases * 95, "{decided3} of {cases}");
+    assert!(decided4 * 100 >= cases * 95, "{decided4} of {cases}");
 }
 
 proptest! {
     #![proptest_config(config())]
 
-    /// For explicit points of every magnitude, the documented arenas suffice.
+    /// For explicit points of every magnitude, the documented arenas suffice
+    /// for the whole call, whatever stage decides it.
     #[test]
     fn the_documented_arenas_suffice_for_explicit_points(
         three in explicit_extreme_calls::<3>(),
         four in explicit_extreme_calls::<4>(),
         n in prop::array::uniform4(prop::array::uniform3(-6i32..=6)),
         k in -150i32..=190,
+        wide in wide_explicit_calls::<4>(wide_explicit_exponents(
+            dihedral_stages::SPANS_TRANSLATED_RANGE,
+        )),
     ) {
-        // Points of a grid in the range of the stage on expansions, which
-        // runs first in an arena for `dihedral_sign`.
+        // Points of a grid, and points of full mantissas and widely spread
+        // exponents, in the range of the stage on expansions, which runs
+        // first in an arena for `dihedral_sign`.
         let grid: [Pt; 4] = n.map(|v| Pt::Explicit(v.map(|x| f64::from(x) * 2f64.powi(k))));
-        let [a, b, c, d] = any_points(&grid);
-        let mut buf = vec![0.0; dihedral_stages::BIG_INTEGERS_EXPLICIT_ARENA];
-        let mut scratch = Scratch::borrowed(&mut buf);
-        prop_assert_eq!(dihedral_sign_in(&mut scratch, &a, &b, &c, &d), Ok(oracle4(&grid)), "{:?}", grid);
+        for args in [grid, wide] {
+            let [a, b, c, d] = any_points(&args);
+            let mut buf = vec![0.0; dihedral_stages::BIG_INTEGERS_EXPLICIT_ARENA];
+            let mut scratch = Scratch::borrowed(&mut buf);
+            prop_assert_eq!(
+                dihedral_sign_in(&mut scratch, &a, &b, &c, &d),
+                Ok(oracle4(&args)),
+                "{:?}", args
+            );
+        }
         let mut buf = vec![0.0; dot_stages::BIG_INTEGERS_EXPLICIT_ARENA];
         let mut scratch = Scratch::borrowed(&mut buf);
         let [p, q, r] = any_points(&three);
@@ -627,6 +851,60 @@ panics! {
         "implicit-predicates: a point has a weight other than one, which the predicates do not support";
     no_exact_coordinates: NoCoordinates =>
         "implicit-predicates: a point has no exact coordinates: an input is not finite";
+}
+
+/// Points on a triangle on the shared edge `c`, `d`, or on its line, as the
+/// apex `a` or `b`, with parameters that `Bpt::new` accepts and with
+/// parameters outside the triangle: the sign is zero.
+#[test]
+fn a_bpt_on_the_shared_edge_gives_zero_on_fixed_points() {
+    let (c, d, x) = ([0.0, 0.0, 1.0], [0.0; 3], [1.0, 0.0, 0.0]);
+    let other = [0.0, 1.0, 0.0];
+    let on_edge = [
+        // `(0, 0, 0.25)`, with `u + v = 1`.
+        Bpt::new(c, d, x, 0.25, 0.75).unwrap(),
+        // `(0, 0, 0.1)`, not representable, with `v = 0`.
+        Bpt::new(c, x, d, 0.1, 0.0).unwrap(),
+        // Two corners are `d`.
+        Bpt::new(c, d, d, 0.3, 0.4).unwrap(),
+        // `(0, 0, 1.5)`, beyond `c`, outside the triangle.
+        Bpt::new_unchecked(c, d, x, 1.5, -0.5),
+    ];
+    let mut buf = vec![0.0; 1 << 12];
+    for point in on_edge {
+        let mut scratch = Scratch::borrowed(&mut buf);
+        assert_eq!(
+            dihedral_sign_in(&mut scratch, &point, &other, &c, &d),
+            Ok(Sign::Zero)
+        );
+        assert_eq!(
+            dihedral_sign_in(&mut scratch, &other, &point, &c, &d),
+            Ok(Sign::Zero)
+        );
+        assert_eq!(
+            dihedral_sign_in(&mut scratch, &point, &other, &d, &c),
+            Ok(Sign::Zero)
+        );
+        #[cfg(feature = "std")]
+        {
+            assert_eq!(
+                implicit_predicates::dihedral_sign(&point, &other, &c, &d),
+                Sign::Zero
+            );
+            assert_eq!(
+                implicit_predicates::dihedral_sign(&other, &point, &c, &d),
+                Sign::Zero
+            );
+        }
+    }
+    // Off the line, at `(0.25, 0, 0.25)`, the half-plane of the apex is that
+    // of the x axis, and at 135 degrees from it that of the other.
+    let off = Bpt::new(c, d, x, 0.25, 0.5).unwrap();
+    let mut scratch = Scratch::borrowed(&mut buf);
+    assert_eq!(
+        dihedral_sign_in(&mut scratch, &off, &[-1.0, 1.0, 0.0], &c, &d),
+        Ok(Sign::Negative)
+    );
 }
 
 /// An exactly right dihedral angle in integers, with every axis of some extent

@@ -2,9 +2,9 @@
 //! three or four arguments, each an explicit point, a point on a segment or a
 //! point on a triangle, from random, grid, right-angled, repeated and extreme
 //! points, and mesh-like ones: short dyadic parameters, points that share
-//! parents, and points on a vertex or an edge of their triangle. Shared by
-//! the test binaries that declare it with `#[path]`; they also declare
-//! `common`.
+//! parents, and points on a vertex or an edge of their triangle; and points
+//! with full mantissas and widely spread exponents. Shared by the test
+//! binaries that declare it with `#[path]`; they also declare `common`.
 
 use implicit_predicates::{AnyPoint, Bpt, Explicit, Lnc, Point};
 use implicit_predicates_oracle::Dyadic;
@@ -407,4 +407,57 @@ pub fn extreme_calls<const N: usize>() -> impl Strategy<Value = [Pt; N]> {
 pub fn explicit_extreme_calls<const N: usize>() -> impl Strategy<Value = [Pt; N]> {
     prop::collection::vec(extreme_point(), N)
         .prop_map(|v| std::array::from_fn(|i| Pt::Explicit(v[i])))
+}
+
+/// Values of either sign with a full 53-bit significand whose exponent is
+/// uniform in `exponents`, which must be exponents of normal numbers.
+fn full_mantissa(exponents: std::ops::RangeInclusive<i32>) -> impl Strategy<Value = f64> {
+    (exponents, any::<u64>(), any::<bool>()).prop_map(|(exp, bits, negative)| {
+        let significand = f64::from_bits(1f64.to_bits() | (bits >> 12));
+        let magnitude = significand * 2f64.powi(exp);
+        if negative { -magnitude } else { magnitude }
+    })
+}
+
+/// A point whose coordinates are values of [`full_mantissa`].
+fn full_point(exponents: std::ops::RangeInclusive<i32>) -> impl Strategy<Value = [f64; 3]> {
+    let v = move || full_mantissa(exponents.clone());
+    [v(), v(), v()]
+}
+
+/// A parameter in `[0, 1)` with up to 53 random bits: a random multiple of
+/// `2^-53`.
+fn parameter53() -> impl Strategy<Value = f64> {
+    any::<u64>().prop_map(|bits| (bits >> 11) as f64 * 2f64.powi(-53))
+}
+
+/// `N` arguments, all on segments, all on triangles, or each on either, whose
+/// parents are points of [`full_point`] with exponents in `exponents`, and
+/// whose parameters are those of [`parameter53`]: `t` for a segment, and `u`
+/// and `v = w (1 - u)` for a triangle, inside it up to the rounding of `v`.
+/// Their exact coordinates have many components of widely spread exponents.
+pub fn wide_calls<const N: usize>(
+    exponents: std::ops::RangeInclusive<i32>,
+) -> impl Strategy<Value = [Pt; N]> {
+    let point = move || full_point(exponents.clone());
+    let line = (point(), point(), parameter53()).prop_map(|(p, q, t)| Pt::Lnc(p, q, t));
+    let triangle = (point(), point(), point(), parameter53(), parameter53())
+        .prop_map(|(p, q, r, u, w)| Pt::Bpt(p, q, r, u, w * (1.0 - u)));
+    let (line, triangle) = (line.boxed(), triangle.boxed());
+    let either = prop_oneof![line.clone(), triangle.clone()].boxed();
+    prop_oneof![
+        prop::collection::vec(line, N),
+        prop::collection::vec(triangle, N),
+        prop::collection::vec(either, N),
+    ]
+    .prop_map(|v| std::array::from_fn(|i| v[i]))
+}
+
+/// `N` explicit arguments whose coordinates are values of [`full_mantissa`]
+/// with exponents in `exponents`.
+pub fn wide_explicit_calls<const N: usize>(
+    exponents: std::ops::RangeInclusive<i32>,
+) -> impl Strategy<Value = [Pt; N]> {
+    prop::collection::vec(full_point(exponents).prop_map(Pt::Explicit), N)
+        .prop_map(|v| std::array::from_fn(|i| v[i]))
 }
