@@ -1,7 +1,7 @@
-//! `orient3d` on every combination of explicit points and points on a line,
-//! against the exact sign: every stage alone and the chain, on `AnyPoint`s
-//! and on the concrete types; the degenerate cases; and inputs that are not
-//! finite, which panic.
+//! `orient3d` on every combination of explicit points, points on a line and
+//! points on a triangle, against the exact sign: every stage alone and the
+//! chain, on `AnyPoint`s and on the concrete types; the degenerate cases;
+//! and inputs that are not finite, which panic.
 
 // The tests that cannot run on wasm32 leave their helpers unused there.
 #![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
@@ -15,11 +15,12 @@ use common::args::{
     exact_sign, spans_decidable, with_concrete,
 };
 use common::{Points, edges};
-use implicit_predicates::Sign;
 use implicit_predicates::stages::orient3d as stages;
+use implicit_predicates::{Bpt, Sign};
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{
-    config, coplanar4, extreme4, grid4, lnc_params, near_coplanar4, point3, random4, sample,
+    bpt_params, config, coplanar4, extreme4, grid4, lnc_params, near_coplanar4, point3, random4,
+    sample,
 };
 use proptest::prelude::*;
 
@@ -68,6 +69,27 @@ fn random_args() -> impl Strategy<Value = Args> {
         .prop_map(|(mask, explicit, lines)| combine(mask, explicit, lines))
 }
 
+/// Unrelated points: explicit points in `[-1, 1)^3` and points on triangles
+/// with the parents and parameters of `bpt_params`.
+fn random_bpt_args() -> impl Strategy<Value = Args> {
+    let triangle = || bpt_params().boxed();
+    (
+        0u8..16,
+        random4(),
+        [triangle(), triangle(), triangle(), triangle()],
+    )
+        .prop_map(|(mask, explicit, triangles)| {
+            std::array::from_fn(|i| {
+                let (p, q, r, u, v) = triangles[i];
+                if mask & (1 << i) == 0 {
+                    Arg::Explicit(explicit[i])
+                } else {
+                    Arg::Bpt(p, q, r, u, v)
+                }
+            })
+        })
+}
+
 /// A parameter of a point on a line: in `[0, 1]`, at its ends, tiny, or
 /// outside it.
 fn parameter() -> impl Strategy<Value = f64> {
@@ -90,6 +112,41 @@ fn on_lines_of(base: impl Strategy<Value = Points>) -> impl Strategy<Value = Arg
     })
 }
 
+/// A parameter of a point on a triangle: a short dyadic number, as in a
+/// mesh, or any of [`parameter`].
+fn triangle_parameter() -> impl Strategy<Value = f64> {
+    prop_oneof![
+        3 => prop::sample::select(vec![0.0, 1.0, 0.5, 0.25, 0.75, 1.0 / 256.0, 255.0 / 256.0]),
+        1 => parameter(),
+    ]
+}
+
+/// Points built from the four points of `base`, which stay the parents:
+/// argument `i` is `base[i]`, a point on the line through two points of
+/// `base` or a point on the triangle with three of them as corners, with
+/// parameters of a mesh or any, so that the arguments keep the relationship
+/// of `base` and share their parents with each other.
+fn on_triangles_of(base: impl Strategy<Value = Points>) -> impl Strategy<Value = Args> {
+    let one = || {
+        (
+            0u8..3,
+            [0usize..4, 0usize..4, 0usize..4],
+            [triangle_parameter(), triangle_parameter()],
+        )
+            .boxed()
+    };
+    (base, [one(), one(), one(), one()]).prop_map(|(base, kinds)| {
+        std::array::from_fn(|i| {
+            let (kind, [j, k, l], [u, v]) = kinds[i];
+            match kind {
+                0 => Arg::Explicit(base[i]),
+                1 => Arg::Lnc(base[j], base[k], u),
+                _ => Arg::Bpt(base[j], base[k], base[l], u, v),
+            }
+        })
+    })
+}
+
 /// Every family of arguments.
 fn any_args() -> impl Strategy<Value = Args> {
     prop_oneof![
@@ -99,6 +156,12 @@ fn any_args() -> impl Strategy<Value = Args> {
         on_lines_of(near_coplanar4()).boxed(),
         on_lines_of(grid4()).boxed(),
         on_lines_of(extreme4(&span_edges())).boxed(),
+        random_bpt_args().boxed(),
+        on_triangles_of(random4()).boxed(),
+        on_triangles_of(coplanar4()).boxed(),
+        on_triangles_of(near_coplanar4()).boxed(),
+        on_triangles_of(grid4()).boxed(),
+        on_triangles_of(extreme4(&span_edges())).boxed(),
     ]
 }
 
@@ -207,6 +270,91 @@ proptest! {
     }
 
     #[test]
+    fn four_points_on_triangles_of_a_plane_are_coplanar(args in on_triangles_of(coplanar4())) {
+        prop_assert_eq!(exact_sign(&args), Sign::Zero, "{:?}", args);
+        check(&args)?;
+    }
+
+    #[test]
+    fn a_point_on_a_triangle_of_three_other_arguments_is_coplanar(
+        base in prop_oneof![random4(), grid4(), extreme4(&span_edges())],
+        i in 0usize..4,
+        corners in [0usize..3, 0usize..3, 0usize..3],
+        (u, v) in (triangle_parameter(), triangle_parameter()),
+        t in parameter(),
+        lines in 0u8..8,
+    ) {
+        // The other three arguments, explicit or on a line through
+        // themselves; argument `i` on the triangle with them as its corners,
+        // in any order and any number of times, with any parameters, inside
+        // the triangle or not: its parents are other arguments.
+        let others: Vec<usize> = (0..4).filter(|&n| n != i).collect();
+        let mut args: Args = base.map(Arg::Explicit);
+        for (bit, &n) in others.iter().enumerate() {
+            if lines & (1 << bit) != 0 {
+                args[n] = Arg::Lnc(base[n], base[n], t);
+            }
+        }
+        let [p, q, r] = corners.map(|c| base[others[c]]);
+        args[i] = Arg::Bpt(p, q, r, u, v);
+        prop_assert_eq!(exact_sign(&args), Sign::Zero, "{:?}", args);
+        check(&args)?;
+    }
+
+    #[test]
+    fn the_vertices_of_the_triangle_are_the_parents(
+        args in any_args(),
+        i in 0usize..4,
+        (p, q, r) in (point3(), point3(), point3()),
+    ) {
+        // `(u, v) = (1, 0)` is `p`, `(0, 1)` is `q` and `(0, 0)` is `r`,
+        // exactly.
+        for (u, v, parent) in [(1.0, 0.0, p), (0.0, 1.0, q), (0.0, 0.0, r), (-0.0, -0.0, r)] {
+            let on_triangle = replaced(&args, i, Arg::Bpt(p, q, r, u, v));
+            let point = replaced(&args, i, Arg::Explicit(parent));
+            prop_assert_eq!(exact_sign(&on_triangle), exact_sign(&point));
+            check(&on_triangle)?;
+            let on_triangle_sign = implicit_predicates::orient3d(
+                &on_triangle[0].any(), &on_triangle[1].any(), &on_triangle[2].any(), &on_triangle[3].any(),
+            );
+            let explicit = implicit_predicates::orient3d(
+                &point[0].any(), &point[1].any(), &point[2].any(), &point[3].any(),
+            );
+            prop_assert_eq!(on_triangle_sign, explicit, "{:?} {:?}", on_triangle, point);
+        }
+    }
+
+    /// `p`, `q`, `r` and a point on their triangle are coplanar for any
+    /// `u` and `v`, in any order of the arguments, whether the point is
+    /// built with `Bpt::new` (when it accepts the parameters) or with
+    /// `Bpt::new_unchecked`, and for every concrete type of the arguments.
+    #[test]
+    fn four_points_of_one_triangle_are_coplanar(
+        (p, q, r, u, v) in bpt_params(),
+        order in Just(vec![0usize, 1, 2, 3]).prop_shuffle(),
+    ) {
+        let args: Args = std::array::from_fn(|i| match order[i] {
+            0 => Arg::Explicit(p),
+            1 => Arg::Explicit(q),
+            2 => Arg::Explicit(r),
+            _ => Arg::Bpt(p, q, r, u, v),
+        });
+        prop_assert_eq!(exact_sign(&args), Sign::Zero, "{:?}", args);
+        check(&args)?;
+        // The point made by `new`, when it accepts the parameters.
+        if let Ok(point) = Bpt::new(p, q, r, u, v) {
+            let (a, b, c) = (&p, &q, &r);
+            let signs = [
+                implicit_predicates::orient3d(a, b, c, &point),
+                implicit_predicates::orient3d(&point, a, b, c),
+                implicit_predicates::orient3d(a, &point, c, b),
+                implicit_predicates::orient3d(c, b, &point, a),
+            ];
+            prop_assert_eq!(signs, [Sign::Zero; 4], "{:?}", args);
+        }
+    }
+
+    #[test]
     fn a_point_between_far_parents_in_the_plane_is_coplanar(
         base in coplanar4(),
         (i, j, k) in (0usize..4, 0usize..4, 1usize..4),
@@ -307,6 +455,12 @@ proptest! {
             prop_assert!(!decided_on_expansions(&results), "{:?}", args);
             check(&args)?;
         }
+        // The same on a triangle, whose corners differ by more than the
+        // greatest `f64`.
+        let args = replaced(&args, i, Arg::Bpt([big; 3], [-big; 3], [-big; 3], t, 0.25));
+        let results = every_stage(&args);
+        prop_assert!(!decided_on_expansions(&results), "{:?}", args);
+        check(&args)?;
     }
 }
 
@@ -320,6 +474,32 @@ fn panic_message(f: impl FnOnce()) -> Option<String> {
             .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
             .unwrap_or_default(),
     )
+}
+
+/// The points of the triangle of three explicit points, `Bpt::new` with
+/// parameters of a mesh, and `orient3d` of them with the corners in every
+/// order: zero.
+#[test]
+fn a_point_made_by_new_is_coplanar_with_its_corners_in_every_order() {
+    let (p, q, r) = ([1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]);
+    let parameters = [
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (0.0, 1.0),
+        (0.5, 0.5),
+        (0.25, 0.25),
+        (1.0 / 256.0, 255.0 / 256.0),
+        (0.1, 0.2),
+    ];
+    for (u, v) in parameters {
+        let point = Bpt::new(p, q, r, u, v).expect("parameters in the triangle");
+        for (a, b, c) in [(&p, &q, &r), (&q, &r, &p), (&r, &p, &q), (&q, &p, &r)] {
+            assert_eq!(implicit_predicates::orient3d(a, b, c, &point), Sign::Zero);
+            assert_eq!(implicit_predicates::orient3d(&point, a, b, c), Sign::Zero);
+            assert_eq!(implicit_predicates::orient3d(a, &point, b, c), Sign::Zero);
+            assert_eq!(implicit_predicates::orient3d(a, b, &point, c), Sign::Zero);
+        }
+    }
 }
 
 /// Every one of the 16 combinations on the same nearly degenerate and

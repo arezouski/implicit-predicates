@@ -28,7 +28,7 @@ use implicit_predicates::{Lnc, Point, Scratch, ScratchExhausted, Sign, insphere_
 #[cfg(feature = "std")]
 use implicit_predicates_test_support::{config, grid5, random5};
 #[cfg(feature = "std")]
-use insphere_calls::{Args5, calls, cospherical_args, extreme_args, line_at};
+use insphere_calls::{Args5, calls, cospherical_args, extreme_args, line_at, triangle_at};
 #[cfg(feature = "std")]
 use proptest::prelude::*;
 
@@ -115,6 +115,37 @@ proptest! {
         let mut on_a_line = p.map(Arg::Explicit);
         on_a_line[j] = line_at(&p, i, j, kind, t);
         prop_assert_eq!(every_type(&on_a_line), Sign::Zero, "{:?}", on_a_line);
+    }
+
+    #[test]
+    fn a_point_on_a_triangle_equal_to_another_argument_gives_zero(
+        (p, fresh, kind) in prop_oneof![
+            // The midpoint of an edge needs the grid, where `2 x - y` is exact.
+            (random5(), random5(), prop::sample::select(vec![0usize, 1, 2, 3, 5, 6, 7, 8])),
+            (grid5(), grid5(), 0usize..9),
+        ],
+        position in 0usize..5,
+        (a, b, c) in (1usize..5, 1usize..5, 1usize..5),
+        t in 0.0..=1.0f64,
+    ) {
+        // At `position`, a point on a triangle whose exact value is the
+        // point of another position (`i`, or `l` for `kind` 5): a vertex,
+        // the midpoint of an edge, or a point with all parents equal; or,
+        // for the kinds 6 to 8, that point as a vertex of a triangle whose
+        // other corners are points that are not arguments, which a wrong
+        // vertex would not repeat. The other argument stays explicit, so
+        // two arguments are the same point.
+        let (i, j, l) = ((position + a) % 5, (position + b) % 5, (position + c) % 5);
+        let x = p[i];
+        let mut args = p.map(Arg::Explicit);
+        args[position] = match kind {
+            6 => Arg::Bpt(x, fresh[0], fresh[1], 1.0, 0.0),
+            7 => Arg::Bpt(fresh[0], x, fresh[1], 0.0, 1.0),
+            8 => Arg::Bpt(fresh[0], fresh[1], x, 0.0, 0.0),
+            _ => triangle_at(&p, i, j, l, kind, t),
+        };
+        prop_assert_eq!(every_type(&args), Sign::Zero, "{:?}", args);
+        prop_assert_eq!(oracle_args(&args), Sign::Zero, "{:?}", args);
     }
 }
 

@@ -14,8 +14,8 @@ use std::cell::Cell;
 
 use common::odd_points::{LIAR_AT, Liar, Lie};
 use implicit_predicates::{
-    BigCoords, ExactCoords, ExactError, Lnc, Point, Scratch, Sign, Violation, dihedral_sign_in,
-    dot_sign_3d_in, insphere_in, insphere_sos_in, orient3d_in,
+    BigCoords, Bpt, ExactCoords, ExactError, Lnc, Point, Scratch, Sign, Violation,
+    dihedral_sign_in, dot_sign_3d_in, insphere_in, insphere_sos_in, orient3d_in,
 };
 
 /// How every panic of a check of the contract begins.
@@ -583,6 +583,66 @@ fn a_debug_check_takes_nothing_from_the_arena_of_the_caller() {
     assert!(insphere_sos_in(&mut scratch, &a, &b, &c, &d, &e, [4, 3, 2, 1, 0]).is_ok());
     assert_eq!(e.take(), INSPHERE_SOS_CALLS);
 }
+
+/// [`a_debug_check_takes_nothing_from_the_arena_of_the_caller`] with points
+/// on a triangle: the corners are the other arguments, so that the calls are
+/// coplanar and cospherical, and the checks of the debug build run on them.
+#[test]
+fn a_debug_check_takes_nothing_from_the_arena_of_the_caller_with_a_point_on_a_triangle() {
+    let (a, b, c) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let m = Counted::new(Bpt::new(a, b, c, 0.25, 0.5).unwrap());
+    let orient3d = smallest_arena(|s| orient3d_in(s, &a, &b, &c, &m).ok());
+    assert_eq!(
+        orient3d,
+        (BPT_ORIENT3D_SMALLEST_ARENA, BPT_ORIENT3D_SMALLEST_ARENA)
+    );
+    m.take();
+    let mut buf = vec![0.0; 1 << 16];
+    assert_eq!(
+        orient3d_in(&mut Scratch::borrowed(&mut buf), &a, &b, &c, &m),
+        Ok(Sign::Zero)
+    );
+    assert_eq!(m.take(), BPT_ORIENT3D_CALLS);
+    // At a vertex, `e` is `a`: the five points are on a sphere, and not
+    // coplanar.
+    let d = [-1.0, 0.0, 0.0];
+    let e = Counted::new(Bpt::new(a, b, c, 1.0, 0.0).unwrap());
+    let insphere = smallest_arena(|s| insphere_in(s, &a, &b, &c, &d, &e).ok());
+    assert_eq!(
+        insphere,
+        (BPT_INSPHERE_SMALLEST_ARENA, BPT_INSPHERE_SMALLEST_ARENA)
+    );
+    e.take();
+    assert_eq!(
+        insphere_in(&mut Scratch::borrowed(&mut buf), &a, &b, &c, &d, &e),
+        Ok(Sign::Zero)
+    );
+    assert_eq!(e.take(), BPT_INSPHERE_CALLS);
+    let sos = smallest_arena(|s| insphere_sos_in(s, &a, &b, &c, &d, &e, [4, 3, 2, 1, 0]).ok());
+    assert_eq!(
+        sos,
+        (
+            BPT_INSPHERE_SOS_SMALLEST_ARENA,
+            BPT_INSPHERE_SOS_SMALLEST_ARENA
+        )
+    );
+    e.take();
+    let mut scratch = Scratch::borrowed(&mut buf);
+    let sign = insphere_sos_in(&mut scratch, &a, &b, &c, &d, &e, [4, 3, 2, 1, 0]).unwrap();
+    assert_ne!(sign, Sign::Zero);
+    assert_eq!(e.take(), BPT_INSPHERE_SOS_CALLS);
+}
+
+/// The calls to `exact` and to `exact_big` of the point on a triangle, and
+/// the smallest arenas, in the calls of
+/// [`a_debug_check_takes_nothing_from_the_arena_of_the_caller_with_a_point_on_a_triangle`],
+/// measured in a release build.
+const BPT_ORIENT3D_CALLS: [usize; 2] = [1, 0];
+const BPT_INSPHERE_CALLS: [usize; 2] = [0, 1];
+const BPT_INSPHERE_SOS_CALLS: [usize; 2] = [0, 1];
+const BPT_ORIENT3D_SMALLEST_ARENA: usize = 33;
+const BPT_INSPHERE_SMALLEST_ARENA: usize = 25;
+const BPT_INSPHERE_SOS_SMALLEST_ARENA: usize = 25;
 
 /// The calls to `exact` and to `exact_big` of the point on a line in the
 /// calls of [`a_debug_check_takes_nothing_from_the_arena_of_the_caller`],

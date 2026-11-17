@@ -293,7 +293,7 @@ fn explicit(args: &Args5) -> Option<Points5> {
     for (point, arg) in p.iter_mut().zip(args) {
         match arg {
             Arg::Explicit(x) => *point = *x,
-            Arg::Lnc(..) => return None,
+            Arg::Lnc(..) | Arg::Bpt(..) => return None,
         }
     }
     Some(p)

@@ -5,18 +5,21 @@
 //! types.
 
 use implicit_predicates::stages::orient3d as stages;
-use implicit_predicates::{AnyPoint, Explicit, Lnc, Point, Scratch, Sign, Weight};
+use implicit_predicates::{AnyPoint, Bpt, Explicit, Lnc, Point, Scratch, Sign, Weight};
 use implicit_predicates_oracle::Dyadic;
 
+use super::bpt::exact_bpt_by_hand;
 use super::generated::exact_at;
 use super::point_checks::exact_lnc;
 
-/// One argument: an explicit point, or `Lnc { p, q, t }`, the point
-/// `q + t (p - q)`.
+/// One argument: an explicit point, `Lnc { p, q, t }`, the point
+/// `q + t (p - q)`, or `Bpt { p, q, r, u, v }`, the point
+/// `r + u (p - r) + v (q - r)`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Arg {
     Explicit([f64; 3]),
     Lnc([f64; 3], [f64; 3], f64),
+    Bpt([f64; 3], [f64; 3], [f64; 3], f64, f64),
 }
 
 /// The four arguments of `orient3d`.
@@ -28,6 +31,7 @@ impl Arg {
         match *self {
             Arg::Explicit(p) => AnyPoint::Explicit(Explicit::new_unchecked(p)),
             Arg::Lnc(p, q, t) => AnyPoint::Lnc(Lnc::new_unchecked(p, q, t)),
+            Arg::Bpt(p, q, r, u, v) => AnyPoint::Bpt(Bpt::new_unchecked(p, q, r, u, v)),
         }
     }
 
@@ -36,6 +40,7 @@ impl Arg {
         match *self {
             Arg::Explicit(p) => p.to_vec(),
             Arg::Lnc(p, q, t) => p.into_iter().chain(q).chain([t]).collect(),
+            Arg::Bpt(p, q, r, u, v) => p.into_iter().chain(q).chain(r).chain([u, v]).collect(),
         }
     }
 
@@ -46,6 +51,7 @@ impl Arg {
         match self {
             Arg::Explicit(_) => Arg::Explicit(point(0)),
             Arg::Lnc(..) => Arg::Lnc(point(0), point(3), inputs[6]),
+            Arg::Bpt(..) => Arg::Bpt(point(0), point(3), point(6), inputs[9], inputs[10]),
         }
     }
 
@@ -63,6 +69,7 @@ impl Arg {
         match *self {
             Arg::Explicit(p) => p.map(Dyadic::from_f64),
             Arg::Lnc(p, q, t) => exact_lnc([p, q], [t]),
+            Arg::Bpt(p, q, r, u, v) => exact_bpt_by_hand(&p, &q, &r, u, v),
         }
     }
 }
@@ -86,7 +93,7 @@ pub trait Call {
 }
 
 /// Builds the point of `$arg` as its concrete type, `[f64; 3]` or
-/// `Explicit` for an explicit point as `$raw` says, and `Lnc` otherwise,
+/// `Explicit` for an explicit point as `$raw` says, `Lnc` or `Bpt` otherwise,
 /// and evaluates `$body` with it bound to `$x`.
 macro_rules! concrete {
     ($arg:expr, $raw:expr, |$x:ident| $body:expr) => {
@@ -101,6 +108,10 @@ macro_rules! concrete {
             }
             Arg::Lnc(p, q, t) => {
                 let $x = &Lnc::new_unchecked(p, q, t);
+                $body
+            }
+            Arg::Bpt(p, q, r, u, v) => {
+                let $x = &Bpt::new_unchecked(p, q, r, u, v);
                 $body
             }
         }

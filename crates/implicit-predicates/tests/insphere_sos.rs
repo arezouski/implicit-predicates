@@ -22,8 +22,8 @@ use common::sign_of;
 use implicit_predicates::{Lnc, Point, Scratch, ScratchExhausted, Sign, insphere_sos_in};
 use implicit_predicates_corpus::exact;
 use implicit_predicates_oracle::Dyadic;
-use implicit_predicates_test_support::config;
-use insphere_calls::{Args5, calls, cospherical_args, extreme_args};
+use implicit_predicates_test_support::{config, grid5, random5};
+use insphere_calls::{Args5, calls, cospherical_args, extreme_args, triangle_at};
 use proptest::prelude::*;
 
 /// Five points with integer coordinates.
@@ -323,6 +323,37 @@ proptest! {
     }
 
     #[test]
+    fn a_point_on_a_triangle_has_the_sign_of_its_value(
+        (p, kind) in prop_oneof![
+            // The midpoint of an edge needs the grid, where `2 x - y` is exact.
+            (random5(), prop::sample::select(vec![0usize, 1, 2, 3, 5])),
+            (grid5(), 0usize..6),
+        ],
+        position in 0usize..5,
+        (b, c) in (1usize..5, 1usize..5),
+        t in 0.0..=1.0f64,
+        idx in distinct_indices(),
+    ) {
+        // The sign depends on the exact points and on the indices only: a
+        // point on a triangle is the point it equals, wherever it is, even
+        // when that point is another argument, which a tie-break must
+        // separate by the indices.
+        let (i, j, l) = (position, (position + b) % 5, (position + c) % 5);
+        let on_a_triangle = {
+            let mut args = p.map(Arg::Explicit);
+            args[position] = triangle_at(&p, i, j, l, kind, t);
+            args
+        };
+        let mut value = p;
+        value[position] = if kind == 5 { p[l] } else { p[i] };
+        prop_assert_eq!(
+            sos_args(&on_a_triangle, idx),
+            sos_args(&value.map(Arg::Explicit), idx),
+            "{:?} {:?}", on_a_triangle, idx
+        );
+    }
+
+    #[test]
     fn huge_indices_sort_like_small_ones(p in tie_grid()) {
         let f = to_f64(&p);
         prop_assert_eq!(
@@ -381,6 +412,13 @@ proptest! {
                     prop_assert_eq!(Sos(idx).call(a, b, c, d, a), sign);
                     let args: Args5 = std::array::from_fn(|k| match k {
                         4 => Arg::Lnc(f[0], f[1], 1.0),
+                        _ => Arg::Explicit(f[k]),
+                    });
+                    prop_assert_eq!(sos_args(&args, idx), sign);
+                    // And as the vertex of a triangle whose other corners are
+                    // other points.
+                    let args: Args5 = std::array::from_fn(|k| match k {
+                        4 => Arg::Bpt(f[0], f[1], f[2], 1.0, 0.0),
                         _ => Arg::Explicit(f[k]),
                     });
                     prop_assert_eq!(sos_args(&args, idx), sign);
