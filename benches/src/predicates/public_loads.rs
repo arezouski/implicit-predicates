@@ -259,7 +259,7 @@ fn dot_call(rng: &mut Rng, precision: Precision, kind: &str, family: Family) -> 
 
 /// The loads of `dihedral_sign`: `explicit`, `4_lnc`, `4_bpt` and `mixed`
 /// (`a` an `Lnc`, `b` a `Bpt`, `c` an `Lnc` and `d` explicit), each in the
-/// families of [`ANGLE_FAMILIES`].
+/// families of `ANGLE_FAMILIES`.
 #[must_use]
 pub fn dihedral_sign_public_loads() -> Vec<PublicLoad<4>> {
     loads(
@@ -278,7 +278,7 @@ pub fn dihedral_sign_public_loads() -> Vec<PublicLoad<4>> {
 }
 
 /// The loads of `dot_sign_3d`: `explicit`, `3_lnc`, `3_bpt` and `mixed` (two
-/// `Lnc` and a `Bpt`), each in the families of [`ANGLE_FAMILIES`].
+/// `Lnc` and a `Bpt`), each in the families of `ANGLE_FAMILIES`.
 #[must_use]
 pub fn dot_sign_3d_public_loads() -> Vec<PublicLoad<3>> {
     loads(
@@ -297,12 +297,12 @@ pub fn dot_sign_3d_public_loads() -> Vec<PublicLoad<3>> {
 }
 
 /// A call of `orient3d` on four `Bpt` of a planar patch, in the families of
-/// [`DEGENERATE_FAMILIES`].
+/// `DEGENERATE_FAMILIES`.
 fn orient3d_call(rng: &mut Rng, precision: Precision, kind: &str, family: Family) -> [AnyPoint; 4] {
     orient3d_case(rng, precision, kind, family == Family::Near)
 }
 
-/// The loads of `orient3d` with four `Bpt`, as [`DEGENERATE_FAMILIES`] names
+/// The loads of `orient3d` with four `Bpt`, as `DEGENERATE_FAMILIES` names
 /// the families.
 #[must_use]
 pub fn orient3d_bpt_loads() -> Vec<PublicLoad<4>> {
@@ -378,7 +378,7 @@ fn insphere_call(
 
 /// The loads of `insphere` with `Bpt`: `5_bpt` and `mixed_bpt`, in which the
 /// first two points are explicit. Both have the three families of
-/// [`DEGENERATE_FAMILIES`] with `mesh` parameters, and `random` with
+/// `DEGENERATE_FAMILIES` with `mesh` parameters, and `random` with
 /// `params53` ones.
 #[must_use]
 pub fn insphere_bpt_loads() -> Vec<PublicLoad<5>> {
