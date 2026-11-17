@@ -331,9 +331,10 @@ proptest! {
     ) {
         prop_assert_eq!(dot_oracle(&p3), Sign::Zero);
         prop_assert_eq!(dihedral_oracle(&p4), Sign::Zero);
-        // The exact stages on the stack decide every one of them, the
-        // right ones and the moved ones, whose differences may not be
-        // exact.
+        // The exact differences, on the stack, decide the right ones; the
+        // stages on expansions decide the moved ones, whose differences may
+        // not be exact: on the stack for `dot_sign_3d`, in an arena for
+        // `dihedral_sign`.
         prop_assert_eq!(dot::exact_differences(refs(&p3)), Some(Sign::Zero));
         prop_assert_eq!(dihedral::exact_differences(refs(&p4)), Some(Sign::Zero));
         prop_assert_eq!(dot::expansions_translated(refs(&q3)), Some(dot_oracle(&q3)));
@@ -562,6 +563,8 @@ fn the_emitted_edge_cases_of_dot_sign_3d_pass() {
     for (name, stage) in DOT_STAGES {
         let [decided, declined] =
             dot_checks::check_bound_edge_cases(|p| stage(&mut scratch, refs(p)));
+        // The other stages may decline any case: their counts are not
+        // checked, only the signs they give, inside `check_bound_edge_cases`.
         if ALWAYS_DECIDE.contains(&name) {
             assert_eq!((decided, declined), (cases.len(), 0), "{name}");
         }
@@ -592,6 +595,8 @@ fn the_emitted_edge_cases_of_dihedral_sign_pass() {
     for (name, stage) in DIHEDRAL_STAGES {
         let [decided, declined] =
             dihedral_checks::check_bound_edge_cases(|p| stage(&mut scratch, refs(p)));
+        // The other stages may decline any case: their counts are not
+        // checked, only the signs they give, inside `check_bound_edge_cases`.
         if ALWAYS_DECIDE.contains(&name) {
             assert_eq!((decided, declined), (cases.len(), 0), "{name}");
         }

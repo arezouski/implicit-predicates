@@ -998,9 +998,9 @@ mod tests {
         );
     }
 
-    /// Counts of the signs of a predicate over the decoded cases, among all
-    /// cases and among those where an argument is a `Bpt` that is not
-    /// explicit-looking (not a vertex that equals another argument).
+    /// Counts of the signs of a predicate over the decoded cases: among all
+    /// cases, per mode of the decoder, and among the cases where some
+    /// argument is a `Bpt`, whatever its parameters.
     #[derive(Default, Debug)]
     struct Signs {
         all: [usize; 3],
