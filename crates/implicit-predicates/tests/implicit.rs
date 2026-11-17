@@ -341,7 +341,8 @@ proptest! {
         });
         prop_assert_eq!(exact_sign(&args), Sign::Zero, "{:?}", args);
         check(&args)?;
-        // The point made by `new`, when it accepts the parameters.
+        // The point made by `new`, when it accepts the parameters, against
+        // the exact sign of the same arguments.
         if let Ok(point) = Bpt::new(p, q, r, u, v) {
             let (a, b, c) = (&p, &q, &r);
             let signs = [
@@ -350,7 +351,12 @@ proptest! {
                 implicit_predicates::orient3d(a, &point, c, b),
                 implicit_predicates::orient3d(c, b, &point, a),
             ];
-            prop_assert_eq!(signs, [Sign::Zero; 4], "{:?}", args);
+            let (a, b, c) = (Arg::Explicit(p), Arg::Explicit(q), Arg::Explicit(r));
+            let m = Arg::Bpt(p, q, r, u, v);
+            let exact = [[a, b, c, m], [m, a, b, c], [a, m, c, b], [c, b, m, a]]
+                .map(|args| exact_sign(&args));
+            prop_assert_eq!(signs, exact, "{:?}", args);
+            prop_assert_eq!(exact, [Sign::Zero; 4], "{:?}", args);
         }
     }
 
