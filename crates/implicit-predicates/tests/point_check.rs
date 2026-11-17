@@ -8,13 +8,16 @@
 
 mod common;
 
+use common::bpt::exact_bpt_by_hand;
 use common::odd_points::{LIAR_AT, Liar, Lie, Long, NoCoordinates, Weighted, WeightedOutOfRange};
 use implicit_predicates::{
-    AnyPoint, BigCoords, CheckError, ExactCoords, ExactError, Explicit, Lnc, Point, Scratch,
+    AnyPoint, BigCoords, Bpt, CheckError, ExactCoords, ExactError, Explicit, Lnc, Point, Scratch,
     Violation, check,
 };
 use implicit_predicates_oracle::Dyadic;
-use implicit_predicates_test_support::{any_finite, config, lnc_params};
+use implicit_predicates_test_support::{
+    BptParams, any_finite, big_to_dyadic, bpt_params, config, lnc_params,
+};
 use proptest::prelude::*;
 
 /// The exact coordinates of `Lnc::new_unchecked(p, q, t)`, `q + t (p - q)`,
@@ -112,6 +115,42 @@ fn agrees_with_the_oracle<P: Point>(p: &P, exact: &[Dyadic; 3]) -> Result<(), Te
     Ok(())
 }
 
+/// The point `Bpt::new_unchecked` builds from `(p, q, r, u, v)`, and the
+/// `AnyPoint` that holds it, agree with the oracle, and its exact
+/// coordinates, as expansions when the arithmetic on them can take the
+/// inputs and always as big integers, are `exact`.
+fn bpt_keeps_the_contract((p, q, r, u, v): BptParams, point: Bpt) -> Result<(), TestCaseError> {
+    let exact = exact_bpt_by_hand(&p, &q, &r, u, v);
+    prop_assert_eq!((*point.p(), *point.q(), *point.r()), (p, q, r));
+    prop_assert_eq!((point.u(), point.v()), (u, v));
+    agrees_with_the_oracle(&point, &exact)?;
+    agrees_with_the_oracle(&AnyPoint::Bpt(point), &exact)?;
+    let mut buf = vec![0.0; 1 << 16];
+    let mut scratch = Scratch::borrowed(&mut buf);
+    match point.exact(&mut scratch) {
+        Ok(ExactCoords { x, y, z, w }) => {
+            prop_assert_eq!(w, implicit_predicates::Weight::One);
+            for (k, span) in [x, y, z].into_iter().enumerate() {
+                let sum = Dyadic::sum_of(scratch.get(span));
+                prop_assert_eq!(&sum, &exact[k], "exact, axis {}", k);
+            }
+        }
+        // A difference or a product that the exact arithmetic cannot take.
+        Err(ExactError::OutOfRange) => {}
+        Err(e) => prop_assert!(false, "exact: {}", e),
+    }
+    let big = point.exact_big(&mut scratch).unwrap();
+    for (k, b) in [big.x, big.y, big.z].into_iter().enumerate() {
+        prop_assert_eq!(
+            big_to_dyadic(&scratch, b),
+            exact[k].clone(),
+            "exact_big, axis {}",
+            k
+        );
+    }
+    Ok(())
+}
+
 /// Finite values of every kind, the extremes more often than `any_finite`
 /// alone gives them.
 fn coordinate() -> impl Strategy<Value = f64> {
@@ -145,6 +184,22 @@ proptest! {
         let exact = lnc_exact(p, q, t);
         agrees_with_the_oracle(&Lnc::new_unchecked(p, q, t), &exact)?;
         agrees_with_the_oracle(&AnyPoint::Lnc(Lnc::new_unchecked(p, q, t)), &exact)?;
+    }
+
+    /// With `new_unchecked`, the parameters may be anywhere, finite.
+    #[test]
+    fn a_bpt_keeps_the_contract(params in bpt_params()) {
+        let (p, q, r, u, v) = params;
+        bpt_keeps_the_contract(params, Bpt::new_unchecked(p, q, r, u, v))?;
+    }
+
+    /// With `new`, when it accepts the parameters.
+    #[test]
+    fn a_bpt_made_by_new_keeps_the_contract(params in bpt_params()) {
+        let (p, q, r, u, v) = params;
+        if let Ok(point) = Bpt::new(p, q, r, u, v) {
+            bpt_keeps_the_contract(params, point)?;
+        }
     }
 }
 

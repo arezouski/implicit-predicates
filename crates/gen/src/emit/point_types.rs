@@ -328,7 +328,7 @@ pub(crate) fn write_implicit(out: &mut String, info: &TypeInfo<'_>, implicit: &I
 pub(crate) fn write_any_point(out: &mut String, types: &[TypeInfo<'_>]) {
     out.push_str(
         "/// A point of any of the types of this module.\n\
-         #[derive(Clone, Copy, Debug, PartialEq)]\npub enum AnyPoint {\n",
+         #[derive(Clone, Copy, Debug, PartialEq)]\n#[non_exhaustive]\npub enum AnyPoint {\n",
     );
     for t in types {
         let name = &t.point.name;

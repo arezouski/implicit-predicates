@@ -17,7 +17,8 @@
 //! on the error of each one, and its exact coordinates. The point types of
 //! the crate are `[f64; 3]`, an explicit point that is not validated;
 //! [`Explicit`], a validated explicit point; [`Lnc`], a point on the segment
-//! between two explicit points; and [`AnyPoint`], either of the last two.
+//! between two explicit points; [`Bpt`], a point on the triangle between
+//! three explicit points; and [`AnyPoint`], any of the last three.
 //! Like every predicate of the crate, `orient3d` and `insphere` are generated
 //! by `implicit-predicates-gen` from a short definition: a floating-point
 //! filter decides the common cases and a last stage on the big integers of
@@ -25,8 +26,8 @@
 //! is exact for every finite input; for `orient3d`, exact stages on the
 //! expansions of that crate come in between and decide nearly all of the
 //! rest. The point types are generated from their declarations in the same
-//! way. Other kinds of implicit points (on a triangle, at the intersection of
-//! a line and a plane, or of three planes) are not implemented.
+//! way. Other kinds of implicit points (at the intersection of a line and a
+//! plane, or of three planes) are not implemented.
 //!
 //! A type of your own can implement [`Point`] too, but the predicates rely
 //! on its contract: an implementation that breaks it makes them return wrong
@@ -142,7 +143,7 @@ pub use sos::insphere_sos_in;
 #[doc = include_str!("../README.md")]
 struct ReadmeExamples;
 
-pub use generated::points::{AnyPoint, Explicit, Lnc, PointError};
+pub use generated::points::{AnyPoint, Bpt, Explicit, Lnc, PointError};
 pub use implicit_predicates_core::{
     Big, BigCoords, CheckError, ExactCoords, ExactError, Mark, Point, Scratch, ScratchExhausted,
     Sign, Span, Violation, Weight, check,

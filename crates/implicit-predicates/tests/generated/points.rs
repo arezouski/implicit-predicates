@@ -3,7 +3,7 @@
 // implicit-predicates-gen crates/implicit-predicates/predicates --stages crates/implicit-predicates/src/generated --checks crates/implicit-predicates/tests/generated
 
 //! Checks of the point types, for their tests: the exact coordinates of each
-//! type that is not explicit, [`exact_lnc`].
+//! type that is not explicit, [`exact_lnc`], [`exact_bpt`].
 
 use implicit_predicates_oracle::Dyadic;
 
@@ -35,4 +35,47 @@ pub fn exact_lnc(c: [[f64; 3]; 2], s: [f64; 1]) -> [Dyadic; 3] {
     let t14 = &t1 + &t11;
     let t15 = &t2 + &t12;
     [t13, t14, t15]
+}
+
+/// The exact coordinates of the point of type `Bpt` with the parameters `p`,
+/// `q`, `r`, `u` and `v`, given as the `F64x3` parameters `c` and the `f64`
+/// parameters `s` in the order of the declaration: its expression evaluated
+/// with exact dyadic numbers.
+///
+/// # Panics
+///
+/// Panics if an input is not finite.
+pub fn exact_bpt(c: [[f64; 3]; 3], s: [f64; 2]) -> [Dyadic; 3] {
+    let c = c.map(|point| point.map(Dyadic::from_f64));
+    let s = s.map(Dyadic::from_f64);
+    let t0 = c[2][0].clone();
+    let t1 = c[2][1].clone();
+    let t2 = c[2][2].clone();
+    let t3 = s[0].clone();
+    let t4 = c[0][0].clone();
+    let t5 = c[0][1].clone();
+    let t6 = c[0][2].clone();
+    let t7 = &t4 - &t0;
+    let t8 = &t5 - &t1;
+    let t9 = &t6 - &t2;
+    let t10 = &t3 * &t7;
+    let t11 = &t3 * &t8;
+    let t12 = &t3 * &t9;
+    let t13 = &t0 + &t10;
+    let t14 = &t1 + &t11;
+    let t15 = &t2 + &t12;
+    let t16 = s[1].clone();
+    let t17 = c[1][0].clone();
+    let t18 = c[1][1].clone();
+    let t19 = c[1][2].clone();
+    let t20 = &t17 - &t0;
+    let t21 = &t18 - &t1;
+    let t22 = &t19 - &t2;
+    let t23 = &t16 * &t20;
+    let t24 = &t16 * &t21;
+    let t25 = &t16 * &t22;
+    let t26 = &t13 + &t23;
+    let t27 = &t14 + &t24;
+    let t28 = &t15 + &t25;
+    [t26, t27, t28]
 }

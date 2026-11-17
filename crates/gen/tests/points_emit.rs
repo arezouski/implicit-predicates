@@ -208,9 +208,20 @@ fn the_explicit_type_wraps_its_coordinates_and_has_no_checks() {
             .contains("fn is_explicit(&self) -> bool {\ntrue\n}")
     );
     assert!(g.stages.contains(
-        "pub enum AnyPoint {\n/// A point of type [`Explicit`].\nExplicit(Explicit),\n}"
+        "#[non_exhaustive]\npub enum AnyPoint {\n/// A point of type [`Explicit`].\nExplicit(Explicit),\n}"
     ));
     assert!(g.checks.is_empty());
+}
+
+#[test]
+fn any_point_is_non_exhaustive_so_that_a_type_can_be_added() {
+    let g = generated(POINTS);
+    let at = g.stages.find("pub enum AnyPoint {").unwrap();
+    assert!(
+        g.stages[..at].ends_with("#[derive(Clone, Copy, Debug, PartialEq)]\n#[non_exhaustive]\n"),
+        "{}",
+        &g.stages[at.saturating_sub(120)..at]
+    );
 }
 
 #[test]

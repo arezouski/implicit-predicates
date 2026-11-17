@@ -38,6 +38,8 @@ pub fn why_exact_failed(point: &AnyPoint) -> Why {
         AnyPoint::Lnc(l) => lnc_in_exact_range(l.p(), l.q(), l.t()),
         // An explicit point fails only with a coordinate that is not finite.
         AnyPoint::Explicit(_) => point.approx().iter().all(|x| x.is_finite()),
+        // The sweeps that ask have no point of another type.
+        other => panic!("no model of the exact range of {other:?}"),
     };
     if in_range {
         Why::Unexplained

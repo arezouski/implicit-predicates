@@ -4,3 +4,9 @@ point Explicit(p: F64x3) = p;
 
 point Lnc(p: F64x3, q: F64x3, t: f64) = q + t*(p - q)
     where 0 <= t, t <= 1;
+
+// A point of type Bpt lies on the triangle with the corners p, q and r. It is
+// u p + v q + (1 - u - v) r, with the barycentric coordinates u, v and
+// 1 - u - v all at least zero.
+point Bpt(p: F64x3, q: F64x3, r: F64x3, u: f64, v: f64) = r + u*(p - r) + v*(q - r)
+    where 0 <= u, 0 <= v, u + v <= 1;

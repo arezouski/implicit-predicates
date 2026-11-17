@@ -231,7 +231,8 @@ fn the_stages_of_orient3d_decide_the_sets_they_are_benchmarked_on() {
 }
 
 /// The exact coordinates of a point, from its definition: an `Lnc` with
-/// parameters `p`, `q` and `t` is `q + t (p - q)`.
+/// parameters `p`, `q` and `t` is `q + t (p - q)`, and a `Bpt` with
+/// parameters `p`, `q`, `r`, `u` and `v` is `r + u (p - r) + v (q - r)`.
 fn exact_point(point: &AnyPoint) -> [Dyadic; 3] {
     match point {
         AnyPoint::Explicit(e) => e.approx().map(Dyadic::from_f64),
@@ -242,6 +243,18 @@ fn exact_point(point: &AnyPoint) -> [Dyadic; 3] {
                 &q + &(&t * &(&p - &q))
             })
         }
+        AnyPoint::Bpt(b) => {
+            let (u, v) = (Dyadic::from_f64(b.u()), Dyadic::from_f64(b.v()));
+            std::array::from_fn(|i| {
+                let (p, q, r) = (
+                    Dyadic::from_f64(b.p()[i]),
+                    Dyadic::from_f64(b.q()[i]),
+                    Dyadic::from_f64(b.r()[i]),
+                );
+                &(&r + &(&u * &(&p - &r))) + &(&v * &(&q - &r))
+            })
+        }
+        other => panic!("no definition of the exact coordinates of {other:?}"),
     }
 }
 

@@ -249,6 +249,119 @@ pub fn lnc_params() -> impl Strategy<Value = LncParams> {
     ]
 }
 
+/// The parents `p`, `q`, `r` and the parameters `u`, `v` of a point on a
+/// triangle, `r + u (p - r) + v (q - r)`.
+pub type BptParams = (Point3, Point3, Point3, f64, f64);
+
+/// A parameter in `[0, 1]`: its ends, the least subnormal, a value of every
+/// magnitude, or any value.
+fn unit_parameter() -> impl Strategy<Value = f64> {
+    prop_oneof![
+        prop::sample::select(vec![0.0, -0.0, 5e-324, 1.0, 1f64.next_down(), 0.5]),
+        leaf(-1074, -1, 53).prop_map(f64::abs),
+        0.0..=1.0f64,
+    ]
+}
+
+/// A parent coordinate of any magnitude, zeros and the extremes included.
+fn bpt_coordinate() -> BoxedStrategy<f64> {
+    prop_oneof![
+        any_finite(),
+        leaf(-1010, -990, 53),
+        leaf(990, 1010, 53),
+        prop::sample::select(vec![
+            0.0,
+            -0.0,
+            f64::MAX,
+            -f64::MAX,
+            f64::MIN_POSITIVE,
+            f64::from_bits(1),
+            1e-300,
+            1e300,
+        ]),
+    ]
+    .boxed()
+}
+
+/// Parameters at or very near the triangle: `u`, `v` in `[0, 1]`, with `u`
+/// replaced by `1 - v` when their sum in `f64` is above one. The exact sum
+/// may still be a little above one.
+fn inside() -> impl Strategy<Value = (f64, f64)> {
+    (unit_parameter(), unit_parameter())
+        .prop_map(|(u, v)| if u + v <= 1.0 { (u, v) } else { (1.0 - v, v) })
+}
+
+/// Parameters of every kind, inside or outside the triangle, all finite.
+fn any_parameters() -> impl Strategy<Value = (f64, f64)> {
+    prop_oneof![
+        inside(),
+        (unit_parameter(), unit_parameter()),
+        (any_finite(), any_finite()),
+        prop::sample::select(vec![
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (0.0, 1.0),
+            (0.5, 0.5),
+            (-0.0, -0.0),
+            (2f64.powi(-600), 2f64.powi(-600)),
+            (-1.5, 3.5e300),
+            (1e10, -1e10),
+        ]),
+    ]
+}
+
+/// Parents and parameters of points on a triangle, mixing with equal
+/// weights: generic parents with parameters inside the triangle; parents
+/// that share one to three coordinates; the corners and the edges;
+/// parameters outside the triangle; and coordinates of every magnitude.
+/// Every value is finite.
+pub fn bpt_params() -> impl Strategy<Value = BptParams> {
+    let generic = (point3(), point3(), point3(), inside());
+    let shared = (
+        point3(),
+        point3(),
+        point3(),
+        inside(),
+        [0u8..4, 0u8..4, 0u8..4],
+    )
+        .prop_map(|(p, mut q, mut r, (u, v), shared)| {
+            for k in 0..3 {
+                // 1: q_k = p_k; 2: r_k = p_k; 3: all three equal.
+                if shared[k] & 1 != 0 {
+                    q[k] = p[k];
+                }
+                if shared[k] & 2 != 0 {
+                    r[k] = p[k];
+                }
+            }
+            (p, q, r, (u, v))
+        });
+    let edges = (
+        point3(),
+        point3(),
+        point3(),
+        prop::sample::select(vec![
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (0.0, 1.0),
+            (0.5, 0.5),
+            (0.25, 0.75),
+            (1.0f64.next_down(), 0.0),
+            (0.0, 1.0f64.next_down()),
+        ]),
+    );
+    let outside = (point3(), point3(), point3(), any_parameters());
+    let extreme_point = || [bpt_coordinate(), bpt_coordinate(), bpt_coordinate()];
+    let extreme = (
+        extreme_point(),
+        extreme_point(),
+        extreme_point(),
+        any_parameters(),
+    );
+    prop_oneof![generic, shared, edges, outside, extreme]
+        .prop_map(|(p, q, r, (u, v))| (p, q, r, u, v))
+}
+
 /// Five points in space, the arguments of `insphere`.
 pub type Points5 = [Point3; 5];
 

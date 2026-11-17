@@ -2,6 +2,8 @@
 //! the error bound of each coordinate of a point on a line, its exact
 //! coordinates, the validation of the constructors, and `AnyPoint`.
 
+#[path = "common/bpt.rs"]
+mod bpt_by_hand;
 #[path = "generated/points.rs"]
 mod generated;
 
@@ -9,7 +11,7 @@ use implicit_predicates::{AnyPoint, Explicit, Lnc, Point, PointError, Scratch};
 use implicit_predicates_core::{ExactCoords, ExactError, Weight, eft, expansion};
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{
-    LncParams, Point3, assert_valid_expansion, config, lnc_params, point3, value,
+    LncParams, Point3, assert_valid_expansion, bpt_params, config, lnc_params, point3, value,
 };
 use proptest::prelude::*;
 
@@ -469,4 +471,20 @@ fn big_coordinates_of_the_other_types_and_of_any_point_are_reported() {
     assert_eq!(big_of(&broken, 4096).unwrap_err(), ExactError::OutOfRange);
     let tiny = lnc(([1.0, 2.0, 3.0], [0.0; 3], 0.5));
     assert!(matches!(big_of(&tiny, 1), Err(ExactError::Exhausted(_))));
+}
+
+proptest! {
+    #![proptest_config(config())]
+
+    /// The exact coordinates that the generator emits for the checks are
+    /// those of the definition of `Bpt` written by hand.
+    #[test]
+    fn the_generated_exact_coordinates_of_a_bpt_are_those_of_the_definition(
+        (p, q, r, u, v) in bpt_params()
+    ) {
+        prop_assert_eq!(
+            generated::exact_bpt([p, q, r], [u, v]),
+            bpt_by_hand::exact_bpt_by_hand(&p, &q, &r, u, v)
+        );
+    }
 }

@@ -2,8 +2,8 @@
 // To regenerate, run from the directory that the paths are relative to:
 // implicit-predicates-gen crates/implicit-predicates/predicates --stages crates/implicit-predicates/src/generated --checks crates/implicit-predicates/tests/generated
 
-//! The point types [`Explicit`], [`Lnc`], and [`AnyPoint`], which holds a point
-//! of any of them.
+//! The point types [`Explicit`], [`Lnc`], [`Bpt`], and [`AnyPoint`], which
+//! holds a point of any of them.
 
 use core::fmt;
 
@@ -356,13 +356,403 @@ impl Point for Lnc {
     }
 }
 
+/// A point of type `Bpt`, computed from `p`, `q`, `r`, `u` and `v`:
+///
+/// ```text
+/// x = r.x + u * (p.x - r.x) + v * (q.x - r.x)
+/// y = r.y + u * (p.y - r.y) + v * (q.y - r.y)
+/// z = r.z + u * (p.z - r.z) + v * (q.z - r.z)
+/// where 0 <= u, 0 <= v, u + v <= 1
+/// ```
+///
+/// The constructors compute the coordinates in `f64` with a bound on the error
+/// of each one, [`Point::approx`] and [`Point::err`]; [`Point::exact`] computes
+/// them exactly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bpt {
+    p: [f64; 3],
+    q: [f64; 3],
+    r: [f64; 3],
+    u: f64,
+    v: f64,
+    approx: [f64; 3],
+    err: [f64; 3],
+}
+
+impl Bpt {
+    /// The slack factor of the error bound: the smallest `f64` `S` with `S * (1 -
+    /// 2^-53)^8 >= 1`, where 8 is the number of roundings of the computation of the
+    /// error of a coordinate on its longest chain of operations.
+    const ERR_SLACK: f64 = 1.000000000000001;
+
+    /// The point of type `Bpt` with the parameters `p`, `q`, `r`, `u` and `v`.
+    ///
+    /// # Errors
+    ///
+    /// [`PointError::NonFinite`] if an input is NaN or infinite, and
+    /// [`PointError::ParamOutOfRange`] if the parameters do not satisfy the
+    /// conditions of the type.
+    pub fn new(p: [f64; 3], q: [f64; 3], r: [f64; 3], u: f64, v: f64) -> Result<Self, PointError> {
+        if !(p.iter().all(|x| x.is_finite())
+            && q.iter().all(|x| x.is_finite())
+            && r.iter().all(|x| x.is_finite())
+            && u.is_finite()
+            && v.is_finite())
+        {
+            return Err(PointError::NonFinite);
+        }
+        if u < 0.0 {
+            return Err(PointError::ParamOutOfRange);
+        }
+        if v < 0.0 {
+            return Err(PointError::ParamOutOfRange);
+        }
+        if !(u + v < 1.0 || (u + v == 1.0 && eft::two_sum(u, v).1 <= 0.0)) {
+            return Err(PointError::ParamOutOfRange);
+        }
+        Ok(Self::new_unchecked(p, q, r, u, v))
+    }
+
+    /// The point of type `Bpt` with the parameters `p`, `q`, `r`, `u` and `v`,
+    /// without checking them: any `f64` is accepted. A coordinate whose
+    /// approximation or error bound is not finite gets an error of `+∞`, and
+    /// [`Point::exact`] fails with [`ExactError::OutOfRange`] when an input is not
+    /// finite.
+    pub fn new_unchecked(p: [f64; 3], q: [f64; 3], r: [f64; 3], u: f64, v: f64) -> Self {
+        let (approx, err) = Self::evaluate([p, q, r], [u, v]);
+        Self {
+            p,
+            q,
+            r,
+            u,
+            v,
+            approx,
+            err,
+        }
+    }
+
+    /// The parameter `p`.
+    #[inline]
+    pub fn p(&self) -> &[f64; 3] {
+        &self.p
+    }
+
+    /// The parameter `q`.
+    #[inline]
+    pub fn q(&self) -> &[f64; 3] {
+        &self.q
+    }
+
+    /// The parameter `r`.
+    #[inline]
+    pub fn r(&self) -> &[f64; 3] {
+        &self.r
+    }
+
+    /// The parameter `u`.
+    #[inline]
+    pub fn u(&self) -> f64 {
+        self.u
+    }
+
+    /// The parameter `v`.
+    #[inline]
+    pub fn v(&self) -> f64 {
+        self.v
+    }
+
+    /// The coordinates in `f64` and the bounds on their errors, from the `F64x3`
+    /// parameters `c` and the `f64` parameters `s`, in the order of the
+    /// declaration.
+    fn evaluate(c: [[f64; 3]; 3], s: [f64; 2]) -> ([f64; 3], [f64; 3]) {
+        let v0 = c[2][0];
+        let v1 = c[2][1];
+        let v2 = c[2][2];
+        let v3 = s[0];
+        let v4 = c[0][0];
+        let v5 = c[0][1];
+        let v6 = c[0][2];
+        let v7 = v4 - v0;
+        let e7 = sum_rounding(v4, v0, v7);
+        let v8 = v5 - v1;
+        let e8 = sum_rounding(v5, v1, v8);
+        let v9 = v6 - v2;
+        let e9 = sum_rounding(v6, v2, v9);
+        let v10 = v3 * v7;
+        let e10 = covered_product(v3.abs(), e7) + product_rounding(v3, v7, v10);
+        let v11 = v3 * v8;
+        let e11 = covered_product(v3.abs(), e8) + product_rounding(v3, v8, v11);
+        let v12 = v3 * v9;
+        let e12 = covered_product(v3.abs(), e9) + product_rounding(v3, v9, v12);
+        let v13 = v0 + v10;
+        let e13 = e10 + sum_rounding(v0, v10, v13);
+        let v14 = v1 + v11;
+        let e14 = e11 + sum_rounding(v1, v11, v14);
+        let v15 = v2 + v12;
+        let e15 = e12 + sum_rounding(v2, v12, v15);
+        let v16 = s[1];
+        let v17 = c[1][0];
+        let v18 = c[1][1];
+        let v19 = c[1][2];
+        let v20 = v17 - v0;
+        let e20 = sum_rounding(v17, v0, v20);
+        let v21 = v18 - v1;
+        let e21 = sum_rounding(v18, v1, v21);
+        let v22 = v19 - v2;
+        let e22 = sum_rounding(v19, v2, v22);
+        let v23 = v16 * v20;
+        let e23 = covered_product(v16.abs(), e20) + product_rounding(v16, v20, v23);
+        let v24 = v16 * v21;
+        let e24 = covered_product(v16.abs(), e21) + product_rounding(v16, v21, v24);
+        let v25 = v16 * v22;
+        let e25 = covered_product(v16.abs(), e22) + product_rounding(v16, v22, v25);
+        let v26 = v13 + v23;
+        let e26 = e13 + e23 + sum_rounding(v13, v23, v26);
+        let v27 = v14 + v24;
+        let e27 = e14 + e24 + sum_rounding(v14, v24, v27);
+        let v28 = v15 + v25;
+        let e28 = e15 + e25 + sum_rounding(v15, v25, v28);
+        let approx = [v26, v27, v28];
+        let err = [
+            finish(approx[0], e26, Self::ERR_SLACK),
+            finish(approx[1], e27, Self::ERR_SLACK),
+            finish(approx[2], e28, Self::ERR_SLACK),
+        ];
+        (approx, err)
+    }
+
+    /// Writes the exact coordinates in `scratch`, from the `F64x3` parameters `c`
+    /// and the `f64` parameters `s`, in the order of the declaration. Fails with
+    /// [`ExactError::OutOfRange`] if an input is not finite, or an operand of a sum
+    /// of expansions reaches `2^1020`, or an operand of an exact product leaves the
+    /// product domain; on an error the arena is as it was.
+    fn write_exact(
+        scratch: &mut Scratch<'_>,
+        c: [[f64; 3]; 3],
+        s: [f64; 2],
+    ) -> Result<ExactCoords, ExactError> {
+        if !(c.iter().flatten().all(|x| x.is_finite()) && s.iter().all(|x| x.is_finite())) {
+            return Err(ExactError::OutOfRange);
+        }
+        let mark = scratch.mark();
+        let mut in_range = true;
+        let x = scratch.write(9, |out| {
+            let v0 = c[2][0];
+            let v3 = s[0];
+            let v4 = c[0][0];
+            if !(summable(&[v4]) && summable(&[v0])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x7 = [0.0; 2];
+            let n7 = expansion::from_two_diff(v4, v0, &mut x7);
+            if !(multipliable(&x7[..n7]) && multipliable(&[v3])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x10 = [0.0; 4];
+            let n10 = expansion::scale(&x7[..n7], v3, &mut x10);
+            if !(summable(&x10[..n10]) && summable(&[v0])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x13 = [0.0; 5];
+            let n13 = expansion::grow(&x10[..n10], v0, &mut x13);
+            let v16 = s[1];
+            let v17 = c[1][0];
+            if !(summable(&[v17]) && summable(&[v0])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x20 = [0.0; 2];
+            let n20 = expansion::from_two_diff(v17, v0, &mut x20);
+            if !(multipliable(&x20[..n20]) && multipliable(&[v16])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x23 = [0.0; 4];
+            let n23 = expansion::scale(&x20[..n20], v16, &mut x23);
+            if !(summable(&x13[..n13]) && summable(&x23[..n23])) {
+                in_range = false;
+                return 0;
+            }
+            expansion::sum(&x13[..n13], &x23[..n23], out)
+        });
+        let x = written(scratch, mark, x, in_range)?;
+        let y = scratch.write(9, |out| {
+            let v1 = c[2][1];
+            let v3 = s[0];
+            let v5 = c[0][1];
+            if !(summable(&[v5]) && summable(&[v1])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x8 = [0.0; 2];
+            let n8 = expansion::from_two_diff(v5, v1, &mut x8);
+            if !(multipliable(&x8[..n8]) && multipliable(&[v3])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x11 = [0.0; 4];
+            let n11 = expansion::scale(&x8[..n8], v3, &mut x11);
+            if !(summable(&x11[..n11]) && summable(&[v1])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x14 = [0.0; 5];
+            let n14 = expansion::grow(&x11[..n11], v1, &mut x14);
+            let v16 = s[1];
+            let v18 = c[1][1];
+            if !(summable(&[v18]) && summable(&[v1])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x21 = [0.0; 2];
+            let n21 = expansion::from_two_diff(v18, v1, &mut x21);
+            if !(multipliable(&x21[..n21]) && multipliable(&[v16])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x24 = [0.0; 4];
+            let n24 = expansion::scale(&x21[..n21], v16, &mut x24);
+            if !(summable(&x14[..n14]) && summable(&x24[..n24])) {
+                in_range = false;
+                return 0;
+            }
+            expansion::sum(&x14[..n14], &x24[..n24], out)
+        });
+        let y = written(scratch, mark, y, in_range)?;
+        let z = scratch.write(9, |out| {
+            let v2 = c[2][2];
+            let v3 = s[0];
+            let v6 = c[0][2];
+            if !(summable(&[v6]) && summable(&[v2])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x9 = [0.0; 2];
+            let n9 = expansion::from_two_diff(v6, v2, &mut x9);
+            if !(multipliable(&x9[..n9]) && multipliable(&[v3])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x12 = [0.0; 4];
+            let n12 = expansion::scale(&x9[..n9], v3, &mut x12);
+            if !(summable(&x12[..n12]) && summable(&[v2])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x15 = [0.0; 5];
+            let n15 = expansion::grow(&x12[..n12], v2, &mut x15);
+            let v16 = s[1];
+            let v19 = c[1][2];
+            if !(summable(&[v19]) && summable(&[v2])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x22 = [0.0; 2];
+            let n22 = expansion::from_two_diff(v19, v2, &mut x22);
+            if !(multipliable(&x22[..n22]) && multipliable(&[v16])) {
+                in_range = false;
+                return 0;
+            }
+            let mut x25 = [0.0; 4];
+            let n25 = expansion::scale(&x22[..n22], v16, &mut x25);
+            if !(summable(&x15[..n15]) && summable(&x25[..n25])) {
+                in_range = false;
+                return 0;
+            }
+            expansion::sum(&x15[..n15], &x25[..n25], out)
+        });
+        let z = written(scratch, mark, z, in_range)?;
+        Ok(ExactCoords {
+            x,
+            y,
+            z,
+            w: Weight::One,
+        })
+    }
+    /// Writes the exact coordinates as big integers in `scratch`, from the `F64x3`
+    /// parameters `c` and the `f64` parameters `s`, in the order of the
+    /// declaration. Fails with [`ExactError::OutOfRange`] if an input is not
+    /// finite, before it writes anything; on [`ExactError::Exhausted`] the arena
+    /// may hold partial results.
+    fn write_exact_big(
+        scratch: &mut Scratch<'_>,
+        c: [[f64; 3]; 3],
+        s: [f64; 2],
+    ) -> Result<BigCoords, ExactError> {
+        if !(c.iter().flatten().all(|x| x.is_finite()) && s.iter().all(|x| x.is_finite())) {
+            return Err(ExactError::OutOfRange);
+        }
+        let v0 = scratch.big_from_f64(c[2][0])?;
+        let v1 = scratch.big_from_f64(c[2][1])?;
+        let v2 = scratch.big_from_f64(c[2][2])?;
+        let v3 = scratch.big_from_f64(s[0])?;
+        let v4 = scratch.big_from_f64(c[0][0])?;
+        let v5 = scratch.big_from_f64(c[0][1])?;
+        let v6 = scratch.big_from_f64(c[0][2])?;
+        let v7 = scratch.big_sub(v4, v0)?;
+        let v8 = scratch.big_sub(v5, v1)?;
+        let v9 = scratch.big_sub(v6, v2)?;
+        let v10 = scratch.big_mul(v3, v7)?;
+        let v11 = scratch.big_mul(v3, v8)?;
+        let v12 = scratch.big_mul(v3, v9)?;
+        let v13 = scratch.big_add(v0, v10)?;
+        let v14 = scratch.big_add(v1, v11)?;
+        let v15 = scratch.big_add(v2, v12)?;
+        let v16 = scratch.big_from_f64(s[1])?;
+        let v17 = scratch.big_from_f64(c[1][0])?;
+        let v18 = scratch.big_from_f64(c[1][1])?;
+        let v19 = scratch.big_from_f64(c[1][2])?;
+        let v20 = scratch.big_sub(v17, v0)?;
+        let v21 = scratch.big_sub(v18, v1)?;
+        let v22 = scratch.big_sub(v19, v2)?;
+        let v23 = scratch.big_mul(v16, v20)?;
+        let v24 = scratch.big_mul(v16, v21)?;
+        let v25 = scratch.big_mul(v16, v22)?;
+        let v26 = scratch.big_add(v13, v23)?;
+        let v27 = scratch.big_add(v14, v24)?;
+        let v28 = scratch.big_add(v15, v25)?;
+        Ok(BigCoords::new(v26, v27, v28))
+    }
+}
+
+impl Point for Bpt {
+    #[inline]
+    fn approx(&self) -> &[f64; 3] {
+        &self.approx
+    }
+
+    #[inline]
+    fn err(&self) -> &[f64; 3] {
+        &self.err
+    }
+
+    #[inline]
+    fn is_explicit(&self) -> bool {
+        false
+    }
+
+    fn exact(&self, scratch: &mut Scratch<'_>) -> Result<ExactCoords, ExactError> {
+        Self::write_exact(scratch, [self.p, self.q, self.r], [self.u, self.v])
+    }
+
+    fn exact_big(&self, scratch: &mut Scratch<'_>) -> Result<BigCoords, ExactError> {
+        Self::write_exact_big(scratch, [self.p, self.q, self.r], [self.u, self.v])
+    }
+}
+
 /// A point of any of the types of this module.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum AnyPoint {
     /// A point of type [`Explicit`].
     Explicit(Explicit),
     /// A point of type [`Lnc`].
     Lnc(Lnc),
+    /// A point of type [`Bpt`].
+    Bpt(Bpt),
 }
 
 impl Point for AnyPoint {
@@ -371,6 +761,7 @@ impl Point for AnyPoint {
         match self {
             AnyPoint::Explicit(p) => p.approx(),
             AnyPoint::Lnc(p) => p.approx(),
+            AnyPoint::Bpt(p) => p.approx(),
         }
     }
 
@@ -379,6 +770,7 @@ impl Point for AnyPoint {
         match self {
             AnyPoint::Explicit(p) => p.err(),
             AnyPoint::Lnc(p) => p.err(),
+            AnyPoint::Bpt(p) => p.err(),
         }
     }
 
@@ -387,6 +779,7 @@ impl Point for AnyPoint {
         match self {
             AnyPoint::Explicit(p) => p.is_explicit(),
             AnyPoint::Lnc(p) => p.is_explicit(),
+            AnyPoint::Bpt(p) => p.is_explicit(),
         }
     }
 
@@ -395,6 +788,7 @@ impl Point for AnyPoint {
         match self {
             AnyPoint::Explicit(p) => p.exact(scratch),
             AnyPoint::Lnc(p) => p.exact(scratch),
+            AnyPoint::Bpt(p) => p.exact(scratch),
         }
     }
 
@@ -403,6 +797,7 @@ impl Point for AnyPoint {
         match self {
             AnyPoint::Explicit(p) => p.exact_big(scratch),
             AnyPoint::Lnc(p) => p.exact_big(scratch),
+            AnyPoint::Bpt(p) => p.exact_big(scratch),
         }
     }
 }
@@ -418,6 +813,13 @@ impl From<Lnc> for AnyPoint {
     #[inline]
     fn from(p: Lnc) -> Self {
         AnyPoint::Lnc(p)
+    }
+}
+
+impl From<Bpt> for AnyPoint {
+    #[inline]
+    fn from(p: Bpt) -> Self {
+        AnyPoint::Bpt(p)
     }
 }
 

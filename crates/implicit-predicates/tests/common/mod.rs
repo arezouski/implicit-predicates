@@ -21,6 +21,7 @@ pub mod point_checks;
 
 pub mod args;
 pub mod boxes;
+pub mod bpt;
 pub mod corpus_points;
 #[cfg(feature = "std")]
 pub mod corpus_sweep;

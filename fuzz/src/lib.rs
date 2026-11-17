@@ -305,7 +305,8 @@ pub fn decode(data: &[u8]) -> Option<Case> {
     })
 }
 
-/// The exact coordinates of a point: for an `Lnc`, `q + t * (p - q)`.
+/// The exact coordinates of a point: for an `Lnc`, `q + t * (p - q)`; for a
+/// `Bpt`, `r + u * (p - r) + v * (q - r)`.
 pub fn exact_coordinates(p: &AnyPoint) -> [Dyadic; 3] {
     match p {
         AnyPoint::Explicit(e) => e.approx().map(Dyadic::from_f64),
@@ -314,6 +315,16 @@ pub fn exact_coordinates(p: &AnyPoint) -> [Dyadic; 3] {
             let t = Dyadic::from_f64(l.t());
             std::array::from_fn(|i| &q[i] + &(&t * &(&p[i] - &q[i])))
         }
+        AnyPoint::Bpt(b) => {
+            let (p, q, r) = (
+                b.p().map(Dyadic::from_f64),
+                b.q().map(Dyadic::from_f64),
+                b.r().map(Dyadic::from_f64),
+            );
+            let (u, v) = (Dyadic::from_f64(b.u()), Dyadic::from_f64(b.v()));
+            std::array::from_fn(|i| &(&r[i] + &(&u * &(&p[i] - &r[i]))) + &(&v * &(&q[i] - &r[i])))
+        }
+        other => panic!("no definition of the exact coordinates of {other:?}"),
     }
 }
 
@@ -332,7 +343,7 @@ pub fn explicit_arrays(points: &[AnyPoint]) -> Option<Vec<[f64; 3]>> {
         .iter()
         .map(|p| match p {
             AnyPoint::Explicit(e) => Some(*e.approx()),
-            AnyPoint::Lnc(_) => None,
+            _ => None,
         })
         .collect()
 }
@@ -490,6 +501,7 @@ mod tests {
         match p {
             AnyPoint::Explicit(e) => e.approx().to_vec(),
             AnyPoint::Lnc(l) => [&l.p()[..], &l.q()[..], &[l.t()]].concat(),
+            other => panic!("no coordinates for {other:?}"),
         }
     }
 

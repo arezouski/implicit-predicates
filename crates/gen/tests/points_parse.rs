@@ -35,14 +35,19 @@ fn evaluate(graph: &PointGraph, axis: usize, values: &[[f64; 3]]) -> f64 {
 }
 
 #[test]
-fn the_fixture_has_an_explicit_and_a_linear_point() {
+fn the_fixture_has_an_explicit_a_linear_and_a_triangle_point() {
     let points = parse_points(POINTS, "points.pred").unwrap();
     let names: Vec<&str> = points.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(names, ["Explicit", "Lnc"]);
+    assert_eq!(names, ["Explicit", "Lnc", "Bpt"]);
     assert!(points[0].is_explicit());
     assert!(!points[1].is_explicit());
     assert_eq!((points[0].position.line, points[0].position.column), (3, 7));
+    assert!(!points[2].is_explicit());
     assert_eq!((points[1].position.line, points[1].position.column), (5, 7));
+    assert_eq!(
+        (points[2].position.line, points[2].position.column),
+        (11, 7)
+    );
 }
 
 #[test]
@@ -133,7 +138,7 @@ fn points_and_predicates_can_share_a_file() {
     let source = format!("{POINTS}\n{ORIENT3D}\npoint Again(p: F64x3) = p + p;\n");
     let points = parse_points(&source, "t.pred").unwrap();
     let names: Vec<&str> = points.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(names, ["Explicit", "Lnc", "Again"]);
+    assert_eq!(names, ["Explicit", "Lnc", "Bpt", "Again"]);
     let predicates = parse(&source, "t.pred").unwrap();
     assert_eq!(predicates.len(), 1);
     assert_eq!(predicates[0].name, "orient3d");
@@ -471,10 +476,10 @@ fn parse_points_rejects_what_it_would_otherwise_skip_over_a_point() {
 #[test]
 fn a_point_followed_by_a_predicate_gives_each_its_items() {
     let source = format!("{POINTS}\n{ORIENT3D}");
-    assert_eq!(parse_points(&source, "t.pred").unwrap().len(), 2);
+    assert_eq!(parse_points(&source, "t.pred").unwrap().len(), 3);
     assert_eq!(parse(&source, "t.pred").unwrap().len(), 1);
     let reversed = format!("{ORIENT3D}\n{POINTS}");
-    assert_eq!(parse_points(&reversed, "t.pred").unwrap().len(), 2);
+    assert_eq!(parse_points(&reversed, "t.pred").unwrap().len(), 3);
     assert_eq!(parse(&reversed, "t.pred").unwrap().len(), 1);
 }
 
@@ -491,5 +496,5 @@ fn a_function_without_a_body_cannot_swallow_a_point_before_a_later_body() {
 #[test]
 fn a_file_of_only_points_has_points_but_no_predicates() {
     assert_eq!(parse(POINTS, "t.pred").unwrap(), []);
-    assert_eq!(parse_points(POINTS, "t.pred").unwrap().len(), 2);
+    assert_eq!(parse_points(POINTS, "t.pred").unwrap().len(), 3);
 }
