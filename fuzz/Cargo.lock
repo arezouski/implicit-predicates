@@ -51,18 +51,18 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "implicit-predicates-core",
 ]
 
 [[package]]
 name = "implicit-predicates-core"
-version = "0.0.3"
+version = "0.0.4"
 
 [[package]]
 name = "implicit-predicates-corpus"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "implicit-predicates-oracle",
 ]
@@ -79,7 +79,7 @@ dependencies = [
 
 [[package]]
 name = "implicit-predicates-oracle"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "num-bigint",
 ]
