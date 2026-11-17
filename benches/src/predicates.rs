@@ -38,12 +38,15 @@ mod contenders;
 mod exact_loads;
 mod exact_signs;
 mod implicit;
+mod public_loads;
 
 pub use contenders::{
-    geometry_insphere_sign, geometry_orient3d_sign, implicit_predicates_insphere_any_sign,
+    geometry_insphere_sign, geometry_orient3d_sign, implicit_predicates_dihedral_sign_sign,
+    implicit_predicates_dot_sign_3d_sign, implicit_predicates_insphere_any_sign,
     implicit_predicates_insphere_public_sign, implicit_predicates_orient3d_any_sign,
-    implicit_predicates_orient3d_sign, naive_insphere, naive_insphere_sign, naive_orient3d,
-    naive_orient3d_sign, robust_insphere_sign, robust_orient3d_sign,
+    implicit_predicates_orient3d_sign, naive_dihedral_sign_sign, naive_dot_sign_3d_sign,
+    naive_insphere, naive_insphere_sign, naive_orient3d, naive_orient3d_sign, robust_insphere_sign,
+    robust_orient3d_sign,
 };
 pub use exact_loads::{
     BigIntegersStage, DIHEDRAL_SIGN, DOT_SIGN_3D, EXACT_LOAD_SEED, EXACT_LOAD_SIZE, ExactLoad,
@@ -59,6 +62,10 @@ pub use implicit::{
     any_explicit_sets, big_integers_stage, exact_sets, implicit_recorded_signs, implicit_set_name,
     implicit_sets, insphere_any_explicit_sets, insphere_big_integers_stage, insphere_exact_sets,
     insphere_implicit_sets, insphere_set_name,
+};
+pub use public_loads::{
+    Family, PUBLIC_LOAD_SEED, PublicLoad, dihedral_sign_public_loads, dot_sign_3d_public_loads,
+    insphere_bpt_loads, orient3d_bpt_loads,
 };
 
 /// Four points of `orient3d`.

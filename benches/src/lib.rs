@@ -15,7 +15,12 @@
 //!   exactly degenerate and recorded inputs, then `orient3d` on points of
 //!   type `AnyPoint`: the same explicit sets and the recorded calls with
 //!   implicit points, and last the whole chain of `insphere` on the
-//!   recorded calls with implicit points (group `insphere_implicit`).
+//!   recorded calls with implicit points (group `insphere_implicit`); the
+//!   public `dot_sign_3d` and `dihedral_sign` on built loads of explicit,
+//!   `Lnc`, `Bpt` and mixed points, random, nearly right and exactly right
+//!   (groups `dot_sign_3d`, `dot_sign_3d_implicit`, `dihedral_sign` and
+//!   `dihedral_sign_implicit`), and `orient3d` and `insphere` on `Bpt`
+//!   (groups `orient3d_bpt` and `insphere_bpt`).
 //!   Adding a contender is adding a row to the table in that file;
 //! - `orient3d_stages`: each stage of the generated `orient3d` alone, the
 //!   filter on the random set and the exact stages, the stage on big

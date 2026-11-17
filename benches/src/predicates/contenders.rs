@@ -3,8 +3,8 @@
 
 use std::cell::RefCell;
 
-use implicit_predicates::Scratch;
 use implicit_predicates::stages::insphere;
+use implicit_predicates::{AnyPoint, Point, Scratch};
 
 use super::{ImplicitInput, InSphereImplicitInput, InSphereInput, Orient3dInput};
 
@@ -162,4 +162,49 @@ pub fn naive_orient3d_sign(p: &Orient3dInput) -> i8 {
 #[must_use]
 pub fn naive_insphere_sign(p: &InSphereInput) -> i8 {
     sign(naive_insphere(p))
+}
+
+/// `dot_sign_3d` of `implicit-predicates`: the whole public chain.
+#[must_use]
+pub fn implicit_predicates_dot_sign_3d_sign(p: &[AnyPoint; 3]) -> i8 {
+    let [a, b, c] = p;
+    i8::from(implicit_predicates::dot_sign_3d(a, b, c))
+}
+
+/// `dihedral_sign` of `implicit-predicates`: the whole public chain.
+#[must_use]
+pub fn implicit_predicates_dihedral_sign_sign(p: &[AnyPoint; 4]) -> i8 {
+    let [a, b, c, d] = p;
+    i8::from(implicit_predicates::dihedral_sign(a, b, c, d))
+}
+
+fn cross(a: &[f64; 3], b: &[f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn dot(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// The sign of `(p - q) . (r - q)` in plain `f64` on the approximations of
+/// the points, with no error bound: it is wrong on nearly degenerate inputs,
+/// and meant for explicit points.
+#[must_use]
+pub fn naive_dot_sign_3d_sign(p: &[AnyPoint; 3]) -> i8 {
+    let [p, q, r] = p.each_ref().map(|x| x.approx());
+    sign(dot(&sub(p, q), &sub(r, q)))
+}
+
+/// The sign of `[(b - d) x (c - d)] . [(a - d) x (c - d)]` in plain `f64` on
+/// the approximations of the points, with no error bound: it is wrong on
+/// nearly degenerate inputs, and meant for explicit points.
+#[must_use]
+pub fn naive_dihedral_sign_sign(p: &[AnyPoint; 4]) -> i8 {
+    let [a, b, c, d] = p.each_ref().map(|x| x.approx());
+    let e = sub(c, d);
+    sign(dot(&cross(&sub(b, d), &e), &cross(&sub(a, d), &e)))
 }
