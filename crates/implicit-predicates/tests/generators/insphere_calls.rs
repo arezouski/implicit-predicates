@@ -2,8 +2,8 @@
 //! explicit point, a point on a line or a point on a triangle, from random,
 //! grid, cospherical and extreme points, and mesh-like ones: short dyadic
 //! parameters, points that share parents, and points on a vertex or an edge
-//! of a triangle whose corners are other arguments. Shared by the test binaries that declare it with
-//! `#[path]`; they also declare `common`.
+//! of a triangle whose corners are other arguments. Shared by the test
+//! binaries that declare it with `#[path]`; they also declare `common`.
 
 use implicit_predicates_test_support::{
     bpt_params, cospherical5, extreme_value, grid5, lnc_parameter, lnc_params, near_cospherical5,
@@ -16,6 +16,38 @@ use crate::common::insphere::Points5;
 
 /// The five arguments of a call.
 pub type Args5 = [Arg; 5];
+
+/// The kinds of the implicit points of one call: all on lines, all on
+/// triangles, or each on either.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Mix {
+    Lines,
+    Triangles,
+    Mixed,
+}
+
+impl Mix {
+    /// Whether an implicit point of the call is on a triangle; `coin` decides
+    /// it in a mixed call.
+    pub fn on_triangle(self, coin: bool) -> bool {
+        match self {
+            Mix::Lines => false,
+            Mix::Triangles => true,
+            Mix::Mixed => coin,
+        }
+    }
+}
+
+/// The kinds of the implicit points of a call: in half of the calls they are
+/// all on lines, as in every call recorded from a mesher, in a quarter all on
+/// triangles, and in the other quarter each on either.
+pub fn mix() -> impl Strategy<Value = Mix> {
+    prop_oneof![
+        2 => Just(Mix::Lines),
+        1 => Just(Mix::Triangles),
+        1 => Just(Mix::Mixed),
+    ]
+}
 
 /// `x` with each coordinate moved by `steps[k]` units in the last place.
 pub fn stepped(x: [f64; 3], steps: [i32; 3]) -> [f64; 3] {
@@ -63,11 +95,16 @@ pub fn triangle_for(x: [f64; 3]) -> BoxedStrategy<Arg> {
 
 /// The points `p` with none to five of them, at any positions, replaced by
 /// points on a line from [`line_for`] or on a triangle from
-/// [`triangle_for`].
+/// [`triangle_for`], as [`mix`] chooses.
 pub fn with_lines(p: Points5) -> impl Strategy<Value = Args5> {
+    let implicit = move |m: Mix, i: usize| match m {
+        Mix::Lines => line_for(p[i]),
+        Mix::Triangles => triangle_for(p[i]),
+        Mix::Mixed => prop_oneof![line_for(p[i]), triangle_for(p[i])].boxed(),
+    };
     (
         prop::sample::subsequence(vec![0usize, 1, 2, 3, 4], 0..=5),
-        [0usize, 1, 2, 3, 4].map(|i| prop_oneof![line_for(p[i]), triangle_for(p[i])].boxed()),
+        mix().prop_flat_map(move |m| [0usize, 1, 2, 3, 4].map(|i| implicit(m, i))),
     )
         .prop_map(move |(at, lines)| {
             std::array::from_fn(|i| {
@@ -98,29 +135,40 @@ fn short_parameter() -> impl Strategy<Value = f64> {
 /// Arguments from the points `p`, each explicit or an implicit point built
 /// on other points of the call, as a mesh does it: on a segment or a
 /// triangle with corners that are other arguments, with short dyadic
-/// parameters, at a vertex or on an edge of the triangle.
+/// parameters, at a vertex or on an edge of the triangle; [`mix`] chooses
+/// the kinds of the implicit points.
 pub fn mesh_args(p: Points5) -> impl Strategy<Value = Args5> {
     let corner = || 0usize..5;
-    let one = move || {
-        let choice = prop_oneof![
-            2 => Just(None),
-            1 => (corner(), corner(), short_parameter())
-                .prop_map(move |(a, b, t)| Some(Arg::Lnc(p[a], p[b], t))),
+    let line = move || {
+        (corner(), corner(), short_parameter())
+            .prop_map(move |(a, b, t)| Some(Arg::Lnc(p[a], p[b], t)))
+            .boxed()
+    };
+    let triangle = move || {
+        prop_oneof![
             3 => (corner(), corner(), corner(), short_parameter(), short_parameter())
                 .prop_map(move |(a, b, c, u, v)| Some(Arg::Bpt(p[a], p[b], p[c], u, v))),
             // At a vertex, or on an edge, of a triangle with another
             // argument as a corner.
             2 => (corner(), corner(), corner(), 0usize..6).prop_map(move |(a, b, c, kind)| {
-                let (u, v) = [(1.0, 0.0), (0.0, 1.0), (0.0, 0.0), (0.5, 0.5), (0.5, 0.0), (0.0, 0.5)][kind];
+                let (u, v) =
+                    [(1.0, 0.0), (0.0, 1.0), (0.0, 0.0), (0.5, 0.5), (0.5, 0.0), (0.0, 0.5)][kind];
                 Some(Arg::Bpt(p[a], p[b], p[c], u, v))
             }),
-        ];
-        // Boxed, so that the value trees of the five points stay small.
-        choice.boxed()
+        ]
+        .boxed()
     };
-    [one(), one(), one(), one(), one()].prop_map(move |implicit| {
-        std::array::from_fn(|i| implicit[i].unwrap_or(Arg::Explicit(p[i])))
-    })
+    // Boxed, so that the value trees of the five points stay small.
+    let one = move |m: Mix| match m {
+        Mix::Lines => prop_oneof![1 => Just(None), 3 => line()].boxed(),
+        Mix::Triangles => prop_oneof![1 => Just(None), 3 => triangle()].boxed(),
+        Mix::Mixed => prop_oneof![2 => Just(None), 1 => line(), 5 => triangle()].boxed(),
+    };
+    mix()
+        .prop_flat_map(move |m| [one(m), one(m), one(m), one(m), one(m)])
+        .prop_map(move |implicit| {
+            std::array::from_fn(|i| implicit[i].unwrap_or(Arg::Explicit(p[i])))
+        })
 }
 
 /// Calls on random points, points of a grid of small integers and points
@@ -170,25 +218,29 @@ pub fn triangle_at(p: &Points5, i: usize, j: usize, l: usize, kind: usize, t: f6
 
 /// Calls whose exact points lie on one sphere: from [`cospherical5`], with
 /// a point repeated in half of them, and none to five points replaced by
-/// points on a line from [`line_at`] or on a triangle from [`triangle_at`].
+/// points on a line from [`line_at`] or on a triangle from [`triangle_at`],
+/// as [`mix`] chooses.
 pub fn cospherical_args() -> impl Strategy<Value = Args5> {
     let line = || (0usize..5, 1usize..5, 0.0..=1.0f64).boxed();
+    let triangle = || (0usize..6, 1usize..5, any::<bool>()).boxed();
     (
-        cospherical5(),
-        prop::option::of((0usize..5, 1usize..5)),
-        prop::sample::subsequence(vec![0usize, 1, 2, 3, 4], 0..=5),
+        (cospherical5(), prop::option::of((0usize..5, 1usize..5))),
+        (
+            mix(),
+            prop::sample::subsequence(vec![0usize, 1, 2, 3, 4], 0..=5),
+        ),
         [line(), line(), line(), line(), line()],
-        [0usize..10, 0usize..10, 0usize..10, 0usize..10, 0usize..10],
-        [1usize..5, 1usize..5, 1usize..5, 1usize..5, 1usize..5],
+        [triangle(), triangle(), triangle(), triangle(), triangle()],
     )
-        .prop_map(|(mut p, repeated, at, lines, kinds, others)| {
+        .prop_map(|((mut p, repeated), (m, at), lines, triangles)| {
             if let Some((i, k)) = repeated {
                 p[(i + k) % 5] = p[i];
             }
             std::array::from_fn(|i| {
                 let (kind, k, t) = lines[i];
-                if at.contains(&i) && kinds[i] >= 5 {
-                    triangle_at(&p, i, (i + k) % 5, (i + others[i]) % 5, kinds[i] - 5, t)
+                let (triangle_kind, other, coin) = triangles[i];
+                if at.contains(&i) && m.on_triangle(coin) {
+                    triangle_at(&p, i, (i + k) % 5, (i + other) % 5, triangle_kind, t)
                 } else if at.contains(&i) {
                     line_at(&p, i, (i + k) % 5, kind, t)
                 } else {
@@ -199,8 +251,9 @@ pub fn cospherical_args() -> impl Strategy<Value = Args5> {
 }
 
 /// Five arguments whose inputs are values of one family of
-/// [`extreme_value`], with points on a line or on a triangle, in any number from none to
-/// five, at any positions; the others are explicit.
+/// [`extreme_value`], with points on a line or on a triangle, as [`mix`]
+/// chooses, in any number from none to five, at any positions; the others
+/// are explicit.
 pub fn extreme_args() -> impl Strategy<Value = Args5> {
     (0usize..5).prop_flat_map(|family| {
         let v = move || extreme_value(family);
@@ -214,17 +267,20 @@ pub fn extreme_args() -> impl Strategy<Value = Args5> {
             [line(), line(), line(), line(), line()],
             [triangle(), triangle(), triangle(), triangle(), triangle()],
             prop::sample::subsequence(vec![0usize, 1, 2, 3, 4], 0..=5),
-            [
-                any::<bool>(),
-                any::<bool>(),
-                any::<bool>(),
-                any::<bool>(),
-                any::<bool>(),
-            ],
+            (
+                mix(),
+                [
+                    any::<bool>(),
+                    any::<bool>(),
+                    any::<bool>(),
+                    any::<bool>(),
+                    any::<bool>(),
+                ],
+            ),
         )
-            .prop_map(|(explicit, lines, triangles, at, on_triangle)| {
+            .prop_map(|(explicit, lines, triangles, at, (m, coins))| {
                 std::array::from_fn(|i| {
-                    if at.contains(&i) && on_triangle[i] {
+                    if at.contains(&i) && m.on_triangle(coins[i]) {
                         let (p, q, r, u, v) = triangles[i];
                         Arg::Bpt(p, q, r, u, v)
                     } else if at.contains(&i) {

@@ -26,7 +26,7 @@ use implicit_predicates::stages::insphere::BIG_INTEGERS_EXPLICIT_ARENA;
 use implicit_predicates::{BigCoords, ExactCoords, ExactError, insphere, orient3d};
 use implicit_predicates::{Lnc, Point, Scratch, ScratchExhausted, Sign, insphere_in};
 #[cfg(feature = "std")]
-use implicit_predicates_test_support::{config, grid5, random5};
+use implicit_predicates_test_support::{config, grid5, random5, sample};
 #[cfg(feature = "std")]
 use insphere_calls::{Args5, calls, cospherical_args, extreme_args, line_at, triangle_at};
 #[cfg(feature = "std")]
@@ -408,4 +408,38 @@ panics! {
         "implicit-predicates: a point has a weight other than one, which the predicates do not support";
     no_exact_coordinates: NoCoordinates =>
         "implicit-predicates: a point has no exact coordinates: an input is not finite";
+}
+
+/// The calls of the property tests keep a large share of calls whose
+/// implicit points are all on lines, the configuration of every call recorded
+/// from a mesher, and a share of calls whose implicit points are all on
+/// triangles and of calls with both: [`insphere_calls::mix`] chooses the kind
+/// once per call.
+#[cfg(feature = "std")]
+#[test]
+fn the_calls_keep_a_large_share_of_calls_on_lines_only() {
+    let generators = [
+        ("calls", sample(calls(), 4000)),
+        ("cospherical", sample(cospherical_args(), 4000)),
+        ("extreme", sample(extreme_args(), 4000)),
+    ];
+    for (name, args) in generators {
+        let implicit: Vec<&Args5> = args
+            .iter()
+            .filter(|a| a.iter().any(|x| !matches!(x, Arg::Explicit(_))))
+            .collect();
+        let only = |kind: fn(&Arg) -> bool| {
+            implicit
+                .iter()
+                .filter(|a| a.iter().all(|x| matches!(x, Arg::Explicit(_)) || kind(x)))
+                .count()
+        };
+        let n = implicit.len();
+        let lines = only(|x| matches!(x, Arg::Lnc(..)));
+        let triangles = only(|x| matches!(x, Arg::Bpt(..)));
+        let both = n - lines - triangles;
+        assert!(5 * lines >= 2 * n, "{name}: {lines} of {n}");
+        assert!(5 * triangles >= n, "{name}: {triangles} of {n}");
+        assert!(10 * both >= n, "{name}: {both} of {n}");
+    }
 }
