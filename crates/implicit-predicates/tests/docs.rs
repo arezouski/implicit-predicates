@@ -4,7 +4,7 @@
 mod common;
 
 use common::pow2;
-use implicit_predicates::stages::{insphere, orient3d};
+use implicit_predicates::stages::{dihedral_sign, dot_sign_3d, insphere, orient3d};
 
 const LIB: &str = include_str!("../src/lib.rs");
 const CRATE_README: &str = include_str!("../README.md");
@@ -28,16 +28,23 @@ fn flat(text: &str) -> String {
 }
 
 fn thousands(words: usize) -> String {
-    format!("{},{:03} `f64`", words / 1000, words % 1000)
+    if words < 1000 {
+        format!("{words} `f64`")
+    } else {
+        format!("{},{:03} `f64`", words / 1000, words % 1000)
+    }
 }
 
-/// The arena that suffices for explicit points: `orient3d` in the rustdoc and
-/// the changelog, `insphere` in the same places; no README quotes either.
+/// The arena that suffices for explicit points: `orient3d`, `insphere`,
+/// `dot_sign_3d` and `dihedral_sign` in the rustdoc and the changelog; no
+/// README quotes any of them.
 #[test]
 fn the_arenas_that_suffice_for_explicit_points_are_the_constants() {
     for words in [
         orient3d::BIG_INTEGERS_EXPLICIT_ARENA,
         insphere::BIG_INTEGERS_EXPLICIT_ARENA,
+        dot_sign_3d::BIG_INTEGERS_EXPLICIT_ARENA,
+        dihedral_sign::BIG_INTEGERS_EXPLICIT_ARENA,
     ] {
         let documented = thousands(words);
         for (file, text) in [("lib.rs", LIB), ("CHANGELOG.md", CHANGELOG)] {
@@ -65,14 +72,45 @@ fn the_documented_range_without_allocation_is_the_translated_range() {
     assert!(flat(CHANGELOG).contains("`2^-188..=2^238`"));
 }
 
-/// The crate README opens with the example that the README at the root
-/// shows.
+/// The ranges of magnitudes of explicit coordinates for which `dot_sign_3d`
+/// and `dihedral_sign` decide on the stack, as the rustdoc and the changelog
+/// quote them. No README quotes either.
 #[test]
-fn the_root_readme_shows_the_example_of_the_crate_readme() {
-    fn first_example(text: &str) -> &str {
-        let start = text.find("```rust").expect("an example");
-        let end = start + text[start..].find("\n```\n").expect("its end");
-        &text[start..end]
+fn the_documented_ranges_on_the_stack_of_the_angle_predicates_are_the_constants() {
+    let (low, high) = dot_sign_3d::TRANSLATED_RANGE;
+    assert_eq!((low, high), (pow2(-428), pow2(478)));
+    let (low, high) = dihedral_sign::DIFFERENCES_RANGE;
+    assert_eq!((low, high), (pow2(-188), pow2(239)));
+    for (file, text) in [("lib.rs", LIB), ("CHANGELOG.md", CHANGELOG)] {
+        for range in ["`2^-428..=2^478`", "`2^-188..=2^239`"] {
+            assert!(flat(text).contains(range), "{file}: {range}");
+        }
     }
-    assert_eq!(first_example(ROOT_README), first_example(CRATE_README));
+    for (file, text) in [("README.md", ROOT_README), ("crate README", CRATE_README)] {
+        for range in ["2^-428", "2^478", "2^239"] {
+            assert!(!flat(text).contains(range), "{file}: {range}");
+        }
+    }
+}
+
+/// The crate README and the README at the root show the same examples, in
+/// the same order.
+#[test]
+fn the_root_readme_shows_the_examples_of_the_crate_readme() {
+    fn examples(text: &str) -> Vec<&str> {
+        let mut found = Vec::new();
+        let mut rest = text;
+        while let Some(start) = rest.find("```rust") {
+            let end = start + rest[start..].find("\n```\n").expect("its end");
+            found.push(&rest[start..end]);
+            rest = &rest[end..];
+        }
+        found
+    }
+    let (root, krate) = (examples(ROOT_README), examples(CRATE_README));
+    // The README of the crate also shows the examples of its own sections.
+    assert_eq!(root[0], krate[0]);
+    assert!(root.len() >= 2);
+    let angles = krate.iter().find(|e| e.contains("dihedral_sign"));
+    assert_eq!(Some(&root[1]), angles);
 }

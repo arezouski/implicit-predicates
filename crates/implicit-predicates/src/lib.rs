@@ -28,8 +28,8 @@
 //! `orient3d`, `dot_sign_3d` and `dihedral_sign`, exact stages on the
 //! expansions of that crate come in between and decide nearly all of the
 //! rest. The point types are generated from their declarations in the same
-//! way. Other kinds of implicit points (at the intersection of a line and a
-//! plane, or of three planes) are not implemented.
+//! way. Points at the intersection of a line and a plane, or of three planes,
+//! and points defined on other implicit points, are not implemented.
 //!
 //! A type of your own can implement [`Point`] too, but the predicates rely
 //! on its contract: an implementation that breaks it makes them return wrong
@@ -80,6 +80,20 @@
 //! use implicit_predicates::{Lnc, Point};
 //!
 //! let m = Lnc::new([0.3, 2.0, 5.0], [0.1, 2.0, 5.0], 0.5)?;
+//! assert!(m.err()[0] > 0.0);
+//! assert_eq!(&m.approx()[1..], &[2.0, 5.0]);
+//! assert_eq!(&m.err()[1..], &[0.0, 0.0]);
+//! # Ok::<(), implicit_predicates::PointError>(())
+//! ```
+//!
+//! A point of type [`Bpt`] is `u p + v q + (1 - u - v) r`, evaluated as
+//! `r + u (p - r) + v (q - r)`; here too the error bound is zero on the
+//! coordinates that the three corners share:
+//!
+//! ```
+//! use implicit_predicates::{Bpt, Point};
+//!
+//! let m = Bpt::new([0.3, 2.0, 5.0], [0.1, 2.0, 5.0], [0.2, 2.0, 5.0], 0.25, 0.5)?;
 //! assert!(m.err()[0] > 0.0);
 //! assert_eq!(&m.approx()[1..], &[2.0, 5.0]);
 //! assert_eq!(&m.err()[1..], &[0.0, 0.0]);
@@ -799,12 +813,12 @@ pub fn dot_sign_3d_in(
 /// not change the sign.
 ///
 /// A floating-point filter on the approximations of the points decides most
-/// calls. When it cannot, a second filter test that scales its bound by the
-/// extent of each axis tries; then explicit points go through an exact stage
-/// whose temporaries are on the stack, which decides when every difference
-/// of coordinates it takes is exact in `f64` and every nonzero one has a
+/// calls. When it cannot, explicit points go through an exact stage whose
+/// temporaries are on the stack, which decides when every difference of
+/// coordinates it takes is exact in `f64` and every nonzero one has a
 /// magnitude in `2^-188..=2^239`; such a call does not use the arena of the
-/// thread. Otherwise, and for every implicit point, stages that write the
+/// thread. Otherwise, and for every implicit point, a second filter test that
+/// scales its bound by the extent of each axis tries, then stages that write the
 /// exact coordinates of the points to an arena of the calling thread, which
 /// starts at 16,384 `f64` and grows on the heap when a call needs more; a
 /// last stage on big integers decides every input that remains. Unlike
@@ -873,9 +887,10 @@ pub fn dihedral_sign(a: &impl Point, b: &impl Point, c: &impl Point, d: &impl Po
 
 /// The exact stages of [`dihedral_sign`] for explicit points: the exact
 /// differences, on the stack, then, when they do not decide, in the arena of
-/// the thread, the second filter test and the stages on the exact coordinates
-/// and on big integers. There are no stages on expansions on the stack, since
-/// their temporaries do not fit there.
+/// the thread, the second filter test (the first of the stages run there,
+/// after the exact differences have run again) and the stages on the exact
+/// coordinates and on big integers. There are no stages on expansions on the
+/// stack, since their temporaries do not fit there.
 #[cfg(feature = "std")]
 #[cold]
 #[inline(never)]

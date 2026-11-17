@@ -81,11 +81,22 @@ parameter must be used by the expression. Brackets nest at most 32 deep.
 The optional `where` clause lists what the parameters must satisfy for the
 point to exist. Its comparisons are `<=` only, between sums of `f64`
 parameters and integers; `-`, `*` and `F64x3` parameters are refused there,
-and so is a comparison that names no parameter. For now, a comparison must
-also reduce, once the parameters on both sides cancel, to one parameter
-against an integer of magnitude at most `2^53`, such as `0 <= t` or
-`t <= 1`, so that it is checked exactly: the parser accepts `u + v <= 1`,
-but `generate_points` reports it as an error.
+and so is a comparison that names no parameter. A comparison must also
+reduce, once the parameters on both sides cancel, to one of two forms, so
+that it is checked exactly, and `generate_points` reports any other as an
+error:
+
+- one parameter against an integer of magnitude at most `2^53`, such as
+  `0 <= t` or `t <= 1`;
+- the sum of two distinct parameters, each with coefficient one, at most an
+  integer of magnitude at most `2^53`, such as `u + v <= 1`. The sum may
+  name them in either order. A sum at least an integer (`1 <= u + v`), a
+  sum of three parameters, a parameter against another (`u <= v`) and a
+  parameter counted twice (`u + u <= 1`) are errors.
+
+The emitted `new` checks a sum with the exact rounding error of the
+floating-point sum of the two parameters, so that no rounding admits a pair
+whose exact sum is above the integer.
 
 Names:
 
@@ -141,8 +152,8 @@ evaluated and emitted operation by operation.
   wraps `[f64; 3]`. Every other type also has one accessor per parameter and
   stores the coordinates computed in `f64` with a bound on the error of
   each one; `Point::exact` writes its exact coordinates as expansions;
-- `AnyPoint`, an enum with one variant per type, which implements `Point`
-  too.
+- `AnyPoint`, an enum with one variant per type, marked `#[non_exhaustive]`,
+  which implements `Point` too.
 
 The error bound is computed operation by operation, by a rule that
 `error_bound` documents together with the proof that the result is an upper

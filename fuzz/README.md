@@ -2,7 +2,8 @@
 
 Fuzz targets for the public predicates of `implicit-predicates`. Each one
 decodes the input into five points (explicit, `Lnc` or `Bpt`) and compares the
-result with the exact reference computed on dyadic numbers.
+result with the exact reference computed on dyadic numbers. `dot_sign_3d` uses
+the first three points and `dihedral_sign` the first four.
 
 | Target | What it checks |
 | --- | --- |

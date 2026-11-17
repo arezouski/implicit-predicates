@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Bpt`, in `implicit-predicates`: a point on a triangle, `u p + v q +
+  (1 - u - v) r` for three explicit points `p`, `q` and `r` and parameters
+  `u` and `v`, evaluated as `r + u (p - r) + v (q - r)`. `Bpt::new` rejects
+  inputs that are not finite and parameters that do not satisfy `0 <= u`,
+  `0 <= v` and `u + v <= 1`, the last one exactly, whatever the rounding of
+  the sum; `Bpt::new_unchecked` accepts any `f64`. It has an accessor per
+  parameter, keeps the error bound of each coordinate, which is zero on the
+  coordinates that the three corners share, and implements `Point`, so every
+  predicate takes it. `AnyPoint` has a variant `Bpt` and `From<Bpt>`.
+- `dot_sign_3d` and `dot_sign_3d_in`, in `implicit-predicates`: the exact
+  sign of `(p - q) . (r - q)`, over points of any type that implements
+  `Point`. The apex of the angle is the middle argument; the sign is
+  positive when the angle at `q` is acute, negative when it is obtuse, and
+  zero when it is right or when `p` or `r` is `q`. A floating-point filter
+  and a second test of it decide most calls; for explicit points, exact
+  stages on the stack come next, and they decide when every nonzero
+  coordinate has a magnitude in `2^-428..=2^478`, without using the arena of
+  the thread; the others go to stages on the exact coordinates and, last, to
+  a stage on big integers, so every call with finite inputs returns its
+  exact sign. `dot_sign_3d` needs the `std` feature and uses the arena of
+  the thread; `dot_sign_3d_in` takes the arena and works without `std`: 568
+  `f64` always suffice for three explicit points, and it returns
+  `ScratchExhausted` when the arena is too small. They panic on an input
+  that is not finite and on a point whose exact coordinates have a weight
+  other than `Weight::One`, like `orient3d`.
+- `dihedral_sign` and `dihedral_sign_in`: the exact sign of
+  `[(b - d) x (c - d)] . [(a - d) x (c - d)]`, the dot product of the normals
+  of the triangles `a, c, d` and `b, c, d` that share the edge `c, d`. It is
+  positive when the dihedral angle at that edge is acute, negative when it is
+  obtuse, and zero when it is right or when a triangle is degenerate. For
+  explicit points, a stage on the stack decides when every difference of
+  coordinates it takes is exact in `f64` and every nonzero one has a
+  magnitude in `2^-188..=2^239`, without using the arena of the thread;
+  otherwise the call goes through the arena, to stages on the exact
+  coordinates and, last, to a stage on big integers, so every call with
+  finite inputs returns its exact sign. `dihedral_sign` needs `std` and uses
+  the arena of the thread; `dihedral_sign_in` takes the arena and works
+  without `std`: 2,233 `f64` always suffice for the stage on big integers on
+  four explicit points, and points on a segment or a triangle need more. They
+  panic in the same cases as `dot_sign_3d`.
+- A `where` comparison on the sum of two parameters, `a + b <= k`, in the
+  point declarations of `implicit-predicates-gen`, for two distinct
+  parameters with coefficient one and an integer `k` of magnitude at most
+  `2^53`. The emitted `new` checks it exactly, with the rounding error of the
+  floating-point sum, instead of the generator reporting an error.
+- Two targets of the fuzzing package, `fuzz`, outside the workspace and not
+  published, for `dot_sign_3d` and `dihedral_sign`; its decoder also builds
+  `Bpt` points, and `point_check` covers them.
+
+### Changed
+
+- **Breaking:** `AnyPoint`, in `implicit-predicates`, has a new variant,
+  `Bpt`, and is `#[non_exhaustive]`: a `match` on it needs a wildcard arm.
+  The `AnyPoint` that `implicit-predicates-gen` emits for any list of point
+  declarations is `#[non_exhaustive]` too, so the same holds for the
+  modules that other crates generate, whether or not they declare a new
+  type: a `match` on their `AnyPoint` needs a wildcard arm.
+- `implicit-predicates-gen` accepts the sum of two parameters in a `where`
+  clause where it reported an error before; any other comparison that is not
+  one parameter against an integer is still an error, and its message now
+  names the accepted forms.
+
 ## [0.0.3] - 2026-11-15
 
 ### Added
