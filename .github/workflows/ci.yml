@@ -95,7 +95,7 @@ jobs:
       - run: cargo test --workspace --all-features --release
 
   fuzz:
-    timeout-minutes: 45
+    timeout-minutes: 60
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -105,7 +105,7 @@ jobs:
       - name: Run each target
         working-directory: fuzz
         run: |
-          for target in orient3d insphere insphere_sos point_check; do
+          for target in orient3d insphere insphere_sos dot_sign_3d dihedral_sign point_check; do
             cargo fuzz run "$target" -- -max_total_time=300
           done
       - name: Upload the crashing inputs

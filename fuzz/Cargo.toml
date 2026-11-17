@@ -46,6 +46,20 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "dot_sign_3d"
+path = "fuzz_targets/dot_sign_3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dihedral_sign"
+path = "fuzz_targets/dihedral_sign.rs"
+test = false
+doc = false
+bench = false
+
 [lints.rust]
 missing_docs = "warn"
 unsafe_code = "deny"
