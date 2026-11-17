@@ -12,12 +12,10 @@ mod common;
 
 use std::cell::Cell;
 
-#[cfg(feature = "std")]
-use common::odd_points::LIAR_AT;
-use common::odd_points::{Liar, Lie};
+use common::odd_points::{LIAR_AT, Liar, Lie};
 use implicit_predicates::{
-    BigCoords, ExactCoords, ExactError, Lnc, Point, Scratch, Sign, Violation, insphere_in,
-    insphere_sos_in, orient3d_in,
+    BigCoords, ExactCoords, ExactError, Lnc, Point, Scratch, Sign, Violation, dihedral_sign_in,
+    dot_sign_3d_in, insphere_in, insphere_sos_in, orient3d_in,
 };
 
 /// How every panic of a check of the contract begins.
@@ -80,6 +78,8 @@ impl Point for Arg<'_> {
 }
 
 /// A public predicate.
+// Without `std` every variant is an `_in` variant.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Predicate {
     #[cfg(feature = "std")]
@@ -91,6 +91,12 @@ enum Predicate {
     #[cfg(feature = "std")]
     InsphereSos,
     InsphereSosIn,
+    #[cfg(feature = "std")]
+    DotSign3d,
+    DotSign3dIn,
+    #[cfg(feature = "std")]
+    DihedralSign,
+    DihedralSignIn,
 }
 
 use Predicate::*;
@@ -106,6 +112,12 @@ const PREDICATES: &[Predicate] = &[
     #[cfg(feature = "std")]
     InsphereSos,
     InsphereSosIn,
+    #[cfg(feature = "std")]
+    DotSign3d,
+    DotSign3dIn,
+    #[cfg(feature = "std")]
+    DihedralSign,
+    DihedralSignIn,
 ];
 
 impl Predicate {
@@ -113,9 +125,36 @@ impl Predicate {
     fn points(self) -> usize {
         match self {
             #[cfg(feature = "std")]
-            Orient3d => 4,
-            Orient3dIn => 4,
+            Orient3d | DihedralSign => 4,
+            Orient3dIn | DihedralSignIn => 4,
+            #[cfg(feature = "std")]
+            DotSign3d => 3,
+            DotSign3dIn => 3,
             _ => 5,
+        }
+    }
+
+    /// The points of a right angle (for `dot_sign_3d`) or a right dihedral
+    /// angle (for `dihedral_sign`), none of them on an axis plane of the
+    /// others, as offsets from any one of them: the call places the liar at
+    /// `position` and the others at the same offsets from it.
+    fn right_angle(self) -> Option<Vec<[f64; 3]>> {
+        match self {
+            // `p - q = (1, 1, 1)` and `r - q = (1, -2, 1)` are perpendicular.
+            DotSign3dIn => Some(vec![[1.0, 1.0, 1.0], [0.0; 3], [1.0, -2.0, 1.0]]),
+            // The edge `d`, `c` is `(1, 1, 0)`, the normal of the triangle of
+            // `a` is `(0, 1, 2) x (1, 1, 0) = (-2, 2, -1)`, and `b` is on it.
+            DihedralSignIn => Some(vec![
+                [0.0, 1.0, 2.0],
+                [-2.0, 2.0, -1.0],
+                [1.0, 1.0, 0.0],
+                [0.0; 3],
+            ]),
+            #[cfg(feature = "std")]
+            DotSign3d => DotSign3dIn.right_angle(),
+            #[cfg(feature = "std")]
+            DihedralSign => DihedralSignIn.right_angle(),
+            _ => None,
         }
     }
 
@@ -126,12 +165,26 @@ impl Predicate {
     /// the others.
     fn call(self, lie: Lie, position: usize) -> Option<String> {
         let liar = Liar::new(lie);
-        let mut p: Vec<Arg> = if self.points() == 4 {
-            PLANE.iter().map(|&x| Arg::Explicit(x)).collect()
+        let p: Vec<Arg> = if let Some(offsets) = self.right_angle() {
+            let shift: [f64; 3] = std::array::from_fn(|k| LIAR_AT[k] - offsets[position][k]);
+            (0..offsets.len())
+                .map(|i| {
+                    if i == position {
+                        Arg::Liar(&liar)
+                    } else {
+                        Arg::Explicit(std::array::from_fn(|k| offsets[i][k] + shift[k]))
+                    }
+                })
+                .collect()
         } else {
-            SPHERE.iter().map(|&x| Arg::Explicit(x)).collect()
+            let mut p: Vec<Arg> = if self.points() == 4 {
+                PLANE.iter().map(|&x| Arg::Explicit(x)).collect()
+            } else {
+                SPHERE.iter().map(|&x| Arg::Explicit(x)).collect()
+            };
+            p.insert(position, Arg::Liar(&liar));
+            p
         };
-        p.insert(position, Arg::Liar(&liar));
         // The liar has the largest index, so that the first point left out
         // of a tie is another one.
         let mut idx = [0, 1, 2, 3, 4];
@@ -160,6 +213,20 @@ impl Predicate {
             InsphereSosIn => {
                 let _ = insphere_sos_in(&mut scratch, &p[0], &p[1], &p[2], &p[3], &p[4], idx);
             }
+            #[cfg(feature = "std")]
+            DotSign3d => {
+                implicit_predicates::dot_sign_3d(&p[0], &p[1], &p[2]);
+            }
+            DotSign3dIn => {
+                let _ = dot_sign_3d_in(&mut scratch, &p[0], &p[1], &p[2]);
+            }
+            #[cfg(feature = "std")]
+            DihedralSign => {
+                implicit_predicates::dihedral_sign(&p[0], &p[1], &p[2], &p[3]);
+            }
+            DihedralSignIn => {
+                let _ = dihedral_sign_in(&mut scratch, &p[0], &p[1], &p[2], &p[3]);
+            }
         })
     }
 
@@ -168,7 +235,7 @@ impl Predicate {
     fn checks_fully(self) -> bool {
         match self {
             #[cfg(feature = "std")]
-            Orient3d | Insphere | InsphereSos => true,
+            Orient3d | Insphere | InsphereSos | DotSign3d | DihedralSign => true,
             _ => false,
         }
     }
@@ -238,7 +305,7 @@ fn filter_cases() -> Vec<Case> {
 /// the complete check catches before them.
 fn exact_stage_cases() -> Vec<Case> {
     let expansions = |p: Predicate| match p {
-        Orient3dIn => Outcome::Panics,
+        Orient3dIn | DotSign3dIn | DihedralSignIn => Outcome::Panics,
         // In-sphere never asks for expansions.
         InsphereIn => Outcome::Quiet,
         // Only the ties ask for them, in `orient3d_in`.
@@ -262,9 +329,10 @@ fn exact_stage_cases() -> Vec<Case> {
         Case {
             lie: Lie::BigAboveTop,
             obligation: Violation::NonCanonicalBig { axis: 0 }.to_string(),
-            // The stage over spans of `orient3d_in` decides first.
+            // The stage over spans of the predicates that have one decides
+            // first.
             outcome: |p| {
-                if p == Orient3dIn {
+                if matches!(p, Orient3dIn | DotSign3dIn | DihedralSignIn) {
                     Outcome::Quiet
                 } else {
                     Outcome::Panics
