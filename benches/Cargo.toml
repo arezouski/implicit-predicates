@@ -15,11 +15,11 @@ workspace = true
 implicit-predicates = { path = "../crates/implicit-predicates" }
 implicit-predicates-core = { path = "../crates/core" }
 implicit-predicates-corpus = { path = "../corpus" }
+implicit-predicates-oracle = { path = "../crates/oracle" }
 geometry-predicates = "0.3.0"
 robust = "1.2.0"
 
 [dev-dependencies]
-implicit-predicates-oracle = { path = "../crates/oracle" }
 implicit-predicates-test-support = { path = "../test-support" }
 criterion = { version = "0.8", default-features = false }
 

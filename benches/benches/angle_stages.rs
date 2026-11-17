@@ -3,7 +3,11 @@
 //! `implicit_predicates_benches::predicates::dihedral_sign_loads`,
 //! `dot_sign_3d_loads` and `orient3d_exact_loads`: calls that the filter,
 //! and its second test when the predicate has one, do not decide, nearly
-//! degenerate and exactly degenerate, built on small meshes.
+//! degenerate and exactly degenerate, built on small meshes. Loads named
+//! `mesh` and `mesh_axis` have the short parameters and short exact
+//! coordinates of recorded mesher calls and are the representative ones;
+//! the others have random 53-bit parameters and are the adverse case (see
+//! the module documentation of the loads).
 //!
 //! For each load, five measurements:
 //!
@@ -17,7 +21,9 @@
 //!   `Point::exact_big` for every point, as the chain runs it;
 //! - `exact_stages_in`, the whole exact chain as emitted: the second test
 //!   of the filter when the predicate has one, then the stage on
-//!   expansions, then, when it declines, the stage on big integers.
+//!   expansions, then, when it declines, the stage on big integers. The
+//!   stage on expansions decides every call of these loads, so this row
+//!   never reaches the stage on big integers.
 //!
 //! As in the `orient3d_stages` benchmark, each measurement is one pass over
 //! a whole load, every stage is called through a function pointer, and the
@@ -70,6 +76,9 @@ fn measure<const N: usize>(
 ) {
     let predicate = stages.name;
     for load in loads {
+        if load.cases.is_empty() {
+            continue;
+        }
         let name = |stage: &str| format!("{predicate}/{stage}/{}", load.name);
         let cases = &load.cases;
 

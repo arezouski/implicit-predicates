@@ -9,16 +9,29 @@
 //! construction with one coordinate of one vertex moved by one to three
 //! ulps, whose exact sign is not zero but too small for the filter.
 //!
-//! The vertices are multiples of 2^-20 (`short`) or 2^-40 (`full`) below
-//! 2^9 in magnitude ([`PRECISIONS`]), so every construction below is exact
-//! in `f64`, and the parameters of the points
-//! are random multiples of 2^-53 in (0, 1), so that their exact coordinates
-//! have the full length an arbitrary point has. For `dihedral_sign` and
-//! `dot_sign_3d` the vertices are built in a frame where the planes are
-//! axis-aligned, then mapped by the integer matrix [`ROTATION`], whose rows
-//! are orthogonal and of the same length: it keeps right angles right, and
-//! the planes it gives are in general position. Its entries grow the
-//! coordinates by at most five times, below 2^13, still exact.
+//! Three kinds of load stand for different inputs ([`PRECISIONS`]):
+//!
+//! - `mesh` and `mesh_axis` are the representative ones. The calls a mesher
+//!   records have mostly short parameters (dyadic numbers `k / 2^b` of at
+//!   most 8 bits, midpoints among them) and exact coordinates of a single
+//!   component, because the vertices are short too and the parents of the
+//!   implicit points are shared. The vertices of `mesh` are multiples of
+//!   2^-20 mapped by [`ROTATION`]; those of `mesh_axis` are not rotated, so
+//!   the hinges, prisms and patches lie on planes parallel to the
+//!   coordinate planes and the vertices share axis values.
+//! - `short` and `full` are the adverse case: the parameters are random
+//!   multiples of 2^-53, so that the exact coordinates have the full length
+//!   an arbitrary point has (several components, long products). The
+//!   vertices are multiples of 2^-20 (`short`) or 2^-40 (`full`).
+//! - `wide` has random 53-bit vertices of magnitude 2^-20 to 2^9 as well.
+//!
+//! The vertices are below 2^9 in magnitude, so every construction below is
+//! exact in `f64`. For `dihedral_sign` and `dot_sign_3d` the vertices are
+//! built in a frame where the planes are axis-aligned, then mapped by the
+//! integer matrix [`ROTATION`], whose rows are orthogonal and of the same
+//! length: it keeps right angles right, and the planes it gives are in
+//! general position. Its entries grow the coordinates by at most five
+//! times, below 2^13, still exact.
 //!
 //! The names of the loads are `<points>/<precision>/<family>`.
 //!
@@ -38,12 +51,18 @@
 //!   triangles; each point is on one of them, so the four are coplanar. The
 //!   nearly degenerate family puts `d` on a seventh triangle whose last
 //!   vertex is a moved combination.
+//!
+//! With short parameters a nearly degenerate construction is often exactly
+//! degenerate (a repeated point, three points of one line); the loads keep
+//! only the calls whose exact sign, from the hand-written definition of
+//! [`super::exact_signs`], is not zero.
 
 use implicit_predicates::stages::{dihedral_sign, dot_sign_3d, orient3d};
 use implicit_predicates::{
     AnyPoint, BigCoords, Bpt, ExactCoords, Explicit, Lnc, Point, Scratch, ScratchExhausted, Sign,
 };
 
+use super::exact_signs::{exact_dihedral_sign, exact_dot_sign_3d, exact_orient3d_sign};
 use super::{combine, int_in, nudge, small_ulps};
 use crate::Rng;
 
@@ -69,6 +88,9 @@ pub struct ExactLoad<const N: usize> {
     pub degenerate: bool,
     /// The calls.
     pub cases: Vec<[AnyPoint; N]>,
+    /// The number of candidate calls built to keep `cases`: the others were
+    /// decided by the filters.
+    pub tried: usize,
 }
 
 /// The stages of a predicate of `N` points that the loads of this module
@@ -89,6 +111,9 @@ pub struct ExactStages<const N: usize> {
     /// The largest number of components of a coordinate the stage on
     /// expansions accepts, `MAX_COORD_COMPONENTS`.
     pub max_coord_components: usize,
+    /// The exact sign of a call, 1, 0 or -1, from the definition of the
+    /// predicate.
+    pub oracle: fn(&[AnyPoint; N]) -> i8,
 }
 
 /// A stage on expansions over arena spans of a predicate of `N` points.
@@ -110,6 +135,7 @@ pub const DIHEDRAL_SIGN: ExactStages<4> = ExactStages {
     big_integers_in: dihedral_sign::big_integers_in,
     exact_stages_in: |s, [a, b, c, d]| dihedral_sign::exact_stages_in(s, a, b, c, d),
     max_coord_components: dihedral_sign::MAX_COORD_COMPONENTS,
+    oracle: exact_dihedral_sign,
 };
 
 /// The stages of `dot_sign_3d`.
@@ -122,6 +148,7 @@ pub const DOT_SIGN_3D: ExactStages<3> = ExactStages {
     big_integers_in: dot_sign_3d::big_integers_in,
     exact_stages_in: |s, [p, q, r]| dot_sign_3d::exact_stages_in(s, p, q, r),
     max_coord_components: dot_sign_3d::MAX_COORD_COMPONENTS,
+    oracle: exact_dot_sign_3d,
 };
 
 /// The stages of `orient3d`, which has no second test of the filter.
@@ -132,6 +159,7 @@ pub const ORIENT3D: ExactStages<4> = ExactStages {
     big_integers_in: orient3d::big_integers_in,
     exact_stages_in: |s, [a, b, c, d]| orient3d::exact_stages_in(s, a, b, c, d),
     max_coord_components: orient3d::MAX_COORD_COMPONENTS,
+    oracle: exact_orient3d_sign,
 };
 
 impl<const N: usize> ExactStages<N> {
@@ -255,22 +283,48 @@ pub enum Precision {
     /// hinges and prisms are on planes parallel to the coordinate planes,
     /// and the patch on the plane `z = x`.
     Wide,
+    /// As `Grid(-20)`, mapped by [`ROTATION`], with the parameters of a
+    /// mesh: dyadic numbers of at most 8 significant bits, midpoints
+    /// included.
+    Mesh,
+    /// As [`Precision::Mesh`], without the rotation: the hinges, prisms
+    /// and patches are on planes parallel to the coordinate planes, so the
+    /// vertices share axis values.
+    MeshAxis,
 }
 
-/// The precisions of the vertices of the loads, with their names. The
-/// `short` vertices have at most 30 significant bits, as a mesh of `f32`
-/// coordinates scaled up; the `full` ones up to 53 after [`ROTATION`] or
-/// the affine combinations of the patch, the most that keeps the
-/// constructions exact; the `wide` ones are [`Precision::Wide`].
-pub const PRECISIONS: [(&str, Precision); 3] = [
+impl Precision {
+    /// Whether the parameters of the points are short dyadic numbers.
+    fn short_params(self) -> bool {
+        matches!(self, Precision::Mesh | Precision::MeshAxis)
+    }
+
+    /// Whether the vertices are mapped by [`ROTATION`].
+    fn rotated(self) -> bool {
+        matches!(self, Precision::Grid(_) | Precision::Mesh)
+    }
+}
+
+/// The precisions of the vertices and parameters of the loads, with their
+/// names. The `short` vertices have at most 30 significant bits, as a mesh
+/// of `f32` coordinates scaled up; the `full` ones up to 53 after
+/// [`ROTATION`] or the affine combinations of the patch, the most that keeps
+/// the constructions exact; the `wide` ones are [`Precision::Wide`]; `mesh`
+/// and `mesh_axis` are [`Precision::Mesh`] and [`Precision::MeshAxis`].
+/// Only those two have short parameters, the others have random 53-bit
+/// ones.
+pub const PRECISIONS: [(&str, Precision); 5] = [
     ("short", Precision::Grid(-20)),
     ("full", Precision::Grid(-40)),
     ("wide", Precision::Wide),
+    ("mesh", Precision::Mesh),
+    ("mesh_axis", Precision::MeshAxis),
 ];
 
 /// A random coordinate of a vertex.
-fn coord(rng: &mut Rng, precision: Precision) -> f64 {
+pub(super) fn coord(rng: &mut Rng, precision: Precision) -> f64 {
     match precision {
+        Precision::Mesh | Precision::MeshAxis => coord(rng, Precision::Grid(-20)),
         Precision::Grid(step) => {
             let half = 1i64 << (9 - step);
             int_in(rng, -half, half) as f64 * 2f64.powi(step)
@@ -285,7 +339,7 @@ fn coord(rng: &mut Rng, precision: Precision) -> f64 {
 }
 
 /// A random nonzero coordinate of a vertex.
-fn nonzero_coord(rng: &mut Rng, precision: Precision) -> f64 {
+pub(super) fn nonzero_coord(rng: &mut Rng, precision: Precision) -> f64 {
     loop {
         let x = coord(rng, precision);
         if x != 0.0 {
@@ -295,26 +349,30 @@ fn nonzero_coord(rng: &mut Rng, precision: Precision) -> f64 {
 }
 
 /// `p` mapped by [`ROTATION`] for a grid precision, `p` itself otherwise.
-fn frame(precision: Precision, p: [f64; 3]) -> [f64; 3] {
-    match precision {
-        Precision::Grid(_) => rotate(p),
-        Precision::Wide => p,
-    }
+pub(super) fn frame(precision: Precision, p: [f64; 3]) -> [f64; 3] {
+    if precision.rotated() { rotate(p) } else { p }
 }
 
 /// `p`, a vertex on a plane of normal `axis` before [`frame`], moved off it
 /// by a few ulps: any coordinate once rotated, `axis` otherwise.
 fn off_plane(rng: &mut Rng, precision: Precision, axis: usize, mut p: [f64; 3]) -> [f64; 3] {
-    let axis = match precision {
-        Precision::Grid(_) => int_in(rng, 0, 2) as usize,
-        Precision::Wide => axis,
+    let axis = if precision.rotated() {
+        int_in(rng, 0, 2) as usize
+    } else {
+        axis
     };
     p[axis] = nudge(p[axis], small_ulps(rng));
     p
 }
 
 /// A random nonzero multiple of 2^-53 in `(0, 1)`.
-fn param(rng: &mut Rng) -> f64 {
+pub(super) fn param(rng: &mut Rng, precision: Precision) -> f64 {
+    if precision.short_params() {
+        // k / 2^b with k odd: at most `b` significant bits.
+        let b = int_in(rng, 1, 8);
+        let k = 2 * int_in(rng, 0, (1 << (b - 1)) - 1) + 1;
+        return k as f64 * 2f64.powi(-(b as i32));
+    }
     loop {
         let t = (rng.next_u64() >> 11) as f64 * 2f64.powi(-53);
         if t > 0.0 {
@@ -329,24 +387,24 @@ fn rotate(p: [f64; 3]) -> [f64; 3] {
 }
 
 /// An explicit point.
-fn explicit(p: [f64; 3]) -> AnyPoint {
+pub(super) fn explicit(p: [f64; 3]) -> AnyPoint {
     AnyPoint::Explicit(Explicit::new(p).expect("finite coordinates"))
 }
 
 /// A point of the segment `p q` at a random parameter: `q + t (p - q)`.
-fn lnc(rng: &mut Rng, p: [f64; 3], q: [f64; 3]) -> AnyPoint {
-    AnyPoint::Lnc(Lnc::new(p, q, param(rng)).expect("a valid parameter"))
+pub(super) fn lnc(rng: &mut Rng, precision: Precision, p: [f64; 3], q: [f64; 3]) -> AnyPoint {
+    AnyPoint::Lnc(Lnc::new(p, q, param(rng, precision)).expect("a valid parameter"))
 }
 
 /// A point of the segment `p q` at the parameter `t`.
-fn lnc_at(p: [f64; 3], q: [f64; 3], t: f64) -> AnyPoint {
+pub(super) fn lnc_at(p: [f64; 3], q: [f64; 3], t: f64) -> AnyPoint {
     AnyPoint::Lnc(Lnc::new(p, q, t).expect("a valid parameter"))
 }
 
 /// Random parameters `(u, v)` of a point inside a triangle: `u + v < 1`.
-fn bpt_params(rng: &mut Rng) -> (f64, f64) {
+pub(super) fn bpt_params(rng: &mut Rng, precision: Precision) -> (f64, f64) {
     loop {
-        let (u, v) = (param(rng), param(rng));
+        let (u, v) = (param(rng, precision), param(rng, precision));
         // `1 - u` and `1 - v` are exact for multiples of 2^-53 in (0, 1).
         // A computed sum below one, or above it, is so exactly too.
         let (u, v) = if u + v > 1.0 {
@@ -362,21 +420,35 @@ fn bpt_params(rng: &mut Rng) -> (f64, f64) {
 
 /// A point of the triangle `p q r` at the parameters `(u, v)`: `r + u (p -
 /// r) + v (q - r)`.
-fn bpt_at(p: [f64; 3], q: [f64; 3], r: [f64; 3], (u, v): (f64, f64)) -> AnyPoint {
+pub(super) fn bpt_at(p: [f64; 3], q: [f64; 3], r: [f64; 3], (u, v): (f64, f64)) -> AnyPoint {
     AnyPoint::Bpt(Bpt::new(p, q, r, u, v).expect("valid parameters"))
 }
 
 /// A random point inside the triangle `p q r`.
-fn bpt(rng: &mut Rng, p: [f64; 3], q: [f64; 3], r: [f64; 3]) -> AnyPoint {
-    let uv = bpt_params(rng);
+pub(super) fn bpt(
+    rng: &mut Rng,
+    precision: Precision,
+    p: [f64; 3],
+    q: [f64; 3],
+    r: [f64; 3],
+) -> AnyPoint {
+    let uv = bpt_params(rng, precision);
     bpt_at(p, q, r, uv)
 }
 
 /// A random point of the edge `p q` of the triangle `p q r`, as a `Bpt`
 /// with `u + v = 1` exactly: `u p + (1 - u) q`.
-fn bpt_on_edge(rng: &mut Rng, p: [f64; 3], q: [f64; 3], r: [f64; 3]) -> AnyPoint {
-    // `1 - u` is exact for `u` in [1/2, 1).
-    let u = 0.5 + 0.5 * param(rng);
+pub(super) fn bpt_on_edge(
+    rng: &mut Rng,
+    precision: Precision,
+    p: [f64; 3],
+    q: [f64; 3],
+    r: [f64; 3],
+) -> AnyPoint {
+    // `1 - u` is exact for `u` in [1/2, 1), and `u` keeps the length of a
+    // short parameter.
+    let t = param(rng, precision);
+    let u = if t < 0.5 { 1.0 - t } else { t };
     let (u, v) = if rng.next_u64() & 1 == 0 {
         (u, 1.0 - u)
     } else {
@@ -388,7 +460,7 @@ fn bpt_on_edge(rng: &mut Rng, p: [f64; 3], q: [f64; 3], r: [f64; 3]) -> AnyPoint
 /// The vertices of a hinge: `e0` and `e1` on the shared edge, `w1` and `w2`
 /// the other vertices of its two triangles, on perpendicular planes; with
 /// `near`, `w2` moved by a few ulps.
-fn hinge(rng: &mut Rng, precision: Precision, near: bool) -> [[f64; 3]; 4] {
+pub(super) fn hinge(rng: &mut Rng, precision: Precision, near: bool) -> [[f64; 3]; 4] {
     // In the axis frame: the first plane is z = z0, the second y = y0.
     let mut c = || coord(rng, precision);
     let (y0, z0) = (c(), c());
@@ -406,7 +478,7 @@ fn hinge(rng: &mut Rng, precision: Precision, near: bool) -> [[f64; 3]; 4] {
 /// The vertices of a prism: a triangle `t`, its translate `x` by a vector
 /// normal to its plane, and `s`, the third vertex of a triangle `t1 t2 s`
 /// of the plane of `t`; with `near`, `s` moved by a few ulps.
-fn prism(
+pub(super) fn prism(
     rng: &mut Rng,
     precision: Precision,
     near: bool,
@@ -415,8 +487,8 @@ fn prism(
     // along x, by `x1` itself for wide coordinates, so that it is exact.
     let x1 = nonzero_coord(rng, precision);
     let shift = match precision {
-        Precision::Grid(_) => nonzero_coord(rng, precision),
         Precision::Wide => x1,
+        _ => nonzero_coord(rng, precision),
     };
     let base: [[f64; 3]; 3] =
         std::array::from_fn(|_| [x1, coord(rng, precision), coord(rng, precision)]);
@@ -441,16 +513,17 @@ const PATCH_TRIANGLES: [[usize; 3]; 4] = [[0, 1, 2], [1, 2, 3], [2, 3, 4], [3, 4
 /// nor the seventh, `v0 v1 v6`, is degenerate.
 const PATCH_WEIGHTS: [(f64, f64); 4] = [(1.0, 1.0), (2.0, 0.0), (1.0, 2.0), (2.0, 2.0)];
 
-/// The vertices of a planar patch, all exactly coplanar: for a grid
+/// The vertices of a planar patch, all exactly coplanar: for a grid or mesh
 /// precision, three random, then integer affine combinations of them with
 /// the weights of [`PATCH_WEIGHTS`]; for wide coordinates, seven random
-/// vertices of the plane `z = x` (on a plane `z = z0` the filter of
-/// `orient3d` decides the degenerate calls). With `near`, the seventh is moved off the
-/// plane by a few ulps.
+/// vertices of the plane `z = x`; for `MeshAxis`, seven random vertices of a
+/// plane `z = z0` (the filter of `orient3d` decides the degenerate calls on
+/// it, as the loads of that precision do not keep them). With `near`, the
+/// seventh is moved off the plane by a few ulps.
 fn patch(rng: &mut Rng, precision: Precision, near: bool) -> [[f64; 3]; 7] {
     let mut v = [[0.0; 3]; 7];
     match precision {
-        Precision::Grid(_) => {
+        Precision::Grid(_) | Precision::Mesh => {
             for p in &mut v[..3] {
                 *p = std::array::from_fn(|_| coord(rng, precision));
             }
@@ -462,6 +535,12 @@ fn patch(rng: &mut Rng, precision: Precision, near: bool) -> [[f64; 3]; 7] {
             for p in &mut v {
                 let x = coord(rng, precision);
                 *p = [x, coord(rng, precision), x];
+            }
+        }
+        Precision::MeshAxis => {
+            let z0 = coord(rng, precision);
+            for p in &mut v {
+                *p = [coord(rng, precision), coord(rng, precision), z0];
             }
         }
     }
@@ -481,25 +560,30 @@ fn patch_triangle(rng: &mut Rng, v: &[[f64; 3]; 7]) -> [[f64; 3]; 3] {
 const DIHEDRAL_KINDS: [&str; 3] = ["4_lnc", "4_bpt", "mixed"];
 
 /// One call of `dihedral_sign` of the kind `kind`.
-fn dihedral_case(rng: &mut Rng, precision: Precision, kind: &str, near: bool) -> [AnyPoint; 4] {
+pub(super) fn dihedral_case(
+    rng: &mut Rng,
+    precision: Precision,
+    kind: &str,
+    near: bool,
+) -> [AnyPoint; 4] {
     let [e0, e1, w1, w2] = hinge(rng, precision, near);
     match kind {
         "4_lnc" => [
-            lnc(rng, w2, e0),
-            lnc(rng, w1, e1),
-            lnc(rng, e0, e1),
-            lnc(rng, e0, e1),
+            lnc(rng, precision, w2, e0),
+            lnc(rng, precision, w1, e1),
+            lnc(rng, precision, e0, e1),
+            lnc(rng, precision, e0, e1),
         ],
         "4_bpt" => [
-            bpt(rng, e0, e1, w2),
-            bpt(rng, e0, e1, w1),
-            bpt_on_edge(rng, e0, e1, w1),
-            bpt_on_edge(rng, e1, e0, w2),
+            bpt(rng, precision, e0, e1, w2),
+            bpt(rng, precision, e0, e1, w1),
+            bpt_on_edge(rng, precision, e0, e1, w1),
+            bpt_on_edge(rng, precision, e1, e0, w2),
         ],
         "mixed" => [
-            lnc(rng, w2, e1),
-            bpt(rng, e0, e1, w1),
-            lnc(rng, e0, e1),
+            lnc(rng, precision, w2, e1),
+            bpt(rng, precision, e0, e1, w1),
+            lnc(rng, precision, e0, e1),
             explicit(e0),
         ],
         _ => unreachable!("no kind {kind}"),
@@ -510,20 +594,29 @@ fn dihedral_case(rng: &mut Rng, precision: Precision, kind: &str, near: bool) ->
 const DOT_KINDS: [&str; 2] = ["3_bpt", "3_lnc"];
 
 /// One call of `dot_sign_3d` of the kind `kind`.
-fn dot_case(rng: &mut Rng, precision: Precision, kind: &str, near: bool) -> [AnyPoint; 3] {
+pub(super) fn dot_case(
+    rng: &mut Rng,
+    precision: Precision,
+    kind: &str,
+    near: bool,
+) -> [AnyPoint; 3] {
     let ([t0, t1, t2], [x0, x1, x2], s) = prism(rng, precision, near);
     match kind {
         "3_bpt" => {
-            let uv = bpt_params(rng);
+            let uv = bpt_params(rng, precision);
             [
                 bpt_at(x0, x1, x2, uv),
                 bpt_at(t0, t1, t2, uv),
-                bpt(rng, t1, t2, s),
+                bpt(rng, precision, t1, t2, s),
             ]
         }
         "3_lnc" => {
-            let t = param(rng);
-            [lnc_at(x0, x1, t), lnc_at(t0, t1, t), lnc(rng, s, t2)]
+            let t = param(rng, precision);
+            [
+                lnc_at(x0, x1, t),
+                lnc_at(t0, t1, t),
+                lnc(rng, precision, s, t2),
+            ]
         }
         _ => unreachable!("no kind {kind}"),
     }
@@ -533,7 +626,12 @@ fn dot_case(rng: &mut Rng, precision: Precision, kind: &str, near: bool) -> [Any
 const ORIENT3D_KINDS: [&str; 2] = ["4_bpt", "4_lnc"];
 
 /// One call of `orient3d` of the kind `kind`.
-fn orient3d_case(rng: &mut Rng, precision: Precision, kind: &str, near: bool) -> [AnyPoint; 4] {
+pub(super) fn orient3d_case(
+    rng: &mut Rng,
+    precision: Precision,
+    kind: &str,
+    near: bool,
+) -> [AnyPoint; 4] {
     let v = patch(rng, precision, near);
     // The last point is on the triangle of the moved vertex in the nearly
     // degenerate family, and on a random triangle of the patch otherwise.
@@ -546,10 +644,10 @@ fn orient3d_case(rng: &mut Rng, precision: Precision, kind: &str, near: bool) ->
         "4_bpt" => {
             let [a, b, c] = std::array::from_fn(|_| {
                 let [p, q, r] = patch_triangle(rng, &v);
-                bpt(rng, p, q, r)
+                bpt(rng, precision, p, q, r)
             });
             let [p, q, r] = last;
-            [a, b, c, bpt(rng, p, q, r)]
+            [a, b, c, bpt(rng, precision, p, q, r)]
         }
         // The first three on the three edges of one triangle, so that they
         // are not collinear; the last on an edge with the last vertex, the
@@ -558,10 +656,10 @@ fn orient3d_case(rng: &mut Rng, precision: Precision, kind: &str, near: bool) ->
             let [p, q, r] = patch_triangle(rng, &v);
             let [s, _, u] = last;
             [
-                lnc(rng, p, q),
-                lnc(rng, q, r),
-                lnc(rng, r, p),
-                lnc(rng, u, s),
+                lnc(rng, precision, p, q),
+                lnc(rng, precision, q, r),
+                lnc(rng, precision, r, p),
+                lnc(rng, precision, u, s),
             ]
         }
         _ => unreachable!("no kind {kind}"),
@@ -570,7 +668,16 @@ fn orient3d_case(rng: &mut Rng, precision: Precision, kind: &str, near: bool) ->
 
 /// The loads of `stages` built by `case`, six for each kind: for each
 /// precision of [`PRECISIONS`], the nearly degenerate family, then the
-/// degenerate one, each with the next seed from `seed`. Only calls that the filters of `stages` do not decide are kept.
+/// degenerate one, each with the next seed from `seed`.
+///
+/// A call is kept only if the filters of `stages` do not decide it and,
+/// in the nearly degenerate family, its exact sign is not zero. A
+/// construction whose calls the filters all decide gives an empty load, as
+/// the degenerate `mesh_axis` calls of `orient3d`, whose points share one
+/// plane `z = z0` and whose error bound is zero on that axis; on the other
+/// loads the filters decide none of the calls the constructions give, but
+/// the check stays, so that a load never holds a call that is not left to
+/// the exact stages.
 fn loads<const N: usize>(
     stages: &ExactStages<N>,
     kinds: &[&str],
@@ -583,18 +690,17 @@ fn loads<const N: usize>(
             .into_iter()
             .flat_map(|precision| [(precision, true), (precision, false)]);
         for (f, ((name, precision), near)) in families.enumerate() {
-            let mut rng = Rng::new(seed + (6 * k + f) as u64);
+            let mut rng = Rng::new(seed + (10 * k + f) as u64);
             let mut cases = Vec::with_capacity(EXACT_LOAD_SIZE);
             let mut tries = 0;
-            while cases.len() < EXACT_LOAD_SIZE {
+            while cases.len() < EXACT_LOAD_SIZE && tries < 20 * EXACT_LOAD_SIZE {
                 tries += 1;
-                assert!(
-                    tries <= 100 * EXACT_LOAD_SIZE,
-                    "{} {kind}: the filters decide almost every call",
-                    stages.name
-                );
                 let c = case(&mut rng, precision, kind, near);
-                if (stages.filters)(&c).is_none() {
+                // With short parameters, points of the same edge or face are
+                // often the same point or collinear, which makes a nearly
+                // degenerate call exactly degenerate.
+                let zero = near && (stages.oracle)(&c) == 0;
+                if (stages.filters)(&c).is_none() && !zero {
                     cases.push(c);
                 }
             }
@@ -607,6 +713,7 @@ fn loads<const N: usize>(
                 name: format!("{kind}/{name}/{family}"),
                 degenerate: !near,
                 cases,
+                tried: tries,
             });
         }
     }

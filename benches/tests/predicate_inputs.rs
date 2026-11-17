@@ -13,13 +13,13 @@ use implicit_predicates::{AnyPoint, Point, Scratch, orient3d_in};
 use implicit_predicates_benches::predicates::{
     CORPUS_DIR, INSPHERE_MAX_IMPLICIT, ImplicitInput, InSphereImplicitInput, InSphereInput,
     InputSet, MAX_IMPLICIT, Orient3dInput, SET_SIZE, any_explicit_sets, big_integers_stage,
-    exact_sets, geometry_insphere_sign, geometry_orient3d_sign,
-    implicit_predicates_insphere_any_sign, implicit_predicates_insphere_public_sign,
-    implicit_predicates_orient3d_any_sign, implicit_predicates_orient3d_sign,
-    implicit_recorded_signs, implicit_set_name, implicit_sets, insphere_any_explicit_sets,
-    insphere_big_integers_stage, insphere_exact_sets, insphere_implicit_sets, insphere_set_name,
-    insphere_sets, naive_insphere, naive_orient3d, orient3d_sets, out_of_range_sets,
-    robust_insphere_sign, robust_orient3d_sign,
+    exact_insphere_sign, exact_orient3d_sign, exact_sets, geometry_insphere_sign,
+    geometry_orient3d_sign, implicit_predicates_insphere_any_sign,
+    implicit_predicates_insphere_public_sign, implicit_predicates_orient3d_any_sign,
+    implicit_predicates_orient3d_sign, implicit_recorded_signs, implicit_set_name, implicit_sets,
+    insphere_any_explicit_sets, insphere_big_integers_stage, insphere_exact_sets,
+    insphere_implicit_sets, insphere_set_name, insphere_sets, naive_insphere, naive_orient3d,
+    orient3d_sets, out_of_range_sets, robust_insphere_sign, robust_orient3d_sign,
 };
 use implicit_predicates_corpus::exact;
 use implicit_predicates_oracle::Dyadic;
@@ -230,37 +230,8 @@ fn the_stages_of_orient3d_decide_the_sets_they_are_benchmarked_on() {
     assert!(10 * count < len, "{count} of {len}");
 }
 
-/// The exact coordinates of a point, from its definition: an `Lnc` with
-/// parameters `p`, `q` and `t` is `q + t (p - q)`, and a `Bpt` with
-/// parameters `p`, `q`, `r`, `u` and `v` is `r + u (p - r) + v (q - r)`.
-fn exact_point(point: &AnyPoint) -> [Dyadic; 3] {
-    match point {
-        AnyPoint::Explicit(e) => e.approx().map(Dyadic::from_f64),
-        AnyPoint::Lnc(l) => {
-            let t = Dyadic::from_f64(l.t());
-            std::array::from_fn(|i| {
-                let (p, q) = (Dyadic::from_f64(l.p()[i]), Dyadic::from_f64(l.q()[i]));
-                &q + &(&t * &(&p - &q))
-            })
-        }
-        AnyPoint::Bpt(b) => {
-            let (u, v) = (Dyadic::from_f64(b.u()), Dyadic::from_f64(b.v()));
-            std::array::from_fn(|i| {
-                let (p, q, r) = (
-                    Dyadic::from_f64(b.p()[i]),
-                    Dyadic::from_f64(b.q()[i]),
-                    Dyadic::from_f64(b.r()[i]),
-                );
-                &(&r + &(&u * &(&p - &r))) + &(&v * &(&q - &r))
-            })
-        }
-        other => panic!("no definition of the exact coordinates of {other:?}"),
-    }
-}
-
 fn exact_orient3d_any(p: &ImplicitInput) -> i8 {
-    let [a, b, c, d] = p.each_ref().map(exact_point);
-    exact::orient3d(&a, &b, &c, &d)
+    exact_orient3d_sign(p)
 }
 
 fn implicit_count(p: &ImplicitInput) -> usize {
@@ -400,8 +371,7 @@ fn out_of_range_sets_are_decided_by_no_stage_on_the_stack_and_have_the_exact_sig
 }
 
 fn exact_insphere_any(p: &InSphereImplicitInput) -> i8 {
-    let [a, b, c, d, e] = p.each_ref().map(exact_point);
-    exact::insphere(&a, &b, &c, &d, &e)
+    exact_insphere_sign(p)
 }
 
 #[test]

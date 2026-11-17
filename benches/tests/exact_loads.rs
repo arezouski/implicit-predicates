@@ -1,6 +1,7 @@
 //! Checks the loads of the exact stages of `dihedral_sign`, `dot_sign_3d`
-//! and `orient3d` on implicit points against the exact signs of
-//! `implicit_predicates_corpus::exact`, and prints, in an ignored test, the
+//! and `orient3d` on implicit points against the exact signs of the
+//! hand-written oracle (`implicit_predicates_corpus::exact` on the
+//! definitions of the points), and prints, in an ignored test, the
 //! peak arena use of each stage on them.
 //!
 //! The peak arena use is deterministic, so it is measured here, not in the
@@ -12,51 +13,6 @@ use implicit_predicates_benches::predicates::{
     DIHEDRAL_SIGN, DOT_SIGN_3D, EXACT_LOAD_SIZE, ExactLoad, ExactStages, ORIENT3D,
     dihedral_sign_loads, dot_sign_3d_loads, orient3d_exact_loads,
 };
-use implicit_predicates_corpus::exact;
-use implicit_predicates_oracle::Dyadic;
-
-/// The exact coordinates of a point, from its definition: an `Lnc` with
-/// parameters `p`, `q` and `t` is `q + t (p - q)`, and a `Bpt` with
-/// parameters `p`, `q`, `r`, `u` and `v` is `r + u (p - r) + v (q - r)`.
-fn exact_point(point: &AnyPoint) -> [Dyadic; 3] {
-    match point {
-        AnyPoint::Explicit(e) => e.approx().map(Dyadic::from_f64),
-        AnyPoint::Lnc(l) => {
-            let t = Dyadic::from_f64(l.t());
-            std::array::from_fn(|i| {
-                let (p, q) = (Dyadic::from_f64(l.p()[i]), Dyadic::from_f64(l.q()[i]));
-                &q + &(&t * &(&p - &q))
-            })
-        }
-        AnyPoint::Bpt(b) => {
-            let (u, v) = (Dyadic::from_f64(b.u()), Dyadic::from_f64(b.v()));
-            std::array::from_fn(|i| {
-                let (p, q, r) = (
-                    Dyadic::from_f64(b.p()[i]),
-                    Dyadic::from_f64(b.q()[i]),
-                    Dyadic::from_f64(b.r()[i]),
-                );
-                &(&r + &(&u * &(&p - &r))) + &(&v * &(&q - &r))
-            })
-        }
-        other => panic!("no definition of the exact coordinates of {other:?}"),
-    }
-}
-
-fn exact_dihedral_sign(p: &[AnyPoint; 4]) -> i8 {
-    let [a, b, c, d] = p.each_ref().map(exact_point);
-    exact::dihedral_sign(&a, &b, &c, &d)
-}
-
-fn exact_dot_sign_3d(p: &[AnyPoint; 3]) -> i8 {
-    let [a, b, c] = p.each_ref().map(exact_point);
-    exact::dot_sign_3d(&a, &b, &c)
-}
-
-fn exact_orient3d(p: &[AnyPoint; 4]) -> i8 {
-    let [a, b, c, d] = p.each_ref().map(exact_point);
-    exact::orient3d(&a, &b, &c, &d)
-}
 
 /// The number of points of each type of a call: explicit, `Lnc`, `Bpt`.
 fn types<const N: usize>(case: &[AnyPoint; N]) -> [usize; 3] {
@@ -87,15 +43,18 @@ fn expected_types(name: &str) -> [usize; 3] {
 /// Checks every call of every load: its point types, that the filters do
 /// not decide it, its exact sign against the family, and that every stage
 /// that decides it has the exact sign.
-fn check<const N: usize>(
-    stages: &ExactStages<N>,
-    loads: &[ExactLoad<N>],
-    oracle: fn(&[AnyPoint; N]) -> i8,
-) {
+fn check<const N: usize>(stages: &ExactStages<N>, loads: &[ExactLoad<N>]) {
     let mut scratch = Scratch::growable(1 << 16);
     for load in loads {
         let what = format!("{} {}", stages.name, load.name);
-        assert_eq!(load.cases.len(), EXACT_LOAD_SIZE, "{what}");
+        if load.cases.len() < EXACT_LOAD_SIZE {
+            assert!(load.name.contains("mesh"), "{what}");
+            println!(
+                "{what}: only {} calls of {} tried",
+                load.cases.len(),
+                load.tried
+            );
+        }
         assert_eq!(
             load.degenerate,
             load.name.ends_with("/degenerate"),
@@ -105,7 +64,7 @@ fn check<const N: usize>(
         for case in &load.cases {
             assert_eq!(types(case), expected_types(&load.name), "{what}");
             assert_eq!((stages.filters)(case), None, "{what}: {case:?}");
-            let sign = oracle(case);
+            let sign = (stages.oracle)(case);
             if load.degenerate {
                 assert_eq!(sign, 0, "{what}: {case:?}");
             } else {
@@ -130,22 +89,22 @@ fn check<const N: usize>(
 #[test]
 fn the_dihedral_sign_loads_have_the_exact_sign_and_are_left_to_the_exact_stages() {
     let loads = dihedral_sign_loads();
-    assert_eq!(loads.len(), 18);
-    check(&DIHEDRAL_SIGN, &loads, exact_dihedral_sign);
+    assert_eq!(loads.len(), 30);
+    check(&DIHEDRAL_SIGN, &loads);
 }
 
 #[test]
 fn the_dot_sign_3d_loads_have_the_exact_sign_and_are_left_to_the_exact_stages() {
     let loads = dot_sign_3d_loads();
-    assert_eq!(loads.len(), 12);
-    check(&DOT_SIGN_3D, &loads, exact_dot_sign_3d);
+    assert_eq!(loads.len(), 20);
+    check(&DOT_SIGN_3D, &loads);
 }
 
 #[test]
 fn the_orient3d_loads_have_the_exact_sign_and_are_left_to_the_exact_stages() {
     let loads = orient3d_exact_loads();
-    assert_eq!(loads.len(), 12);
-    check(&ORIENT3D, &loads, exact_orient3d);
+    assert_eq!(loads.len(), 20);
+    check(&ORIENT3D, &loads);
 }
 
 #[test]
@@ -210,9 +169,17 @@ fn table<const N: usize>(stages: &ExactStages<N>, loads: &[ExactLoad<N>]) {
                 stages.chain(s, case);
             }));
         }
+        if load.cases.is_empty() {
+            println!(
+                "{:<14} {:<32} empty: the filters decide all {} calls tried",
+                stages.name, load.name, load.tried
+            );
+            continue;
+        }
         let fmt = |(m, p, x): (usize, usize, usize)| format!("{m:>6} {p:>6} {x:>6}");
+        let st = Stats::of(load.cases.iter());
         println!(
-            "{:<14} {:<32} {} | {} | {} | {} | {:>4} {:>4} {:>3}",
+            "{:<14} {:<32} {} | {} | {} | {} | {:>4} {:>4} {:>3} | kept {}/{} | {}",
             stages.name,
             load.name,
             fmt(summary(coords)),
@@ -222,6 +189,9 @@ fn table<const N: usize>(stages: &ExactStages<N>, loads: &[ExactLoad<N>]) {
             declined,
             long,
             longest,
+            load.cases.len(),
+            load.tried,
+            st.line(),
         );
     }
 }
@@ -249,4 +219,166 @@ fn peak_arena_use_of_the_exact_stages() {
     table(&DIHEDRAL_SIGN, &dihedral_sign_loads());
     table(&DOT_SIGN_3D, &dot_sign_3d_loads());
     table(&ORIENT3D, &orient3d_exact_loads());
+}
+
+/// Statistics of the calls of a set: the number of components of every
+/// exact coordinate of every implicit point, the calls in which two
+/// arguments share a parent (by value) or are equal, the parameters that
+/// are dyadic numbers of at most 8 significant bits, and the implicit
+/// points two of whose parents share a coordinate value on one axis.
+#[derive(Default)]
+struct Stats {
+    calls: usize,
+    components: Vec<usize>,
+    sharing: usize,
+    params: usize,
+    short_params: usize,
+    implicit: usize,
+    axis_sharing: usize,
+}
+
+/// The parents of a point: the point itself when explicit.
+fn parents(p: &AnyPoint) -> Vec<[f64; 3]> {
+    match p {
+        AnyPoint::Explicit(e) => vec![*e.approx()],
+        AnyPoint::Lnc(l) => vec![*l.p(), *l.q()],
+        AnyPoint::Bpt(b) => vec![*b.p(), *b.q(), *b.r()],
+        other => panic!("unexpected point {other:?}"),
+    }
+}
+
+/// The parameters of a point.
+fn params(p: &AnyPoint) -> Vec<f64> {
+    match p {
+        AnyPoint::Explicit(_) => vec![],
+        AnyPoint::Lnc(l) => vec![l.t()],
+        AnyPoint::Bpt(b) => vec![b.u(), b.v()],
+        other => panic!("unexpected point {other:?}"),
+    }
+}
+
+/// The number of significant bits of `x`, 0 for zero.
+fn significant_bits(x: f64) -> u32 {
+    if x == 0.0 {
+        return 0;
+    }
+    let bits = x.to_bits() & ((1u64 << 52) - 1) | (1u64 << 52);
+    53 - bits.trailing_zeros()
+}
+
+impl Stats {
+    fn of<'a, const N: usize>(cases: impl Iterator<Item = &'a [AnyPoint; N]>) -> Stats {
+        let mut st = Stats::default();
+        let mut scratch = Scratch::growable(1 << 12);
+        for case in cases {
+            st.calls += 1;
+            let ps: Vec<Vec<[f64; 3]>> = case.iter().map(parents).collect();
+            let shares = (0..N).any(|i| {
+                (i + 1..N).any(|j| case[i] == case[j] || ps[i].iter().any(|a| ps[j].contains(a)))
+            });
+            st.sharing += usize::from(shares);
+            for point in case {
+                for t in params(point) {
+                    st.params += 1;
+                    st.short_params += usize::from(significant_bits(t) <= 8);
+                }
+                if point.is_explicit() {
+                    continue;
+                }
+                st.implicit += 1;
+                let pp = parents(point);
+                let axis = (0..3).any(|k| {
+                    (0..pp.len()).any(|i| (i + 1..pp.len()).any(|j| pp[i][k] == pp[j][k]))
+                });
+                st.axis_sharing += usize::from(axis);
+                let mark = scratch.mark();
+                let q = point.exact(&mut scratch).expect("exact coordinates");
+                st.components.extend([q.x.len(), q.y.len(), q.z.len()]);
+                scratch.reset(mark);
+            }
+        }
+        st
+    }
+
+    fn line(&self) -> String {
+        let pct = |a: usize, b: usize| {
+            if b == 0 {
+                0.0
+            } else {
+                100.0 * a as f64 / b as f64
+            }
+        };
+        let (m, p, x) = summary(self.components.clone());
+        let mut hist = [0usize; 10];
+        for &c in &self.components {
+            hist[c.min(9)] += 1;
+        }
+        format!(
+            "comp {m}/{p}/{x} hist(0..9+) {hist:?} | share {:.0}% | short params {:.0}% | axis {:.0}%",
+            pct(self.sharing, self.calls),
+            pct(self.short_params, self.params),
+            pct(self.axis_sharing, self.implicit),
+        )
+    }
+}
+
+#[allow(dead_code)]
+#[path = "../../crates/implicit-predicates/tests/common/corpus_points.rs"]
+mod corpus_points;
+
+#[test]
+#[ignore = "prints statistics; run with --ignored --nocapture"]
+fn statistics_of_the_recorded_orient3d_calls() {
+    use implicit_predicates::stages::orient3d;
+    use implicit_predicates_corpus::{Corpus, Predicate};
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../corpus/samples");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .expect("the samples")
+        .map(|e| e.expect("an entry").path())
+        .filter(|p| p.extension().is_some_and(|e| e == "ipcorpus"))
+        .collect();
+    files.sort();
+    let mut by_count: Vec<Vec<[AnyPoint; 4]>> = vec![Vec::new(); 5];
+    let mut all_stored = 0;
+    for path in &files {
+        let corpus = Corpus::read(std::io::BufReader::new(
+            std::fs::File::open(path).expect("open"),
+        ))
+        .expect("a valid corpus");
+        let mapped = corpus_points::points(&corpus);
+        for call in &corpus.calls {
+            if call.predicate != Predicate::Orient3d {
+                continue;
+            }
+            let k = corpus_points::implicit_count(&corpus, call);
+            if k == 0 {
+                continue;
+            }
+            all_stored += 1;
+            let Some(p) = corpus_points::call_points::<4>(&mapped, call) else {
+                continue;
+            };
+            let [a, b, c, d] = &p;
+            if orient3d::filter_points(a, b, c, d).is_none() {
+                by_count[k].push(p);
+            }
+        }
+    }
+    println!(
+        "{} files, {all_stored} stored orient3d calls with implicit points (unweighted)",
+        files.len()
+    );
+    for (k, calls) in by_count.iter().enumerate().skip(1) {
+        println!(
+            "recorded orient3d {k}_implicit undecided by the filter: {} calls | {}",
+            calls.len(),
+            Stats::of(calls.iter()).line()
+        );
+    }
+    let all: Vec<_> = by_count.iter().flatten().copied().collect();
+    println!(
+        "recorded orient3d all undecided: {} calls | {}",
+        all.len(),
+        Stats::of(all.iter()).line()
+    );
 }

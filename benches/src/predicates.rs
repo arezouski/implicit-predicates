@@ -36,6 +36,7 @@ use crate::Rng;
 
 mod contenders;
 mod exact_loads;
+mod exact_signs;
 mod implicit;
 
 pub use contenders::{
@@ -48,6 +49,9 @@ pub use exact_loads::{
     BigIntegersStage, DIHEDRAL_SIGN, DOT_SIGN_3D, EXACT_LOAD_SEED, EXACT_LOAD_SIZE, ExactLoad,
     ExactStages, ExpansionsStage, ORIENT3D, PRECISIONS, Precision, ROTATION, dihedral_sign_loads,
     dot_sign_3d_loads, orient3d_exact_loads,
+};
+pub use exact_signs::{
+    exact_dihedral_sign, exact_dot_sign_3d, exact_insphere_sign, exact_orient3d_sign, exact_point,
 };
 pub use implicit::{
     CORPUS_DIR, EXACT_SEED, ExactSet, IMPLICIT_SEED, INSPHERE_EXACT_SEED, INSPHERE_IMPLICIT_SEED,
