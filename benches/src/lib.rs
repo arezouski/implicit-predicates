@@ -30,7 +30,12 @@
 //!   calls with implicit points, and, on the recorded calls that the filter
 //!   does not decide, the second test of the filter, `filter_axes`, and the
 //!   stage on big integers, the only exact stage of `insphere`, alone and
-//!   as `exact_stages_in` runs them.
+//!   as `exact_stages_in` runs them;
+//! - `angle_stages`: the exact stages of `dihedral_sign`, `dot_sign_3d` and
+//!   `orient3d` on implicit points, on built loads that the filter does not
+//!   decide: the stage on expansions over arena spans and the stage on big
+//!   integers, each alone and with the computation of the coordinates of
+//!   the points, and the whole exact chain.
 //!
 //! This library holds the deterministic input builders and the seeds they
 //! use, and the determinant routine, shared by the benchmarks and by the

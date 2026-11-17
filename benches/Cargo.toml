@@ -46,3 +46,7 @@ harness = false
 [[bench]]
 name = "insphere_stages"
 harness = false
+
+[[bench]]
+name = "angle_stages"
+harness = false

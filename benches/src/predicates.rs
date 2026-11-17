@@ -35,6 +35,7 @@ use implicit_predicates_corpus::{Call, Corpus, PointDef, Predicate};
 use crate::Rng;
 
 mod contenders;
+mod exact_loads;
 mod implicit;
 
 pub use contenders::{
@@ -42,6 +43,11 @@ pub use contenders::{
     implicit_predicates_insphere_public_sign, implicit_predicates_orient3d_any_sign,
     implicit_predicates_orient3d_sign, naive_insphere, naive_insphere_sign, naive_orient3d,
     naive_orient3d_sign, robust_insphere_sign, robust_orient3d_sign,
+};
+pub use exact_loads::{
+    BigIntegersStage, DIHEDRAL_SIGN, DOT_SIGN_3D, EXACT_LOAD_SEED, EXACT_LOAD_SIZE, ExactLoad,
+    ExactStages, ExpansionsStage, ORIENT3D, PRECISIONS, Precision, ROTATION, dihedral_sign_loads,
+    dot_sign_3d_loads, orient3d_exact_loads,
 };
 pub use implicit::{
     CORPUS_DIR, EXACT_SEED, ExactSet, IMPLICIT_SEED, INSPHERE_EXACT_SEED, INSPHERE_IMPLICIT_SEED,
