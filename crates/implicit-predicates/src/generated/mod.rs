@@ -2,6 +2,8 @@
 //! `implicit-predicates-gen` from the definitions in `predicates/`. Only
 //! this file is written by hand.
 
+pub mod dihedral_sign;
+pub mod dot_sign_3d;
 pub mod insphere;
 pub mod orient3d;
 pub mod points;

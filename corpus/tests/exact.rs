@@ -4,7 +4,8 @@ mod common;
 
 use common::{call, corpus_from};
 use implicit_predicates_corpus::exact::{
-    REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR, coordinates, insphere, orient3d,
+    REFERENCE_INSPHERE_FACTOR, REFERENCE_ORIENT3D_FACTOR, coordinates, dihedral_sign, dot_sign_3d,
+    insphere, orient3d,
 };
 use implicit_predicates_corpus::verify::{Mismatch, verify, verify_with};
 use implicit_predicates_corpus::{PointDef, Predicate, Stage};
@@ -58,6 +59,146 @@ fn insphere_of_the_origin_in_a_unit_tetrahedron() {
     assert_eq!(insphere(&b, &a, &c, &d, &e), -1);
     // A point far outside the sphere has the opposite sign.
     assert_eq!(insphere(&a, &b, &c, &d, &pt(5.0, 5.0, 5.0)), -1);
+}
+
+#[test]
+fn dot_sign_3d_of_right_acute_and_obtuse_angles() {
+    let (p, q) = (pt(1.0, 0.0, 0.0), pt(0.0, 0.0, 0.0));
+    assert_eq!(dot_sign_3d(&p, &q, &pt(0.0, 1.0, 0.0)), 0);
+    assert_eq!(dot_sign_3d(&p, &q, &pt(1.0, 1.0, 0.0)), 1);
+    assert_eq!(dot_sign_3d(&p, &q, &pt(-1.0, 1.0, 0.0)), -1);
+    // The apex is the middle argument: at p, the angle between q and r =
+    // (-1, 1, 0) is acute, (q - p) . (r - p) = (-1, 0, 0) . (-2, 1, 0) = 2.
+    assert_eq!(dot_sign_3d(&q, &p, &pt(-1.0, 1.0, 0.0)), 1);
+    // A side of length zero.
+    assert_eq!(dot_sign_3d(&q, &q, &p), 0);
+    assert_eq!(dot_sign_3d(&p, &q, &q), 0);
+    // Away from the origin: (3, 5, -2) - (2, 3, 1) = (1, 2, -3) and
+    // (0, 4, 2) - (2, 3, 1) = (-2, 1, 1), whose dot product is -3.
+    let (p, q, r) = (pt(3.0, 5.0, -2.0), pt(2.0, 3.0, 1.0), pt(0.0, 4.0, 2.0));
+    assert_eq!(dot_sign_3d(&p, &q, &r), -1);
+    assert_eq!(dot_sign_3d(&r, &q, &p), -1);
+}
+
+#[test]
+fn dihedral_sign_of_a_cube_and_of_a_regular_tetrahedron() {
+    // Two faces of the unit cube meet at the edge from c = 0 to d = e_z at a
+    // right angle: (b - d) x (c - d) = (-1, 0, 0) and (a - d) x (c - d) =
+    // (0, 1, 0).
+    let (a, b, c, d) = (
+        pt(1.0, 0.0, 0.0),
+        pt(0.0, 1.0, 0.0),
+        pt(0.0, 0.0, 0.0),
+        pt(0.0, 0.0, 1.0),
+    );
+    assert_eq!(dihedral_sign(&a, &b, &c, &d), 0);
+    // Turning b towards a makes the angle acute, away from it obtuse.
+    assert_eq!(dihedral_sign(&a, &pt(1.0, 1.0, 0.0), &c, &d), 1);
+    assert_eq!(dihedral_sign(&a, &pt(-1.0, 1.0, 0.0), &c, &d), -1);
+    // A regular tetrahedron with integer corners: its dihedral angles,
+    // arccos(1/3), are acute. With d = (-1, -1, 1) and c = (-1, 1, -1) the
+    // cross products are (4, 4, 4) and (-4, 4, 4), whose dot product is 16.
+    let (a, b, c, d) = (
+        pt(1.0, 1.0, 1.0),
+        pt(1.0, -1.0, -1.0),
+        pt(-1.0, 1.0, -1.0),
+        pt(-1.0, -1.0, 1.0),
+    );
+    assert_eq!(dihedral_sign(&a, &b, &c, &d), 1);
+}
+
+#[test]
+fn dihedral_sign_of_degenerate_triangles_is_zero() {
+    let (a, b, c, d) = (
+        pt(1.0, 2.0, 0.0),
+        pt(-3.0, 1.0, 5.0),
+        pt(0.0, 0.0, 0.0),
+        pt(1.0, 1.0, 1.0),
+    );
+    assert_ne!(dihedral_sign(&a, &b, &c, &d), 0);
+    // The edge has length zero.
+    assert_eq!(dihedral_sign(&a, &b, &d, &d), 0);
+    // a, then b, on the line through c and d.
+    let on_line = pt(-2.0, -2.0, -2.0);
+    assert_eq!(dihedral_sign(&on_line, &b, &c, &d), 0);
+    assert_eq!(dihedral_sign(&a, &on_line, &c, &d), 0);
+}
+
+/// A generator of pseudo-random numbers, splitmix64, for the properties of
+/// the oracles: deterministic, so that a failure repeats.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    }
+
+    /// A coordinate: half the time a small integer, so that many signs are
+    /// zero; otherwise any sign, 53 random bits and an exponent in
+    /// `-40..40`.
+    fn coordinate(&mut self) -> f64 {
+        let bits = self.next();
+        if bits & 1 == 0 {
+            return f64::from(i32::try_from((bits >> 1) % 5).unwrap() - 2);
+        }
+        let mantissa = (bits >> 11) as f64 / (1u64 << 53) as f64;
+        let exponent = i32::try_from((bits >> 1) % 80).unwrap() - 40;
+        let x = mantissa * 2f64.powi(exponent);
+        if bits & 2 == 0 { x } else { -x }
+    }
+
+    fn point(&mut self) -> [Dyadic; 3] {
+        pt(self.coordinate(), self.coordinate(), self.coordinate())
+    }
+}
+
+#[test]
+fn dot_sign_3d_is_symmetric_in_its_ends() {
+    let mut rng = Rng(1);
+    for _ in 0..2000 {
+        let (p, q, r) = (rng.point(), rng.point(), rng.point());
+        assert_eq!(dot_sign_3d(&p, &q, &r), dot_sign_3d(&r, &q, &p));
+    }
+}
+
+#[test]
+fn dihedral_sign_is_symmetric_in_the_triangles_and_in_the_edge() {
+    let mut rng = Rng(2);
+    for _ in 0..2000 {
+        let (a, b, c, d) = (rng.point(), rng.point(), rng.point(), rng.point());
+        let s = dihedral_sign(&a, &b, &c, &d);
+        assert_eq!(dihedral_sign(&b, &a, &c, &d), s);
+        assert_eq!(dihedral_sign(&a, &b, &d, &c), s);
+        assert_eq!(dihedral_sign(&b, &a, &d, &c), s);
+    }
+}
+
+#[test]
+fn dihedral_sign_is_the_sign_of_the_lagrange_identity() {
+    // [B x C] . [A x C] = (B . A)(C . C) - (B . C)(C . A), with A = a - d,
+    // B = b - d and C = c - d, written here without cross products.
+    fn sub(x: &[Dyadic; 3], y: &[Dyadic; 3]) -> [Dyadic; 3] {
+        std::array::from_fn(|i| &x[i] - &y[i])
+    }
+    fn inner(x: &[Dyadic; 3], y: &[Dyadic; 3]) -> Dyadic {
+        (0..3).fold(Dyadic::from_f64(0.0), |s, i| &s + &(&x[i] * &y[i]))
+    }
+    let mut rng = Rng(3);
+    let mut signs = [0; 3];
+    for _ in 0..4000 {
+        let (a, b, c, d) = (rng.point(), rng.point(), rng.point(), rng.point());
+        let (x, y, z) = (sub(&a, &d), sub(&b, &d), sub(&c, &d));
+        let identity = &(&inner(&y, &x) * &inner(&z, &z)) - &(&inner(&y, &z) * &inner(&z, &x));
+        let s = dihedral_sign(&a, &b, &c, &d);
+        assert_eq!(s, identity.sign(), "{a:?} {b:?} {c:?} {d:?}");
+        signs[usize::try_from(s + 1).unwrap()] += 1;
+    }
+    // Every sign comes up.
+    assert!(signs.iter().all(|&n| n > 0), "{signs:?}");
 }
 
 #[test]

@@ -99,17 +99,20 @@ fn canonical_forms(path: &Path) -> (String, Vec<String>, Polynomial, Option<Poly
 fn the_predicates_of_the_library_are_those_of_the_fixtures() {
     // The tests of the generator read the fixtures, which the package of the
     // generator holds; the library has its own definitions. Each form of
-    // the library has the polynomial of a fixture: `orient3d` both of the
-    // fixture `orient3d.pred`, `insphere` the main form of `insphere.pred`
-    // and, as its exact form, the one of `insphere_raw.pred`.
+    // the library has the polynomial of a fixture: `orient3d`,
+    // `dot_sign_3d` and `dihedral_sign` both of the fixture of the same
+    // name, `insphere` the main form of `insphere.pred` and, as its exact
+    // form, the one of `insphere_raw.pred`.
     let library = workspace().join("crates/implicit-predicates/predicates");
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let (name, params, main, exact) = canonical_forms(&library.join("orient3d.pred"));
-    let fixture = canonical_forms(&fixtures.join("orient3d.pred"));
-    assert_eq!((&name, &params), (&fixture.0, &fixture.1));
-    assert_eq!(main, fixture.2);
-    assert_eq!(exact, fixture.3);
-    assert!(exact.is_some());
+    for file in ["orient3d.pred", "dot_sign_3d.pred", "dihedral_sign.pred"] {
+        let (name, params, main, exact) = canonical_forms(&library.join(file));
+        let fixture = canonical_forms(&fixtures.join(file));
+        assert_eq!((&name, &params), (&fixture.0, &fixture.1), "{file}");
+        assert_eq!(main, fixture.2, "{file}");
+        assert_eq!(exact, fixture.3, "{file}");
+        assert!(exact.is_some(), "{file}");
+    }
 
     let (name, params, main, exact) = canonical_forms(&library.join("insphere.pred"));
     let fixture = canonical_forms(&fixtures.join("insphere.pred"));

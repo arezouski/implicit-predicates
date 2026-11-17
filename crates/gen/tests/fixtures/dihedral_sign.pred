@@ -1,0 +1,36 @@
+// dihedral_sign(a, b, c, d): the dihedral angle at the edge c, d between
+// the triangles a, c, d and b, c, d.
+//
+// The predicate is the sign of the dot product
+//
+//     [(b - d) x (c - d)] . [(a - d) x (c - d)]
+//
+// of the normals of the two triangles, which is positive when the dihedral
+// angle at the edge c, d is acute, negative when it is obtuse, and zero when
+// it is a right angle or when a triangle is degenerate: c is d, or a or b
+// lies on the line through c and d.
+//
+// The main form is written on the differences against d, as the dot
+// product of the two cross products.
+fn dihedral_sign(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {
+    let ax = a.x - d.x;  let ay = a.y - d.y;  let az = a.z - d.z;
+    let bx = b.x - d.x;  let by = b.y - d.y;  let bz = b.z - d.z;
+    let cx = c.x - d.x;  let cy = c.y - d.y;  let cz = c.z - d.z;
+    let ux = by*cz - bz*cy;  let uy = bz*cx - bx*cz;  let uz = bx*cy - by*cx;
+    let vx = ay*cz - az*cy;  let vy = az*cx - ax*cz;  let vz = ax*cy - ay*cx;
+    ux*vx + uy*vy + uz*vz
+}
+
+// The same polynomial on the raw coordinates:
+// (b - d) x (c - d) = b x c + c x d + d x b, and
+// (a - d) x (c - d) = a x c + c x d + d x a.
+#[exact]
+fn dihedral_sign(a: Point3, b: Point3, c: Point3, d: Point3) -> Sign {
+    let ux = (b.y*c.z - b.z*c.y) + (c.y*d.z - c.z*d.y) + (d.y*b.z - d.z*b.y);
+    let uy = (b.z*c.x - b.x*c.z) + (c.z*d.x - c.x*d.z) + (d.z*b.x - d.x*b.z);
+    let uz = (b.x*c.y - b.y*c.x) + (c.x*d.y - c.y*d.x) + (d.x*b.y - d.y*b.x);
+    let vx = (a.y*c.z - a.z*c.y) + (c.y*d.z - c.z*d.y) + (d.y*a.z - d.z*a.y);
+    let vy = (a.z*c.x - a.x*c.z) + (c.z*d.x - c.x*d.z) + (d.z*a.x - d.x*a.z);
+    let vz = (a.x*c.y - a.y*c.x) + (c.x*d.y - c.y*d.x) + (d.x*a.y - d.y*a.x);
+    ux*vx + uy*vy + uz*vz
+}

@@ -48,6 +48,17 @@ fn dot(a: &Vec3) -> Dyadic {
     &(&(&a[0] * &a[0]) + &(&a[1] * &a[1])) + &(&a[2] * &a[2])
 }
 
+/// The dot product of `a` and `b`.
+fn inner(a: &Vec3, b: &Vec3) -> Dyadic {
+    &(&(&a[0] * &b[0]) + &(&a[1] * &b[1])) + &(&a[2] * &b[2])
+}
+
+/// The cross product of `a` and `b`.
+fn cross(a: &Vec3, b: &Vec3) -> Vec3 {
+    let at = |j: usize, k: usize| &(&a[j] * &b[k]) - &(&a[k] * &b[j]);
+    [at(1, 2), at(2, 0), at(0, 1)]
+}
+
 /// Determinant of the 3x3 matrix with the given rows, by cofactors along the
 /// first row.
 fn det3(r: [&Vec3; 3]) -> Dyadic {
@@ -88,4 +99,20 @@ pub fn insphere(a: &Vec3, b: &Vec3, c: &Vec3, d: &Vec3, e: &Vec3) -> i8 {
         };
     }
     det.sign()
+}
+
+/// Sign of `(p - q) . (r - q)`: 1, 0 or -1. It is positive when the angle at
+/// `q` between `p` and `r` is acute, negative when it is obtuse, and zero
+/// when it is right or when `p` or `r` is `q`.
+pub fn dot_sign_3d(p: &Vec3, q: &Vec3, r: &Vec3) -> i8 {
+    inner(&sub(p, q), &sub(r, q)).sign()
+}
+
+/// Sign of `[(b - d) x (c - d)] . [(a - d) x (c - d)]`: 1, 0 or -1. It is
+/// positive when the dihedral angle at the edge `c, d` between the triangles
+/// `a, c, d` and `b, c, d` is acute, negative when it is obtuse, and zero
+/// when it is right or when a triangle is degenerate.
+pub fn dihedral_sign(a: &Vec3, b: &Vec3, c: &Vec3, d: &Vec3) -> i8 {
+    let e = sub(c, d);
+    inner(&cross(&sub(b, d), &e), &cross(&sub(a, d), &e)).sign()
 }

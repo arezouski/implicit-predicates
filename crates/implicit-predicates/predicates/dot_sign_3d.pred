@@ -1,0 +1,26 @@
+// dot_sign_3d(p, q, r): the angle at the point q between the points p and r.
+//
+// The predicate is the sign of the dot product
+//
+//     (p - q) . (r - q)
+//
+// which is positive when the angle at q is acute, negative when it is
+// obtuse, and zero when it is a right angle or when p or r is q. The apex
+// of the angle is the middle argument.
+//
+// The main form is written on the differences against q.
+fn dot_sign_3d(p: Point3, q: Point3, r: Point3) -> Sign {
+    let px = p.x - q.x;  let py = p.y - q.y;  let pz = p.z - q.z;
+    let rx = r.x - q.x;  let ry = r.y - q.y;  let rz = r.z - q.z;
+    px*rx + py*ry + pz*rz
+}
+
+// The same polynomial on the raw coordinates: on each axis,
+// (p - q)(r - q) = p r - p q - q r + q q.
+#[exact]
+fn dot_sign_3d(p: Point3, q: Point3, r: Point3) -> Sign {
+    let sx = p.x*r.x - p.x*q.x - q.x*r.x + q.x*q.x;
+    let sy = p.y*r.y - p.y*q.y - q.y*r.y + q.y*q.y;
+    let sz = p.z*r.z - p.z*q.z - q.z*r.z + q.z*q.z;
+    sx + sy + sz
+}
