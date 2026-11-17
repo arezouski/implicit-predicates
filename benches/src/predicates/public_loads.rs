@@ -9,9 +9,11 @@
 //! - `random`: points in general position, which the filter decides;
 //! - `near_right`: the angle is right by construction but for one vertex
 //!   moved by one to three ulps, so its exact sign is not zero but too
-//!   small for the filter, which declines the call;
+//!   small for the filter: its first test, `filter_points`, declines the
+//!   call (the second test, `filter_axes_points`, may still decide a few);
 //! - `right`: the angle is exactly right, or a triangle is degenerate, so
-//!   the exact sign is zero and the filter declines the call.
+//!   the exact sign is zero, and the first test of the filter declines the
+//!   call.
 //!
 //! The loads of `orient3d` with `Bpt` and of `insphere` with `Bpt` have the
 //! families `random`, `near_degenerate` and `degenerate`, the points

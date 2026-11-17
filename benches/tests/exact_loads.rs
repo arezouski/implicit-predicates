@@ -47,19 +47,21 @@ fn check<const N: usize>(stages: &ExactStages<N>, loads: &[ExactLoad<N>]) {
     let mut scratch = Scratch::growable(1 << 16);
     for load in loads {
         let what = format!("{} {}", stages.name, load.name);
-        if load.cases.len() < EXACT_LOAD_SIZE {
-            assert!(load.name.contains("mesh"), "{what}");
-            println!(
-                "{what}: only {} calls of {} tried",
-                load.cases.len(),
-                load.tried
-            );
+        // The filters decide every call of the degenerate `mesh_axis` loads
+        // of `orient3d`, whose points share a coordinate plane, so those two
+        // are empty; every other load is full.
+        let empty = stages.name == "orient3d" && load.name.ends_with("/mesh_axis/degenerate");
+        if empty {
+            assert!(load.cases.is_empty(), "{what}: {} calls", load.cases.len());
+        } else {
+            assert_eq!(load.cases.len(), EXACT_LOAD_SIZE, "{what}");
         }
         assert_eq!(
             load.degenerate,
             load.name.ends_with("/degenerate"),
             "{what}"
         );
+        let mesh = load.name.contains("/mesh");
         let mut decided_by_expansions = 0;
         for case in &load.cases {
             assert_eq!(types(case), expected_types(&load.name), "{what}");
@@ -79,6 +81,23 @@ fn check<const N: usize>(stages: &ExactStages<N>, loads: &[ExactLoad<N>]) {
                 decided_by_expansions += 1;
             }
             assert_eq!(scratch.used(), 0, "{what}");
+            // The parameters of the `mesh` and `mesh_axis` loads have at
+            // most 8 significant bits.
+            if mesh {
+                for t in case.iter().flat_map(params) {
+                    assert!(significant_bits(t) <= 8, "{what}: {t} in {case:?}");
+                }
+            }
+        }
+        // The others have mostly longer ones: they are the adverse case.
+        if !mesh && !load.cases.is_empty() {
+            let all: Vec<f64> = load.cases.iter().flatten().flat_map(params).collect();
+            let long = all.iter().filter(|&&t| significant_bits(t) > 8).count();
+            assert!(
+                10 * long >= 9 * all.len(),
+                "{what}: {long} of {}",
+                all.len()
+            );
         }
         // The stage on expansions is measured on these loads, so it must
         // decide them: every point is in its range and short enough.
