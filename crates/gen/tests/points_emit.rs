@@ -233,6 +233,81 @@ fn the_where_clause_is_checked_exactly_one_parameter_at_a_time() {
     assert!(!method(&g.stages, "Twice", "new").contains("ParamOutOfRange"));
 }
 
+/// A point on a triangle, with the conditions that keep it inside.
+const TRIANGLE: &str = "point T(p: F64x3, q: F64x3, r: F64x3, u: f64, v: f64) = \
+                        r + u*(p - r) + v*(q - r) where 0 <= u, 0 <= v, u + v <= 1;";
+
+/// The check of `a + b <= k` that `new` must hold, in its own block.
+fn sum_check(a: &str, b: &str, k: &str) -> String {
+    format!(
+        "{{\nlet (s, e) = eft::two_sum({a}, {b});\nif !(s < {k} || (s == {k} && e <= 0.0)) {{\n\
+         return Err(PointError::ParamOutOfRange);\n}}\n}}\n"
+    )
+}
+
+#[test]
+fn a_sum_of_two_parameters_is_checked_exactly() {
+    let g = generated(TRIANGLE);
+    let new = method(&g.stages, "T", "new");
+    let finite = new.find("return Err(PointError::NonFinite);").unwrap();
+    let u = new
+        .find("if u < 0.0 {\nreturn Err(PointError::ParamOutOfRange);\n}")
+        .unwrap();
+    let v = new
+        .find("if v < 0.0 {\nreturn Err(PointError::ParamOutOfRange);\n}")
+        .unwrap();
+    let sum = new.find(&sum_check("u", "v", "1.0")).expect(new);
+    let built = new.find("Ok(Self::new_unchecked(p, q, r, u, v))").unwrap();
+    assert!(finite < u && u < v && v < sum && sum < built, "{new}");
+    assert_eq!(new.matches("ParamOutOfRange").count(), 3, "{new}");
+    // `eft` is imported for the check alone: the coordinates of `T` have no
+    // product of two expansions.
+    let import = &g.stages[g.stages.find("use implicit_predicates_core::{").unwrap()..];
+    let import = &import[..import.find("};").unwrap()];
+    assert!(import.contains("eft"), "{import}");
+    // The parameters cancel on both sides, and are passed in the order of
+    // the declaration whatever the order of the comparison.
+    let g = generated(
+        "point S(p: F64x3, a: f64, b: f64, c: f64) = a*b*c*p \
+         where b + c + a + 3 <= a, 0 <= a, c + b <= 9007199254740992;",
+    );
+    let new = method(&g.stages, "S", "new");
+    assert!(new.contains(&sum_check("b", "c", "-3.0")), "{new}");
+    assert!(
+        new.contains(&sum_check("b", "c", "9007199254740992.0")),
+        "{new}"
+    );
+    assert!(new.contains("if a < 0.0 {"), "{new}");
+}
+
+#[test]
+fn sums_that_cannot_be_checked_are_rejected_with_their_position() {
+    let params = "point A(p: F64x3, u: f64, v: f64, w: f64) = p * u * v * w where ";
+    for comparison in [
+        "u + v + w <= 1",
+        "1 <= u + v",
+        "u + u <= 1",
+        "u + v <= 9007199254740993",
+        "u + v + 9007199254740993 <= 0",
+        "u + v + w + w <= w + 1",
+    ] {
+        let source = format!("{params}0 <= w, {comparison};");
+        let column = source.find(comparison).unwrap() + 1;
+        rejected(&source, (1, column), "only a comparison of one parameter");
+        rejected(
+            &source,
+            (1, column),
+            "or of the sum of two distinct parameters",
+        );
+    }
+    // On a later line.
+    rejected(
+        "point A(p: F64x3, u: f64, v: f64) = p * u * v\n    where 2 <= u + v;",
+        (2, 11),
+        "or of the sum of two distinct parameters",
+    );
+}
+
 fn rejected(source: &str, (line, column): (usize, usize), fragment: &str) {
     let e = generate_points(source, "t.pred", "x").expect_err("the source must be rejected");
     assert_eq!((e.line, e.column), (line, column), "{source}: {e}");
@@ -305,11 +380,6 @@ fn declarations_that_cannot_be_emitted_are_rejected_with_their_position() {
             "must start with an uppercase letter",
         );
     }
-    rejected(
-        "point A(p: F64x3, u: f64, v: f64) = p * u * v\n    where u + v <= 1;",
-        (2, 11),
-        "only a comparison of one parameter",
-    );
     rejected(
         "point A(p: F64x3, t: f64) = p * t where t <= t + 1;",
         (1, 41),

@@ -242,18 +242,34 @@ pub(crate) fn write_implicit(out: &mut String, info: &TypeInfo<'_>, implicit: &I
         all_finite(point)
     )
     .unwrap();
-    for &(param, bound) in &implicit.bounds {
-        let p = &point.params[param].name;
-        let (op, value) = match bound {
-            Bound::AtLeast(v) => ("<", v),
-            Bound::AtMost(v) => (">", v),
-        };
-        writeln!(
-            out,
-            "if {p} {op} {} {{\nreturn Err(PointError::ParamOutOfRange);\n}}",
-            literal(value)
-        )
-        .unwrap();
+    for &bound in &implicit.bounds {
+        let name = |param: usize| &point.params[param].name;
+        let reject = "return Err(PointError::ParamOutOfRange);";
+        match bound {
+            Bound::AtLeast(param, k) => {
+                writeln!(out, "if {} < {} {{\n{reject}\n}}", name(param), literal(k)).unwrap();
+            }
+            Bound::AtMost(param, k) => {
+                writeln!(out, "if {} > {} {{\n{reject}\n}}", name(param), literal(k)).unwrap();
+            }
+            // For finite `a` and `b` whose sum does not overflow, two-sum
+            // gives `s` and `e` with `a + b = s + e` exactly, so `a + b <= k`
+            // if and only if `s < k`, or `s == k` and `e <= 0`. If the sum
+            // overflows, `s` is infinite, `s < k` alone gives the answer and
+            // `e`, which may be NaN, is not read: `s == k` is false. The block
+            // keeps `s` and `e` from hiding parameters of those names.
+            Bound::SumAtMost(a, b, k) => {
+                let k = literal(k);
+                writeln!(
+                    out,
+                    "{{\nlet (s, e) = eft::two_sum({}, {});\n\
+                     if !(s < {k} || (s == {k} && e <= 0.0)) {{\n{reject}\n}}\n}}",
+                    name(a),
+                    name(b)
+                )
+                .unwrap();
+            }
+        }
     }
     writeln!(out, "Ok(Self::new_unchecked({}))\n}}\n", args.join(", ")).unwrap();
     comment(

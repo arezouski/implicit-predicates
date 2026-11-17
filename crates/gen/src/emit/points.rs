@@ -57,9 +57,10 @@ pub(crate) const MAX_RENDERED_NODES: usize = 64;
 /// roundings than [`crate::MAX_ROUNDS`]; exact coordinates whose temporaries
 /// take more than 4,096 `f64`; coordinates of more than
 /// [`crate::MAX_POINT_NODES`] distinct operations and inputs; or a `where`
-/// comparison that, after cancelling the parameters on both sides, is not
-/// one parameter against an integer of magnitude at most `2^53`, the only
-/// form emitted for now.
+/// comparison that, after cancelling the parameters on both sides, is
+/// neither one parameter against an integer of magnitude at most `2^53` nor
+/// the sum of two distinct parameters at most such an integer, the forms
+/// that `new` checks exactly.
 ///
 /// A type with an exact coordinate that can have more than
 /// [`crate::MAX_COORD_COMPONENTS`] components is generated, with a warning
@@ -132,16 +133,28 @@ pub(crate) struct Implicit {
     pub(crate) rounds: u32,
     pub(crate) slack: f64,
     pub(crate) exact: ExactPlan,
-    /// Each comparison of the `where` clause, as the parameter it bounds
-    /// and the bound.
-    pub(crate) bounds: Vec<(usize, Bound)>,
+    /// Each comparison of the `where` clause, reduced.
+    pub(crate) bounds: Vec<Bound>,
 }
 
-/// One comparison of a `where` clause, reduced to one parameter.
+/// One comparison of a `where` clause, reduced to one parameter, or to the
+/// sum of two, against an `f64` that is exactly an integer. Parameters are
+/// indices into the parameters of the point.
 #[derive(Clone, Copy)]
 pub(crate) enum Bound {
-    AtLeast(f64),
-    AtMost(f64),
+    /// `param >= k`.
+    AtLeast(usize, f64),
+    /// `param <= k`.
+    AtMost(usize, f64),
+    /// `a + b <= k`, with `a` before `b` in the declaration.
+    SumAtMost(usize, usize, f64),
+}
+
+impl Bound {
+    /// Whether its check needs `eft`.
+    pub(crate) fn uses_eft(self) -> bool {
+        matches!(self, Bound::SumAtMost(..))
+    }
 }
 
 impl TypeInfo<'_> {
@@ -252,8 +265,9 @@ fn snake_case(name: &str) -> String {
 }
 
 /// The comparisons of the `where` clause of `point`, each reduced to one
-/// parameter against an `f64` that is exactly the integer of the source.
-fn constraint_bounds(point: &PointType, file: &str) -> Result<Vec<(usize, Bound)>, Error> {
+/// parameter, or to the sum of two distinct parameters, against an `f64`
+/// that is exactly the integer of the source.
+fn constraint_bounds(point: &PointType, file: &str) -> Result<Vec<Bound>, Error> {
     let mut bounds = Vec::new();
     for constraint in &point.constraints {
         // lhs <= rhs  <=>  sum of coefficient * parameter <= k.
@@ -271,15 +285,18 @@ fn constraint_bounds(point: &PointType, file: &str) -> Result<Vec<(usize, Bound)
             .collect();
         let limit = 1i128 << 53;
         let bound = match used.as_slice() {
-            [(param, 1)] if k.abs() <= limit => (*param, Bound::AtMost(k as f64)),
-            [(param, -1)] if k.abs() <= limit => (*param, Bound::AtLeast(-k as f64)),
+            [(param, 1)] if k.abs() <= limit => Bound::AtMost(*param, k as f64),
+            [(param, -1)] if k.abs() <= limit => Bound::AtLeast(*param, -k as f64),
+            // `used` is in the order of the parameters.
+            [(a, 1), (b, 1)] if k.abs() <= limit => Bound::SumAtMost(*a, *b, k as f64),
             _ => {
                 return Err(Error::at(
                     file,
                     constraint.position,
-                    "only a comparison of one parameter with an integer of magnitude at most \
-                     2^53, once the parameters on both sides cancel, can be checked exactly \
-                     for now",
+                    "only a comparison of one parameter, or of the sum of two distinct \
+                     parameters, with an integer of magnitude at most 2^53, once the parameters \
+                     on both sides cancel, can be checked exactly: `k <= t`, `t <= k` or \
+                     `a + b <= k`",
                 ));
             }
         };
@@ -308,7 +325,9 @@ fn write_module(out: &mut String, types: &[TypeInfo<'_>], notice: &str) {
     let mut core = vec!["BigCoords", "ExactCoords", "ExactError", "Point", "Scratch"];
     if !implicit.is_empty() {
         core.extend(["Mark", "ScratchExhausted", "Span", "Weight"]);
-        if implicit.iter().any(|i| i.exact.uses_products()) {
+        if (implicit.iter())
+            .any(|i| i.exact.uses_products() || i.bounds.iter().any(|b| b.uses_eft()))
+        {
             core.push("eft");
         }
         core.push("expansion");

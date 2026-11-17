@@ -974,6 +974,133 @@ fn point_types_with_parameters_named_like_local_names_compile() {
     );
 }
 
+/// Point types whose `where` clause bounds the sum of two parameters: `T`,
+/// on a triangle; `S`, with that bound alone; and `C`, whose parameters
+/// have the names of the locals of the check of the sum.
+const SUM_BOUNDS: &str = "\
+point T(p: F64x3, q: F64x3, r: F64x3, u: f64, v: f64) = r + u*(p - r) + v*(q - r)
+    where 0 <= u, 0 <= v, u + v <= 1;
+point S(p: F64x3, u: f64, v: f64) = u*p + v*p where u + v <= 1;
+point C(p: F64x3, s: f64, e: f64) = s*p + e*p where s + e <= 1, 0 <= s, 0 <= e;
+";
+
+/// The test of the constructors of [`SUM_BOUNDS`]: each accepts its
+/// parameters exactly when they satisfy its conditions, computed on exact
+/// dyadic numbers.
+const SUM_BOUNDS_TEST: &str = r#"use implicit_predicates_oracle::Dyadic;
+use points::{C, PointError, S, T};
+
+const P: [f64; 3] = [1.0, 0.0, 0.0];
+
+/// Whether `u + v <= 1`, exactly, and if `signs`, `0 <= u` and `0 <= v`.
+fn exact(u: f64, v: f64, signs: bool) -> bool {
+    let (zero, one) = (Dyadic::from_f64(0.0), Dyadic::from_f64(1.0));
+    let (du, dv) = (Dyadic::from_f64(u), Dyadic::from_f64(v));
+    let sum = &du + &dv;
+    sum <= one && (!signs || (du >= zero && dv >= zero))
+}
+
+/// Checks the three types on `(u, v)`: each accepts it, or rejects it with
+/// `ParamOutOfRange`, as its conditions say.
+fn check(u: f64, v: f64) {
+    let expected = |ok: bool| if ok { Ok(()) } else { Err(PointError::ParamOutOfRange) };
+    let signs = expected(exact(u, v, true));
+    assert_eq!(T::new(P, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], u, v).map(|_| ()), signs, "T {u:e} {v:e}");
+    assert_eq!(S::new(P, u, v).map(|_| ()), expected(exact(u, v, false)), "S {u:e} {v:e}");
+    assert_eq!(C::new(P, u, v).map(|_| ()), signs, "C {u:e} {v:e}");
+}
+
+#[test]
+fn the_emitted_sum_bound_agrees_with_the_exact_sum() {
+    let tiny = f64::from_bits(1);
+    let half_ulp = 2f64.powi(-53);
+    // The sum in `f64` is 1, but the exact sum is more.
+    assert!(0.5 + (0.5 + half_ulp) == 1.0 && 1.0 + tiny == 1.0);
+    assert_eq!(S::new(P, 0.5, 0.5).map(|_| ()), Ok(()));
+    assert_eq!(S::new(P, 0.5, 0.5 + half_ulp).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(S::new(P, 1.0, tiny).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(S::new(P, tiny, 1.0).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(S::new(P, 1.0, 0.0).map(|_| ()), Ok(()));
+    assert_eq!(S::new(P, 1.0, -0.0).map(|_| ()), Ok(()));
+    assert_eq!(S::new(P, 2.0, -1.0).map(|_| ()), Ok(()));
+    // The sum overflows: it is rejected, and its error, NaN, is not read.
+    assert_eq!(S::new(P, f64::MAX, f64::MAX).map(|_| ()), Err(PointError::ParamOutOfRange));
+    // It overflows below: the bound holds, and `0 <= u` rejects it.
+    assert_eq!(S::new(P, -f64::MAX, -f64::MAX).map(|_| ()), Ok(()));
+    assert_eq!(T::new(P, P, P, -f64::MAX, -f64::MAX).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(T::new(P, P, P, 0.5, 0.5).map(|_| ()), Ok(()));
+    assert_eq!(T::new(P, P, P, 0.5, 0.5 + half_ulp).map(|_| ()), Err(PointError::ParamOutOfRange));
+    // The locals of the check do not hide the parameters.
+    let c = C::new(P, 0.25, 0.5).unwrap();
+    assert_eq!((c.s(), c.e()), (0.25, 0.5));
+    assert_eq!(C::new(P, -1.0, 1.5).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(S::new(P, f64::NAN, 0.0).map(|_| ()), Err(PointError::NonFinite));
+
+    let mut values = vec![
+        0.0, -0.0, tiny, -tiny, half_ulp, 0.1, 0.25, 0.3, 0.5, 0.7, 0.75, 0.9, 1.0, 2.0, 3.0,
+        1e-300, 1e300, f64::MAX, f64::MIN_POSITIVE, 9007199254740992.0,
+    ];
+    for x in values.clone() {
+        values.extend([x.next_up(), x.next_down(), 1.0 - x, -x]);
+    }
+    values.retain(|x| x.is_finite());
+    for &u in &values {
+        for &v in &values {
+            check(u, v);
+        }
+    }
+    // Pairs around the boundary and pairs of any bits, by a xorshift.
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut cases = 0;
+    while cases < 100_000 {
+        let r = next();
+        let (u, v) = match r % 3 {
+            // A `u` in [0, 1) and `v` a few units in the last place from `1 - u`.
+            0 => {
+                let u = (next() >> 11) as f64 * 2f64.powi(-53);
+                let mut v = 1.0 - u;
+                for _ in 0..(next() % 4) {
+                    v = if r & 8 == 0 { v.next_up() } else { v.next_down() };
+                }
+                (u, v)
+            }
+            // A `u` of any magnitude in [0, 1] and `v` a tiny remainder.
+            1 => {
+                let u = 1.0 - (next() >> 11) as f64 * 2f64.powi(-53 - (next() % 60) as i32);
+                (u, f64::from_bits(next() % (1 << 52)))
+            }
+            _ => (f64::from_bits(next()), f64::from_bits(next())),
+        };
+        if u.is_finite() && v.is_finite() {
+            check(u, v);
+            check(v, u);
+            cases += 1;
+        }
+    }
+}
+"#;
+
+#[test]
+fn the_emitted_sum_bound_agrees_with_the_exact_sum() {
+    let g = generate_points(SUM_BOUNDS, "t.pred", REGENERATE)
+        .unwrap()
+        .unwrap();
+    compile_and_run(
+        "emitted-sum-bounds",
+        &[
+            ("points".into(), g.stages),
+            ("points_checks".into(), g.checks),
+        ],
+        SUM_BOUNDS_TEST,
+    );
+}
+
 #[test]
 fn the_changelog_quotes_the_degree_of_big_integers_alone() {
     // The CHANGELOG is not in the package of the generator, so this file,
