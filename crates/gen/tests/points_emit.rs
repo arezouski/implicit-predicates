@@ -237,11 +237,11 @@ fn the_where_clause_is_checked_exactly_one_parameter_at_a_time() {
 const TRIANGLE: &str = "point T(p: F64x3, q: F64x3, r: F64x3, u: f64, v: f64) = \
                         r + u*(p - r) + v*(q - r) where 0 <= u, 0 <= v, u + v <= 1;";
 
-/// The check of `a + b <= k` that `new` must hold, in its own block.
+/// The check of `a + b <= k` that `new` must hold.
 fn sum_check(a: &str, b: &str, k: &str) -> String {
     format!(
-        "{{\nlet (s, e) = eft::two_sum({a}, {b});\nif !(s < {k} || (s == {k} && e <= 0.0)) {{\n\
-         return Err(PointError::ParamOutOfRange);\n}}\n}}\n"
+        "if !({a} + {b} < {k} || ({a} + {b} == {k} && eft::two_sum({a}, {b}).1 <= 0.0)) {{\n\
+         return Err(PointError::ParamOutOfRange);\n}}\n"
     )
 }
 

@@ -252,20 +252,21 @@ pub(crate) fn write_implicit(out: &mut String, info: &TypeInfo<'_>, implicit: &I
             Bound::AtMost(param, k) => {
                 writeln!(out, "if {} > {} {{\n{reject}\n}}", name(param), literal(k)).unwrap();
             }
-            // For finite `a` and `b` whose sum does not overflow, two-sum
-            // gives `s` and `e` with `a + b = s + e` exactly, so `a + b <= k`
-            // if and only if `s < k`, or `s == k` and `e <= 0`. If the sum
-            // overflows, `s` is infinite, `s < k` alone gives the answer and
-            // `e`, which may be NaN, is not read: `s == k` is false. The block
-            // keeps `s` and `e` from hiding parameters of those names.
+            // Let `s` be `a + b` rounded to nearest, for finite `a` and `b`,
+            // and `k` a finite `f64`. Rounding is monotone and `k` is
+            // representable, so `s < k` implies `a + b <= k` and `s > k`
+            // implies `a + b > k`; this includes an infinite `s`, which is the
+            // overflow of the sum. Only when `s == k` is `s` finite, so the
+            // sum does not overflow and two-sum applies: it gives `e` with
+            // `a + b = s + e` exactly, and `a + b <= k` if and only if
+            // `e <= 0`. No local is declared, so no parameter is hidden.
             Bound::SumAtMost(a, b, k) => {
                 let k = literal(k);
+                let (a, b) = (name(a), name(b));
                 writeln!(
                     out,
-                    "{{\nlet (s, e) = eft::two_sum({}, {});\n\
-                     if !(s < {k} || (s == {k} && e <= 0.0)) {{\n{reject}\n}}\n}}",
-                    name(a),
-                    name(b)
+                    "if !({a} + {b} < {k} || ({a} + {b} == {k} && eft::two_sum({a}, {b}).1 <= 0.0)) \
+                     {{\n{reject}\n}}"
                 )
                 .unwrap();
             }

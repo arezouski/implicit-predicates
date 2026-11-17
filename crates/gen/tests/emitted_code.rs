@@ -975,38 +975,43 @@ fn point_types_with_parameters_named_like_local_names_compile() {
 }
 
 /// Point types whose `where` clause bounds the sum of two parameters: `T`,
-/// on a triangle; `S`, with that bound alone; and `C`, whose parameters
-/// have the names of the locals of the check of the sum.
+/// on a triangle; `S`, with that bound alone; `C`, whose parameters have
+/// the names that a local of the check of the sum would hide; and `Z` and
+/// `N`, whose bounds are zero and negative.
 const SUM_BOUNDS: &str = "\
 point T(p: F64x3, q: F64x3, r: F64x3, u: f64, v: f64) = r + u*(p - r) + v*(q - r)
     where 0 <= u, 0 <= v, u + v <= 1;
 point S(p: F64x3, u: f64, v: f64) = u*p + v*p where u + v <= 1;
 point C(p: F64x3, s: f64, e: f64) = s*p + e*p where s + e <= 1, 0 <= s, 0 <= e;
+point Z(p: F64x3, u: f64, v: f64) = u*p + v*p where u + v <= 0;
+point N(p: F64x3, u: f64, v: f64) = u*p + v*p where u + v + 3 <= 0;
 ";
 
 /// The test of the constructors of [`SUM_BOUNDS`]: each accepts its
 /// parameters exactly when they satisfy its conditions, computed on exact
 /// dyadic numbers.
 const SUM_BOUNDS_TEST: &str = r#"use implicit_predicates_oracle::Dyadic;
-use points::{C, PointError, S, T};
+use points::{C, N, PointError, S, T, Z};
 
 const P: [f64; 3] = [1.0, 0.0, 0.0];
 
-/// Whether `u + v <= 1`, exactly, and if `signs`, `0 <= u` and `0 <= v`.
-fn exact(u: f64, v: f64, signs: bool) -> bool {
-    let (zero, one) = (Dyadic::from_f64(0.0), Dyadic::from_f64(1.0));
+/// Whether `u + v <= k`, exactly, and if `signs`, `0 <= u` and `0 <= v`.
+fn exact(u: f64, v: f64, k: f64, signs: bool) -> bool {
+    let zero = Dyadic::from_f64(0.0);
     let (du, dv) = (Dyadic::from_f64(u), Dyadic::from_f64(v));
     let sum = &du + &dv;
-    sum <= one && (!signs || (du >= zero && dv >= zero))
+    sum <= Dyadic::from_f64(k) && (!signs || (du >= zero && dv >= zero))
 }
 
 /// Checks the three types on `(u, v)`: each accepts it, or rejects it with
 /// `ParamOutOfRange`, as its conditions say.
 fn check(u: f64, v: f64) {
     let expected = |ok: bool| if ok { Ok(()) } else { Err(PointError::ParamOutOfRange) };
-    let signs = expected(exact(u, v, true));
+    let signs = expected(exact(u, v, 1.0, true));
     assert_eq!(T::new(P, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], u, v).map(|_| ()), signs, "T {u:e} {v:e}");
-    assert_eq!(S::new(P, u, v).map(|_| ()), expected(exact(u, v, false)), "S {u:e} {v:e}");
+    assert_eq!(S::new(P, u, v).map(|_| ()), expected(exact(u, v, 1.0, false)), "S {u:e} {v:e}");
+    assert_eq!(Z::new(P, u, v).map(|_| ()), expected(exact(u, v, 0.0, false)), "Z {u:e} {v:e}");
+    assert_eq!(N::new(P, u, v).map(|_| ()), expected(exact(u, v, -3.0, false)), "N {u:e} {v:e}");
     assert_eq!(C::new(P, u, v).map(|_| ()), signs, "C {u:e} {v:e}");
 }
 
@@ -1030,6 +1035,26 @@ fn the_emitted_sum_bound_agrees_with_the_exact_sum() {
     assert_eq!(T::new(P, P, P, -f64::MAX, -f64::MAX).map(|_| ()), Err(PointError::ParamOutOfRange));
     assert_eq!(T::new(P, P, P, 0.5, 0.5).map(|_| ()), Ok(()));
     assert_eq!(T::new(P, P, P, 0.5, 0.5 + half_ulp).map(|_| ()), Err(PointError::ParamOutOfRange));
+    // Zero and negative bounds: the sum in `f64` equals `k` but the exact
+    // sum is above it (positive `e`), below it, or equal to it.
+    assert!(-3.0 + (-tiny) == -3.0 && -3.0 + tiny == -3.0);
+    assert_eq!(Z::new(P, 0.0, 0.0).map(|_| ()), Ok(()));
+    assert_eq!(Z::new(P, 0.0, -0.0).map(|_| ()), Ok(()));
+    assert_eq!(Z::new(P, 1.0, -1.0).map(|_| ()), Ok(()));
+    assert_eq!(Z::new(P, 1.0, -1.0 + half_ulp).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(Z::new(P, 1e300, -1e300).map(|_| ()), Ok(()));
+    assert_eq!(Z::new(P, 1e300, (-1e300_f64).next_up()).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(Z::new(P, tiny, -tiny).map(|_| ()), Ok(()));
+    assert_eq!(Z::new(P, 1.0, -1.0 - half_ulp * 2.0).map(|_| ()), Ok(()));
+    assert_eq!(Z::new(P, 1.0, -(1.0 - half_ulp)).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(N::new(P, -3.0, 0.0).map(|_| ()), Ok(()));
+    assert_eq!(N::new(P, -3.0, tiny).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(N::new(P, -3.0, -tiny).map(|_| ()), Ok(()));
+    assert_eq!(N::new(P, -2.0, -1.0).map(|_| ()), Ok(()));
+    assert_eq!(N::new(P, -2.0, -1.0 + 2f64.powi(-52)).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(N::new(P, -1.5, (-1.5_f64).next_up()).map(|_| ()), Err(PointError::ParamOutOfRange));
+    assert_eq!(N::new(P, -f64::MAX, -f64::MAX).map(|_| ()), Ok(()));
+    assert_eq!(N::new(P, f64::MAX, f64::MAX).map(|_| ()), Err(PointError::ParamOutOfRange));
     // The locals of the check do not hide the parameters.
     let c = C::new(P, 0.25, 0.5).unwrap();
     assert_eq!((c.s(), c.e()), (0.25, 0.5));
@@ -1038,10 +1063,10 @@ fn the_emitted_sum_bound_agrees_with_the_exact_sum() {
 
     let mut values = vec![
         0.0, -0.0, tiny, -tiny, half_ulp, 0.1, 0.25, 0.3, 0.5, 0.7, 0.75, 0.9, 1.0, 2.0, 3.0,
-        1e-300, 1e300, f64::MAX, f64::MIN_POSITIVE, 9007199254740992.0,
+        4.0, 1.5, 1e-300, 1e300, f64::MAX, f64::MIN_POSITIVE, 9007199254740992.0,
     ];
     for x in values.clone() {
-        values.extend([x.next_up(), x.next_down(), 1.0 - x, -x]);
+        values.extend([x.next_up(), x.next_down(), 1.0 - x, -x, -3.0 - x, -3.0 + x]);
     }
     values.retain(|x| x.is_finite());
     for &u in &values {
@@ -1061,10 +1086,11 @@ fn the_emitted_sum_bound_agrees_with_the_exact_sum() {
     while cases < 100_000 {
         let r = next();
         let (u, v) = match r % 3 {
-            // A `u` in [0, 1) and `v` a few units in the last place from `1 - u`.
+            // A `u` in [0, 1) and `v` a few units in the last place from
+            // `k - u`, for each bound `k` of the types.
             0 => {
                 let u = (next() >> 11) as f64 * 2f64.powi(-53);
-                let mut v = 1.0 - u;
+                let mut v = [1.0, 0.0, -3.0][(r >> 8) as usize % 3] - u;
                 for _ in 0..(next() % 4) {
                     v = if r & 8 == 0 { v.next_up() } else { v.next_down() };
                 }
