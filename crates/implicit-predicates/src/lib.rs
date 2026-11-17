@@ -181,8 +181,8 @@ use generated::orient3d as orient3d_stages;
 /// ```
 ///
 /// at the exact coordinates of the points, which may be of any type that
-/// implements [`Point`]: `[f64; 3]`, [`Explicit`], [`Lnc`], [`AnyPoint`],
-/// or a type of your own.
+/// implements [`Point`]: `[f64; 3]`, [`Explicit`], [`Lnc`], [`Bpt`],
+/// [`AnyPoint`], or a type of your own.
 ///
 /// The sign is [`Sign::Positive`] when `d` lies below the plane, taking
 /// "above" to be the side from which `a`, `b` and `c` appear in
@@ -435,9 +435,9 @@ pub fn orient3d_in(
 /// ```
 ///
 /// at the exact coordinates of the points, which may be of any type that
-/// implements [`Point`]: `[f64; 3]`, [`Explicit`], [`Lnc`], [`AnyPoint`],
-/// or a type of your own. It is the same sign as that of the 5x5 determinant
-/// with rows `(x, y, z, x^2 + y^2 + z^2, 1)` of the five points.
+/// implements [`Point`]: `[f64; 3]`, [`Explicit`], [`Lnc`], [`Bpt`],
+/// [`AnyPoint`], or a type of your own. It is the same sign as that of the 5x5
+/// determinant with rows `(x, y, z, x^2 + y^2 + z^2, 1)` of the five points.
 ///
 /// This is the convention of Shewchuk's `insphere`: when
 /// [`orient3d(a, b, c, d)`](orient3d) is [`Sign::Positive`], the sign is
@@ -887,10 +887,10 @@ pub fn dihedral_sign(a: &impl Point, b: &impl Point, c: &impl Point, d: &impl Po
 
 /// The exact stages of [`dihedral_sign`] for explicit points: the exact
 /// differences, on the stack, then, when they do not decide, in the arena of
-/// the thread, the second filter test (the first of the stages run there,
-/// after the exact differences have run again) and the stages on the exact
-/// coordinates and on big integers. There are no stages on expansions on the
-/// stack, since their temporaries do not fit there.
+/// the thread, the second filter test, then the exact differences again, then
+/// the stages on the exact coordinates and on big integers. There are no
+/// stages on expansions on the stack, since their temporaries do not fit
+/// there.
 #[cfg(feature = "std")]
 #[cold]
 #[inline(never)]

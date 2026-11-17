@@ -20,8 +20,8 @@
 //! then `orient3d` and `insphere` on `Bpt` (groups `orient3d_bpt` and
 //! `insphere_bpt`). The implicit loads come with the short parameters of a
 //! mesh (`mesh`) and with random 53-bit parameters (`params53`), the adverse
-//! case. No other library has these two angle predicates, so there is no
-//! external contender for them.
+//! case. Neither `robust` nor `geometry-predicates` has these two angle
+//! predicates, so they have no contender from those crates.
 //!
 //! Each measurement is one pass over a whole set; the throughput in elements
 //! per second is the number of predicate calls per second, so the time per

@@ -91,7 +91,8 @@ use implicit_predicates::{Bpt, Sign, dihedral_sign, dot_sign_3d, orient3d};
 let (p, q, r) = ([2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0; 3]);
 // The point 0.2 p + 0.3 q + 0.5 r, which is not representable as `f64`.
 let m = Bpt::new(p, q, r, 0.2, 0.3).unwrap();
-// It is on the plane of the triangle, exactly, and sees p at an acute angle.
+// It is on the plane of the triangle, exactly, and the angle at r between p
+// and m is acute.
 assert_eq!(orient3d(&p, &q, &r, &m), Sign::Zero);
 assert_eq!(dot_sign_3d(&p, &r, &m), Sign::Positive);
 
@@ -118,10 +119,10 @@ documentation gives. With a point on a segment or on a triangle, for
 `dot_sign_3d` and `dihedral_sign` that those stages do not decide, the exact
 coordinates go to an arena of the calling thread, 16,384 `f64` to start
 with, allocated on the first such call, that grows on the heap when a call
-needs more. The last exact stage evaluates the determinant on big integers
-in that arena; it decides every input, and for `orient3d` and `dot_sign_3d`
-it runs only when the expansions cannot decide, because a coordinate is too
-large or too small for them. `orient3d_in`, `insphere_in`,
+needs more. The last exact stage evaluates the expression of the predicate
+on big integers in that arena; it decides every input, and for `orient3d`
+and `dot_sign_3d` it runs only when the expansions cannot decide, because a
+coordinate is too large or too small for them. `orient3d_in`, `insphere_in`,
 `insphere_sos_in`, `dot_sign_3d_in` and `dihedral_sign_in` take the arena
 instead and report `ScratchExhausted` if it is too small. Without its
 default `std` feature the crate is `no_std`: `orient3d`, `insphere`,

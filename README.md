@@ -45,10 +45,12 @@ below the plane through `a`, `b` and `c`, taking "above" to be the side from
 which they appear counter-clockwise. `insphere` follows it too: for four
 points that `orient3d` finds positively oriented, its sign is positive when
 the fifth is inside their sphere. `insphere_sos` takes five distinct indices
-and never returns zero unless the five points are coplanar. The predicates
-are checked against an exact reference, against the `robust` crate on
-explicit points, and against predicate calls recorded from a real mesher,
-with explicit points and with points on a segment.
+and never returns zero unless the five points are coplanar. `orient3d`,
+`insphere` and `insphere_sos` are checked against an exact reference,
+against the `robust` crate on explicit points, and against predicate calls
+recorded from a real mesher, with explicit points and with points on a
+segment. The angle predicates, and the points on a triangle in every
+predicate, are checked against the exact reference and by fuzzing.
 
 `dot_sign_3d(p, q, r)` is the sign of `(p - q) . (r - q)`: the apex of the
 angle is the middle argument `q`, and the sign is positive when the angle is
@@ -67,7 +69,8 @@ use implicit_predicates::{Bpt, Sign, dihedral_sign, dot_sign_3d, orient3d};
 let (p, q, r) = ([2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0; 3]);
 // The point 0.2 p + 0.3 q + 0.5 r, which is not representable as `f64`.
 let m = Bpt::new(p, q, r, 0.2, 0.3).unwrap();
-// It is on the plane of the triangle, exactly, and sees p at an acute angle.
+// It is on the plane of the triangle, exactly, and the angle at r between p
+// and m is acute.
 assert_eq!(orient3d(&p, &q, &r, &m), Sign::Zero);
 assert_eq!(dot_sign_3d(&p, &r, &m), Sign::Positive);
 
@@ -114,8 +117,9 @@ gives. With a point on a segment or on a triangle, for `insphere` and
 `insphere_sos` whatever the points, and for the calls of `dot_sign_3d` and
 `dihedral_sign` that those stages do not decide, the exact coordinates are
 written to an arena of the calling thread, which is allocated on the first
-such call and grows when a call needs more; explicit points outside the
-range of `orient3d` use the same arena, for the last stage described below.
+such call and grows when a call needs more; the calls of `orient3d` on
+explicit points outside the range of its stages on the stack use the same
+arena, for the last stage described below.
 `orient3d_in`, `insphere_in`, `insphere_sos_in`, `dot_sign_3d_in` and
 `dihedral_sign_in` take a caller-provided arena (`Scratch`) instead and
 report `ScratchExhausted` if it is too small.
@@ -127,10 +131,11 @@ to call the predicates.
 The stages on expansions of `orient3d` and `dot_sign_3d` decide every call
 whose coordinates are of moderate magnitude. The others, with a coordinate
 or a component of an exact coordinate too large or too small for them, go to
-a last stage that evaluates the determinant on big integers, in the same
-arena; it is slower, and decides every input, and it is the only exact stage
-of `insphere`. So the result is the exact sign for every finite input. An input that is not
-finite (NaN or infinite) makes the predicates panic.
+a last stage that evaluates the expression of the predicate on big
+integers, in the same arena; it is slower, and decides every input, and it
+is the only exact stage of `insphere`. So the result is the exact sign for
+every finite input. An input that is not finite (NaN or infinite) makes the
+predicates panic.
 
 ### Point types of your own
 
@@ -238,7 +243,7 @@ Rust 1.86.
 - M. Attene, *Indirect Predicates for Geometric Constructions*, 2020.
 - L. Diazzi, D. Panozzo, A. Vaxman, M. Attene, *Constrained Delaunay
   Tetrahedrization: A Robust and Practical Approach*, 2023.
-- L. Diazzi, Z. Dai, D. Panozzo, M. Attene, *Surface chamfering for robust
+- L. Diazzi, J. Dai, D. Panozzo, M. Attene, *Surface chamfering for robust
   tetrahedral meshing*, ACM Transactions on Graphics 45(4), 2026. It defines
   the points on a triangle and the two angle predicates.
 
