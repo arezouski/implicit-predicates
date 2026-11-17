@@ -22,7 +22,7 @@ use implicit_predicates::{
     Bpt, Explicit, Lnc, Point, Scratch, ScratchExhausted, Sign, dihedral_sign_in, dot_sign_3d_in,
 };
 use implicit_predicates_corpus::exact;
-use implicit_predicates_test_support::{config, point3};
+use implicit_predicates_test_support::{config, leaf, point3};
 use proptest::prelude::*;
 
 /// The initial size of the arena of each thread, in `f64`, which the
@@ -242,23 +242,43 @@ proptest! {
         prop_assert_eq!(dihedral_in_every_type(&four), oracle4(&four), "{:?}", four);
     }
 
-    /// Explicit points whose nonzero coordinates are in the range of the
-    /// stages on the stack of `dot_sign_3d`: they decide without an arena.
+    /// Explicit points of small integers times a power of two, in the range
+    /// of the stages on the stack of `dot_sign_3d`: they decide without an
+    /// arena.
     #[test]
-    fn explicit_dot_signs_in_the_stack_range_need_no_arena(
+    fn explicit_dot_signs_of_a_grid_in_the_stack_range_need_no_arena(
         n in prop::array::uniform3(prop::array::uniform3(-6i32..=6)),
         k in -420i32..=470,
     ) {
-        let p: [[f64; 3]; 3] =
-            n.map(|v| v.map(|x| f64::from(x) * 2f64.powi(k)));
-        let args = p.map(Pt::Explicit);
-        let sign = dot_stages::exact_stages(p.each_ref())
-            .or_else(|| dot_stages::filter(p.each_ref(), 0.0));
-        prop_assert_eq!(sign, Some(oracle3(&args)), "{:?}", p);
+        let p: [[f64; 3]; 3] = n.map(|v| v.map(|x| f64::from(x) * 2f64.powi(k)));
+        prop_assert_eq!(dot_decides_on_the_stack(&p), Ok(oracle3(&p.map(Pt::Explicit))), "{:?}", p);
+    }
+
+    /// The same with coordinates of full mantissas and any magnitude in the
+    /// range the documentation states, `2^-428..=2^478`, or zero.
+    #[test]
+    fn explicit_dot_signs_of_any_coordinates_in_the_stack_range_need_no_arena(
+        p in prop::array::uniform3(prop::array::uniform3(
+            prop_oneof![1 => Just(0.0), 6 => leaf(-428, 477, 53)],
+        )),
+    ) {
+        prop_assert_eq!(dot_decides_on_the_stack(&p), Ok(oracle3(&p.map(Pt::Explicit))), "{:?}", p);
+    }
+
+    /// Explicit points of a grid whose differences are exact and in the range
+    /// of the exact differences of `dihedral_sign`: the call needs no arena.
+    #[test]
+    fn explicit_dihedral_signs_with_exact_differences_need_no_arena(
+        n in prop::array::uniform4(prop::array::uniform3(-6i32..=6)),
+        k in -180i32..=230,
+    ) {
+        let p: [[f64; 3]; 4] = n.map(|v| v.map(|x| f64::from(x) * 2f64.powi(k)));
+        let [a, b, c, d] = p;
+        prop_assume!(dihedral_stages::exact_differences(p.each_ref()).is_some());
         let mut no_room = [0.0; 0];
         prop_assert_eq!(
-            dot_sign_3d_in(&mut Scratch::borrowed(&mut no_room), &p[0], &p[1], &p[2]),
-            Ok(oracle3(&args)),
+            dihedral_sign_in(&mut Scratch::borrowed(&mut no_room), &a, &b, &c, &d),
+            Ok(oracle4(&p.map(Pt::Explicit))),
             "{:?}", p
         );
     }
@@ -318,6 +338,15 @@ proptest! {
             "{:?}", four
         );
     }
+}
+
+/// `dot_sign_3d_in` on explicit points with no room at all in the arena,
+/// after checking that a stage on the stack decides them with no help of the
+/// filter.
+fn dot_decides_on_the_stack(p: &[[f64; 3]; 3]) -> Result<Sign, ScratchExhausted> {
+    assert!(dot_stages::exact_stages(p.each_ref()).is_some(), "{p:?}");
+    let mut no_room = [0.0; 0];
+    dot_sign_3d_in(&mut Scratch::borrowed(&mut no_room), &p[0], &p[1], &p[2])
 }
 
 /// Explicit points out of the range of the stages on expansions, with an
@@ -598,4 +627,31 @@ panics! {
         "implicit-predicates: a point has a weight other than one, which the predicates do not support";
     no_exact_coordinates: NoCoordinates =>
         "implicit-predicates: a point has no exact coordinates: an input is not finite";
+}
+
+/// An exactly right dihedral angle in integers, with every axis of some extent
+/// so that neither test of the filter can certify the zero: the exact
+/// differences decide it, so the arena of `dihedral_sign_in` is not used.
+#[test]
+fn the_exact_differences_decide_a_right_dihedral_angle_without_an_arena() {
+    let p = [
+        [0.0, 1.0, 2.0],
+        [-2.0, 2.0, -1.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+    ];
+    let r = p.each_ref();
+    assert_eq!(dihedral_stages::filter(r, 0.0), None);
+    assert_eq!(dihedral_stages::filter_axes(r, [0.0; 3]), None);
+    assert_eq!(dihedral_stages::exact_differences(r), Some(Sign::Zero));
+    let [a, b, c, d] = p;
+    let mut no_room = [0.0; 0];
+    assert_eq!(
+        dihedral_sign_in(&mut Scratch::borrowed(&mut no_room), &a, &b, &c, &d),
+        Ok(Sign::Zero)
+    );
+    // An inexact difference, `0.1 - 0.7`, leaves the stage on the stack.
+    let mut p = p;
+    (p[0][0], p[3][0]) = (0.1, 0.7);
+    assert_eq!(dihedral_stages::exact_differences(p.each_ref()), None);
 }

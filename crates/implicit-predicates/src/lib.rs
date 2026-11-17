@@ -800,17 +800,19 @@ pub fn dot_sign_3d_in(
 ///
 /// A floating-point filter on the approximations of the points decides most
 /// calls. When it cannot, a second filter test that scales its bound by the
-/// extent of each axis tries; then explicit points go through exact stages:
-/// the differences of coordinates evaluated exactly, on the stack, when every
-/// nonzero coordinate has a magnitude in `2^-188..=2^239`, and otherwise,
-/// and for every implicit point, stages that write the exact coordinates of
-/// the points to an arena of the calling thread, which starts at 16,384 `f64`
-/// and grows on the heap when a call needs more; a last stage on big integers
-/// decides every input that remains. Unlike [`orient3d`], this function has
-/// no stage on the stack on expansions: its temporaries do not fit there, so
-/// a call on explicit points that the filters and the exact differences do
-/// not decide uses the arena of the thread. Every call with finite inputs
-/// returns its exact sign, whatever the magnitude of the coordinates.
+/// extent of each axis tries; then explicit points go through an exact stage
+/// whose temporaries are on the stack, which decides when every difference
+/// of coordinates it takes is exact in `f64` and every nonzero one has a
+/// magnitude in `2^-188..=2^239`; such a call does not use the arena of the
+/// thread. Otherwise, and for every implicit point, stages that write the
+/// exact coordinates of the points to an arena of the calling thread, which
+/// starts at 16,384 `f64` and grows on the heap when a call needs more; a
+/// last stage on big integers decides every input that remains. Unlike
+/// [`orient3d`], this function has no stage on expansions on the stack: its
+/// temporaries do not fit there, so a call on explicit points that the
+/// filters and the exact differences do not decide uses the arena of the
+/// thread. Every call with finite inputs returns its exact sign, whatever the
+/// magnitude of the coordinates.
 /// [`dihedral_sign_in`] takes the arena instead, and needs no `std`.
 ///
 /// Requires the `std` feature, which is on by default.
@@ -869,14 +871,21 @@ pub fn dihedral_sign(a: &impl Point, b: &impl Point, c: &impl Point, d: &impl Po
     dihedral_sign_in_thread_arena(a, b, c, d)
 }
 
-/// The exact stages of [`dihedral_sign`] for explicit points, in the arena of
-/// the thread: the second filter test, the exact differences, then the stages
-/// on the exact coordinates and on big integers. There are no stages on
-/// expansions on the stack, since their temporaries do not fit there.
+/// The exact stages of [`dihedral_sign`] for explicit points: the exact
+/// differences, on the stack, then, when they do not decide, in the arena of
+/// the thread, the second filter test and the stages on the exact coordinates
+/// and on big integers. There are no stages on expansions on the stack, since
+/// their temporaries do not fit there.
 #[cfg(feature = "std")]
 #[cold]
 #[inline(never)]
 fn dihedral_sign_explicit(p: [&[f64; 3]; 4]) -> Sign {
+    // `exact_differences` runs here first and again inside
+    // `exact_stages_explicit_in`, on purpose: the arena of the thread stays
+    // untouched whenever it decides.
+    if let Some(sign) = dihedral_sign_stages::exact_differences(p) {
+        return sign;
+    }
     arena::with(|scratch| dihedral_sign_stages::exact_stages_explicit_in(scratch, p)).expect(GROWS)
 }
 
