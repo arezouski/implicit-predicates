@@ -41,7 +41,11 @@
 /// let errs = [[1.0, 0.0, 0.5], [4.0, 0.0, 0.0], [2.0, 0.25, 0.0], [0.0; 3]];
 /// assert_eq!(uncertainty(errs.each_ref()), [6.0, 0.25, 0.5]);
 /// ```
-#[inline]
+// Always inlined: it runs on the fast path of every filter on implicit
+// points, and when two predicates with the same number of points call it,
+// the compiler may keep one shared copy out of line, which returns its
+// three values through memory.
+#[inline(always)]
 #[must_use]
 pub fn uncertainty<const N: usize>(errs: [&[f64; 3]; N]) -> [f64; 3] {
     let mut top = [TopTwo::ZERO; 3];
