@@ -5,7 +5,7 @@
 mod common;
 
 use common::bpt::exact_bpt_by_hand;
-use implicit_predicates::{AnyPoint, Bpt, Lnc, Point, PointError};
+use implicit_predicates::{AnyPoint, Bpt, Explicit, Lnc, Point, PointError};
 use implicit_predicates_oracle::Dyadic;
 use implicit_predicates_test_support::{bpt_params, config};
 use proptest::prelude::*;
@@ -238,4 +238,28 @@ fn the_size_of_a_bpt_is_136_bytes() {
     assert_eq!(size_of::<Bpt>(), 136);
     // Two parents and one parameter: 6 + 1 + 3 + 3 = 13 words.
     assert_eq!(size_of::<Lnc>(), 104);
+}
+
+/// The distance in bytes from the start of `any` to `part`, which is
+/// borrowed from it.
+fn offset_in(any: &AnyPoint, part: &[f64; 3]) -> usize {
+    std::ptr::from_ref(part) as usize - std::ptr::from_ref(any) as usize
+}
+
+#[test]
+fn the_approximation_is_at_the_same_offset_in_every_kind_of_point() {
+    // The filter reads the approximation of every point. With one offset for
+    // every variant it needs no choice by kind; with different offsets it
+    // costs a lookup before the coordinates are read.
+    let (p, q, r) = ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let explicit = AnyPoint::from(Explicit::new(p).unwrap());
+    let lnc = AnyPoint::from(Lnc::new(p, q, 0.5).unwrap());
+    let bpt = AnyPoint::from(Bpt::new(p, q, r, 0.25, 0.25).unwrap());
+
+    let at = offset_in(&explicit, explicit.approx());
+    assert_eq!(offset_in(&lnc, lnc.approx()), at);
+    assert_eq!(offset_in(&bpt, bpt.approx()), at);
+    // The error of an explicit point is a constant outside the point, so
+    // only the implicit kinds share its offset.
+    assert_eq!(offset_in(&lnc, lnc.err()), offset_in(&bpt, bpt.err()));
 }

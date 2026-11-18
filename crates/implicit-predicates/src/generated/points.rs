@@ -102,12 +102,13 @@ impl Point for Explicit {
 /// of each one, [`Point::approx`] and [`Point::err`]; [`Point::exact`] computes
 /// them exactly.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
 pub struct Lnc {
+    approx: [f64; 3],
+    err: [f64; 3],
     p: [f64; 3],
     q: [f64; 3],
     t: f64,
-    approx: [f64; 3],
-    err: [f64; 3],
 }
 
 impl Lnc {
@@ -369,14 +370,15 @@ impl Point for Lnc {
 /// of each one, [`Point::approx`] and [`Point::err`]; [`Point::exact`] computes
 /// them exactly.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
 pub struct Bpt {
+    approx: [f64; 3],
+    err: [f64; 3],
     p: [f64; 3],
     q: [f64; 3],
     r: [f64; 3],
     u: f64,
     v: f64,
-    approx: [f64; 3],
-    err: [f64; 3],
 }
 
 impl Bpt {

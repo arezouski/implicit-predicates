@@ -194,7 +194,14 @@ pub(crate) fn write_implicit(out: &mut String, info: &TypeInfo<'_>, implicit: &I
          exactly.",
     );
     out.push_str("#[derive(Clone, Copy, Debug, PartialEq)]\n");
+    // `approx` and `err` come first, in a fixed layout, so that they sit at
+    // the same offset in every implicit type, and `approx` at the offset of
+    // the coordinates of an explicit point: then `AnyPoint::approx` is one
+    // address for every variant and `AnyPoint::err` one select, instead of
+    // a table indexed by the variant.
+    out.push_str("#[repr(C)]\n");
     writeln!(out, "pub struct {name} {{").unwrap();
+    out.push_str("approx: [f64; 3],\nerr: [f64; 3],\n");
     for p in &point.params {
         let ty = if p.ty == ParamType::F64x3 {
             "[f64; 3]"
@@ -203,7 +210,7 @@ pub(crate) fn write_implicit(out: &mut String, info: &TypeInfo<'_>, implicit: &I
         };
         writeln!(out, "{}: {ty},", p.name).unwrap();
     }
-    out.push_str("approx: [f64; 3],\nerr: [f64; 3],\n}\n\n");
+    out.push_str("}\n\n");
     writeln!(out, "impl {name} {{").unwrap();
     comment(
         out,
