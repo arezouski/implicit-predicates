@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.4] - 2026-11-18
+## [0.0.4] - 2026-11-20
 
 ### Added
 
@@ -72,6 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clause where it reported an error before; any other comparison that is not
   one parameter against an integer is still an error, and its message now
   names the accepted forms.
+- The point types that `implicit-predicates-gen` emits for a declaration,
+  `Lnc` and `Bpt` among them, are `#[repr(C)]` and start with the
+  approximation and its error, so the approximation is at the same place in
+  every variant of `AnyPoint` and the filter reads it without choosing by
+  variant. Their fields are still private; the output of `Debug` lists them
+  in the new order.
 
 ## [0.0.3] - 2026-11-15
 
