@@ -39,7 +39,7 @@ use implicit_predicates::stages::{dihedral_sign, dot_sign_3d, insphere, orient3d
 use implicit_predicates::{AnyPoint, Bpt, Point, Sign};
 
 use super::exact_loads::{
-    Precision, bpt, bpt_at, coord, dihedral_case, dot_case, explicit, hinge, lnc, lnc_at,
+    Loader, Precision, bpt, bpt_at, coord, dihedral_case, dot_case, explicit, hinge, lnc, lnc_at,
     orient3d_case, param, prism,
 };
 use super::exact_signs::{
@@ -307,7 +307,7 @@ fn orient3d_call(rng: &mut Rng, precision: Precision, kind: &str, family: Family
 #[must_use]
 pub fn orient3d_bpt_loads() -> Vec<PublicLoad<4>> {
     loads(
-        |[a, b, c, d]| orient3d::filter_points(a, b, c, d),
+        |[a, b, c, d]| orient3d::filter_points(&Loader(a), &Loader(b), &Loader(c), &Loader(d)),
         exact_orient3d_sign,
         DEGENERATE_FAMILIES,
         PUBLIC_LOAD_SEED + 200,

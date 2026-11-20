@@ -154,7 +154,7 @@ pub const DOT_SIGN_3D: ExactStages<3> = ExactStages {
 /// The stages of `orient3d`, which has no second test of the filter.
 pub const ORIENT3D: ExactStages<4> = ExactStages {
     name: "orient3d",
-    filters: |[a, b, c, d]| orient3d::filter_points(a, b, c, d),
+    filters: |[a, b, c, d]| orient3d::filter_points(&Loader(a), &Loader(b), &Loader(c), &Loader(d)),
     expansions_in: orient3d::expansions_translated_in,
     big_integers_in: orient3d::big_integers_in,
     exact_stages_in: |s, [a, b, c, d]| orient3d::exact_stages_in(s, a, b, c, d),
@@ -750,4 +750,38 @@ pub fn orient3d_exact_loads() -> Vec<ExactLoad<4>> {
         EXACT_LOAD_SEED + 64,
         orient3d_case,
     )
+}
+
+/// A point that borrows an `AnyPoint`, for building the loads.
+///
+/// The loads are classified with the filter of `orient3d`. Called on
+/// `AnyPoint`, that would be one more caller of the instance that the
+/// contender measures, and with link-time optimization the compiler then
+/// keeps the filter out of line in the contender: about 1 ns per call that
+/// a program calling only the public function does not pay. With this type
+/// the classification has an instance of its own.
+pub(crate) struct Loader<'a>(pub &'a AnyPoint);
+
+impl implicit_predicates::Point for Loader<'_> {
+    fn approx(&self) -> &[f64; 3] {
+        self.0.approx()
+    }
+    fn err(&self) -> &[f64; 3] {
+        self.0.err()
+    }
+    fn is_explicit(&self) -> bool {
+        self.0.is_explicit()
+    }
+    fn exact(
+        &self,
+        scratch: &mut implicit_predicates::Scratch<'_>,
+    ) -> Result<implicit_predicates::ExactCoords, implicit_predicates::ExactError> {
+        self.0.exact(scratch)
+    }
+    fn exact_big(
+        &self,
+        scratch: &mut implicit_predicates::Scratch<'_>,
+    ) -> Result<implicit_predicates::BigCoords, implicit_predicates::ExactError> {
+        self.0.exact_big(scratch)
+    }
 }
