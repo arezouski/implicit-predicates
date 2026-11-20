@@ -577,10 +577,16 @@ fn the_bound_by_parts_covers_the_error_and_the_sign_is_that_of_the_oracle() {
                 assert_eq!(value > 0.0, sign == Sign::Positive, "{case:?}");
             }
         }
+        // An extent that overflows is outside the range, and has no exact
+        // value to compare.
+        if !value.is_finite() || delta.iter().any(|x| !x.is_finite()) {
+            f.out_of_range += 1;
+            continue;
+        }
         let actual = case.actual_e();
         let d: [Dyadic; 3] = std::array::from_fn(|k| &Dyadic::from_f64(delta[k]) + &actual[k]);
         let (low, high) = (Dyadic::from_f64(AXES_D_MIN), Dyadic::from_f64(AXES_D_MAX));
-        if !value.is_finite() || d.iter().any(|x| *x < low || *x > high) {
+        if d.iter().any(|x| *x < low || *x > high) {
             f.out_of_range += 1;
             continue;
         }
