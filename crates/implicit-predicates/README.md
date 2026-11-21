@@ -1,5 +1,9 @@
 # implicit-predicates
 
+[![crates.io](https://img.shields.io/crates/v/implicit-predicates.svg)](https://crates.io/crates/implicit-predicates)
+[![docs.rs](https://img.shields.io/docsrs/implicit-predicates)](https://docs.rs/implicit-predicates)
+[![CI](https://github.com/arezouski/implicit-predicates/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arezouski/implicit-predicates/actions/workflows/ci.yml)
+
 Exact geometric predicates in Rust for explicit points and for *implicit*
 points: points defined by an unevaluated construction, such as the point at a
 given parameter on a segment or on a triangle.

@@ -1,5 +1,9 @@
 # implicit-predicates-oracle
 
+[![crates.io](https://img.shields.io/crates/v/implicit-predicates-oracle.svg)](https://crates.io/crates/implicit-predicates-oracle)
+[![docs.rs](https://img.shields.io/docsrs/implicit-predicates-oracle)](https://docs.rs/implicit-predicates-oracle)
+[![CI](https://github.com/arezouski/implicit-predicates/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arezouski/implicit-predicates/actions/workflows/ci.yml)
+
 Slow, exact reference implementation used to test
 [`implicit-predicates`](https://crates.io/crates/implicit-predicates). It is
 meant for tests only, not for production use.

@@ -1,5 +1,9 @@
 # implicit-predicates-gen
 
+[![crates.io](https://img.shields.io/crates/v/implicit-predicates-gen.svg)](https://crates.io/crates/implicit-predicates-gen)
+[![docs.rs](https://img.shields.io/docsrs/implicit-predicates-gen)](https://docs.rs/implicit-predicates-gen)
+[![CI](https://github.com/arezouski/implicit-predicates/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arezouski/implicit-predicates/actions/workflows/ci.yml)
+
 Code generator for
 [`implicit-predicates`](https://crates.io/crates/implicit-predicates): turns
 the definition of a predicate into specialized Rust code.

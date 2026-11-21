@@ -1,5 +1,9 @@
 # implicit-predicates-core
 
+[![crates.io](https://img.shields.io/crates/v/implicit-predicates-core.svg)](https://crates.io/crates/implicit-predicates-core)
+[![docs.rs](https://img.shields.io/docsrs/implicit-predicates-core)](https://docs.rs/implicit-predicates-core)
+[![CI](https://github.com/arezouski/implicit-predicates/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arezouski/implicit-predicates/actions/workflows/ci.yml)
+
 The `no_std`, dependency-free core of
 [`implicit-predicates`](https://crates.io/crates/implicit-predicates): the
 arithmetic building blocks shared by the predicates and by generated code.
